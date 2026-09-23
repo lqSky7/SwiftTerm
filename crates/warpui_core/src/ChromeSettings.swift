@@ -111,6 +111,17 @@ struct ChromeSettings: Equatable {
     /// agree would be one more thing to keep in step.
     static let opacityRange: ClosedRange<Double> = 0...1
 
+    /// What the user calls themselves, and where their picture is.
+    ///
+    /// The name roams; the picture is a **path**, which does not — a file at `~/Pictures/me.png` exists on this
+    /// machine and not on the next one. Both live here anyway because there is no sync to get it wrong yet, and the
+    /// honest note is that the avatar wants moving to the device half the moment there is.
+    var userName: String = ChromeSettings.defaultUserName
+    var avatarPath: String?
+
+    /// The name a fresh install shows, before anybody has said otherwise.
+    static let defaultUserName = "CoolUser"
+
     /// Which appearance the window is drawn in, and therefore which palette the terminal draws with.
     var appearanceMode: AppearanceMode = .system
 
@@ -191,6 +202,15 @@ struct ChromeSettings: Equatable {
     static let defaultLineHeightRatio: Double = 1.4
     static let lineHeightRatioRange: ClosedRange<Double> = 1.0...2.0
 
+    /// An empty name is not a name — it would leave the sidebar with a blank row and the page with nothing on it, so
+    /// it falls back rather than being stored.
+    mutating func setUserName(_ name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        userName = trimmed.isEmpty ? Self.defaultUserName : trimmed
+    }
+
+    mutating func setAvatarPath(_ path: String?) { avatarPath = path }
+
     mutating func setFontSize(_ size: Double) { fontSize = Self.fontSizeRange.clamping(size) }
 
     mutating func setLineHeightRatio(_ ratio: Double) {
@@ -219,6 +239,8 @@ extension ChromeSettings: Codable {
         case appearanceMode
         case fontSize
         case lineHeightRatio
+        case userName
+        case avatarPath
         case sidebarMaterial
         case terminalMaterial
         case sidebarOpacity
@@ -245,6 +267,11 @@ extension ChromeSettings: Codable {
             (try container.decodeIfPresent(String.self, forKey: .appearanceMode))
             .flatMap(AppearanceMode.init(rawValue:)) ?? fallback.appearanceMode
         // Through the setters, so a file hand-edited to 400 points comes back clamped rather than drawn at 400.
+        // Through the setter, so a file hand-edited to an empty name comes back as the default rather than as a blank
+        // row in the sidebar.
+        setUserName(
+            try container.decodeIfPresent(String.self, forKey: .userName) ?? fallback.userName)
+        avatarPath = try container.decodeIfPresent(String.self, forKey: .avatarPath) ?? fallback.avatarPath
         setFontSize(try container.decodeIfPresent(Double.self, forKey: .fontSize) ?? fallback.fontSize)
         setLineHeightRatio(
             try container.decodeIfPresent(Double.self, forKey: .lineHeightRatio)
@@ -264,6 +291,8 @@ extension ChromeSettings: Codable {
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(appearanceMode.rawValue, forKey: .appearanceMode)
+        try container.encode(userName, forKey: .userName)
+        try container.encodeIfPresent(avatarPath, forKey: .avatarPath)
         try container.encode(fontSize, forKey: .fontSize)
         try container.encode(lineHeightRatio, forKey: .lineHeightRatio)
         try container.encode(sidebarMaterial.rawValue, forKey: .sidebarMaterial)

@@ -26,6 +26,7 @@ enum TabContent {
     /// The settings page. There is one per window, and asking for it again shows that one.
     case settings
 
+
     /// Whether this is the settings page.
     ///
     /// Written as a match rather than as `content == .settings`, deliberately: the terminals case carries
@@ -36,6 +37,7 @@ enum TabContent {
         if case .settings = self { return true }
         return false
     }
+
 }
 
 struct Tab {

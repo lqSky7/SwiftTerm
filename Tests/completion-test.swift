@@ -13,6 +13,9 @@ enum CompletionTest {
         subcommands(harness)
         flags(harness)
         paths(harness)
+        cdDirectoriesOnly(harness)
+        dotfilesSuppressedUnlessTyped(harness)
+        expandedSignatures(harness)
         aDotSlashIsAPathNotACommand(harness)
         pathNamesAreEscapedForTheShell(harness)
         theShellsOwnCommands(harness)
@@ -28,6 +31,8 @@ enum CompletionTest {
             DirectoryEntry(name: "src", isDirectory: true),
             DirectoryEntry(name: "Calibre Library", isDirectory: true),
             DirectoryEntry(name: "Makefile", isDirectory: false),
+            DirectoryEntry(name: ".hidden", isDirectory: false),
+            DirectoryEntry(name: ".git", isDirectory: true),
         ],
         "/work/src": [DirectoryEntry(name: "main.swift", isDirectory: false)],
         // What `FileManager` answers for `/work/.` — the same directory under another name. A fixture without it
@@ -37,6 +42,8 @@ enum CompletionTest {
             DirectoryEntry(name: "src", isDirectory: true),
             DirectoryEntry(name: "Calibre Library", isDirectory: true),
             DirectoryEntry(name: "Makefile", isDirectory: false),
+            DirectoryEntry(name: ".hidden", isDirectory: false),
+            DirectoryEntry(name: ".git", isDirectory: true),
         ],
     ]
 
@@ -84,7 +91,7 @@ enum CompletionTest {
         harness.equal(candidates.first?.kind, .flag, "and are flags")
 
         let all = makeEngine().candidates(for: "git -", cursor: 5)
-        harness.equal(all.count, 6, "a bare dash offers every flag of that command")
+        harness.equal(all.count, 9, "a bare dash offers every flag of that command")
         harness.equal(
             makeEngine().candidates(for: "cd -", cursor: 4), [],
             "a command with no flags offers none")
@@ -109,6 +116,52 @@ enum CompletionTest {
         harness.equal(
             makeEngine().candidates(for: "brew ", cursor: 5).contains { $0.kind == .path }, false,
             "a command that takes no paths offers none")
+    }
+
+    private static func cdDirectoriesOnly(_ harness: Harness) {
+        let candidates = makeEngine().candidates(for: "cd ", cursor: 3)
+        harness.expect(!candidates.isEmpty, "cd offers directory candidates")
+        harness.expect(
+            candidates.allSatisfy { $0.description == "directory" },
+            "cd only offers directories, filtering out plain files")
+        harness.expect(
+            candidates.contains { $0.text == "src/" },
+            "src/ directory is included")
+        harness.expect(
+            !candidates.contains { $0.text == "main.swift" },
+            "main.swift is excluded from cd")
+    }
+
+    private static func dotfilesSuppressedUnlessTyped(_ harness: Harness) {
+        let normal = makeEngine().candidates(for: "cat ", cursor: 4)
+        harness.expect(
+            !normal.contains { $0.text.hasPrefix(".") },
+            "dotfiles are suppressed when no leading dot is typed")
+
+        let dot = makeEngine().candidates(for: "cat .", cursor: 5)
+        harness.expect(
+            dot.contains { $0.text == ".hidden" },
+            "dotfile .hidden is offered when user types leading dot")
+        harness.expect(
+            dot.contains { $0.text == ".git/" },
+            "dotfile directory .git/ is offered when user types leading dot")
+    }
+
+    private static func expandedSignatures(_ harness: Harness) {
+        let docker = makeEngine().candidates(for: "docker ", cursor: 7)
+        harness.expect(
+            docker.contains { $0.text == "run" && $0.kind == .subcommand },
+            "docker signature provides run subcommand")
+
+        let cargo = makeEngine().candidates(for: "cargo ", cursor: 6)
+        harness.expect(
+            cargo.contains { $0.text == "build" && $0.kind == .subcommand },
+            "cargo signature provides build subcommand")
+
+        let npm = makeEngine().candidates(for: "npm ", cursor: 4)
+        harness.expect(
+            npm.contains { $0.text == "install" && $0.kind == .subcommand },
+            "npm signature provides install subcommand")
     }
 
     /// A file name with a space in it is **one argument**, and inserting it plainly makes it two.

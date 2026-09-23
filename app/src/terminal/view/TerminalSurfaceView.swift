@@ -690,22 +690,29 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
     }
 
     private var cachedCommandNames: (path: String?, entries: [String])?
+    private static var directoryCache: [String: (timestamp: Date, entries: [DirectoryEntry])] = [:]
 
     /// A real directory listing, read when Tab is pressed rather than kept.
     ///
     /// Hidden files are **not** skipped: `cd .` and `git add .g` both need them, and a name that does not
     /// match the word being completed is ranked last rather than offered, so a dotfile costs nothing when it is
-    /// not wanted.
+    /// not wanted. Cached for a couple seconds to avoid redundant disk syscalls while typing.
     private static func listDirectory(_ path: String) -> [DirectoryEntry] {
+        let now = Date()
+        if let cached = directoryCache[path], now.timeIntervalSince(cached.timestamp) < 2.0 {
+            return cached.entries
+        }
         let url = URL(fileURLWithPath: path)
         let entries =
             (try? FileManager.default.contentsOfDirectory(
                 at: url, includingPropertiesForKeys: [.isDirectoryKey])) ?? []
-        return entries.map { entry in
+        let result = entries.map { entry in
             let isDirectory =
                 (try? entry.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
             return DirectoryEntry(name: entry.lastPathComponent, isDirectory: isDirectory)
         }
+        directoryCache[path] = (now, result)
+        return result
     }
 
     /// The block being typed gets the chip row. It is reserved *above* that block's content, so no

@@ -274,10 +274,12 @@ final class CommandEditorView: NSTextView {
         }
 
         if characters == "\t" || event.specialKey == .tab {
+            // Tab opens the completion menu first, matching Warp's behavior.
+            if onCompletionRequest?() == true {
+                ghostText = nil
+                return
+            }
             if acceptGhostText() { return }
-            // The list, then the shell. An empty list answers `false`, and a Tab the shell can use is a Tab
-            // the editor must not swallow — which is what `onUnhandledTab` is for.
-            if onCompletionRequest?() == true { return }
             onUnhandledTab?()
             return
         }

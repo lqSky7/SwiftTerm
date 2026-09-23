@@ -34,7 +34,9 @@ harness that stops compiling means a decision leaked out of a pure layer. There 
 | --- | --- |
 | `shell-tokenizer-test.swift` | the spans a command line is coloured in, and that they stay ordered, non-overlapping and complete |
 | `command-resolver-test.swift` | the not-found check, including the *indeterminate* answer that keeps a working command from being underlined |
-| `completion-test.swift` | what the popover and the ghost text offer, from history, paths and the signature table |
+| `fuzzy-matcher-test.swift` | subsequence fuzzy matching scoring, prefix/boundary/consecutive bonuses, and smart-case rules |
+| `completion-test.swift` | what the popover and the ghost text offer, from 50+ signatures, cd/dotfile paths, and history |
+| `completion-menu-test.swift` | popover windowing, pagination, cursor selection, and insertion replacement range |
 | `editor-submit-test.swift` | the three bytes of protocol a submitted command becomes: `" "` Ctrl-K Ctrl-U |
 
 ## The window (Phase 4b)

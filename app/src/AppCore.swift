@@ -133,6 +133,7 @@ final class AppCore {
     }
 
     func selectTab(_ tab: TabID) {
+        leaveProfile()
         guard tabs.select(tab) else { return }
         afterStructuralChange()
     }
@@ -152,8 +153,65 @@ final class AppCore {
     /// `⌘,`, and the gear in the sidebar's header. A tab rather than a window: the settings are one more
     /// thing that is open, and a window of its own would be a second place that knows what is open.
     func openSettings() {
+        leaveProfile()
         tabs.openSettings()
         afterStructuralChange()
+    }
+
+    /// Whether the panel is showing the user's own page.
+    ///
+    /// **Not a tab.** The settings page is one because it is a place you go and come back from; the profile is the
+    /// *user*, and the row it belongs to is already in the sidebar — so it is a state of the panel rather than another
+    /// thing in the list of what is open. Selecting a tab, or opening the settings, leaves it.
+    private(set) var isShowingProfile = false
+
+    /// Show the user's own page. The row in the sidebar is what asks for it.
+    func openProfile() {
+        isShowingProfile = true
+        afterStructuralChange()
+    }
+
+    private func leaveProfile() {
+        isShowingProfile = false
+        cancelRenamingProfile()
+    }
+
+    /// What the profile page's name field is holding, and whether it is showing at all.
+    ///
+    /// **On `AppCore` rather than in the view as a `@State`**, for the same reason `settingsSearch` is: this project
+    /// verifies its views by typechecking a *macro-stripped* copy — the environment refuses `swift-plugin-server` — and
+    /// a property wrapper is exactly the thing that cannot be stripped. State on the model keeps the view a plain
+    /// `struct` and keeps the file verifiable.
+    private(set) var profileNameDraft = ""
+    private(set) var isRenamingProfile = false
+
+    func beginRenamingProfile() {
+        profileNameDraft = chrome.userName
+        isRenamingProfile = true
+    }
+
+    func setProfileNameDraft(_ text: String) { profileNameDraft = text }
+
+    /// An empty name is refused by `ChromeSettings.setUserName` — it falls back to the default rather than leaving a
+    /// blank row in the sidebar — so this only has to close the field.
+    func commitProfileName() {
+        chrome.setUserName(profileNameDraft)
+        isRenamingProfile = false
+        persist()
+    }
+
+    func cancelRenamingProfile() { isRenamingProfile = false }
+
+    /// Rename the user. The page's name field and nothing else calls this.
+    func setUserName(_ name: String) {
+        chrome.setUserName(name)
+        persist()
+    }
+
+    /// Point the profile picture at a file, or clear it.
+    func setAvatarPath(_ path: String?) {
+        chrome.setAvatarPath(path)
+        persist()
     }
 
     /// Close what is in front of the user. Closing a tab's last pane closes the tab, and closing the last

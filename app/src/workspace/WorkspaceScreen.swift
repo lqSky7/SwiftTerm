@@ -163,7 +163,11 @@ struct WorkspaceScreen: View {
     /// claim it again.
     @ViewBuilder
     private func panelContent(in bounds: CGRect) -> some View {
-        if let tab = workspace.tabs.activeTab {
+        // The profile is the panel's state rather than a tab — see `AppCore.isShowingProfile` — so it is asked for
+        // first, before whatever tab happens to be selected behind it.
+        if workspace.isShowingProfile {
+            ProfileView(workspace: workspace)
+        } else if let tab = workspace.tabs.activeTab {
             switch tab.content {
             case .settings:
                 SettingsView(workspace: workspace)

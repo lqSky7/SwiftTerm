@@ -68,6 +68,8 @@ enum SettingsStoreTest {
         document.synced.chrome.setSidebarMaterial(.ultraThin)
         document.synced.chrome.setTerminalMaterial(.thin)
         document.synced.chrome.appearanceMode = .light
+        document.synced.chrome.setUserName("Ada Lovelace")
+        document.synced.chrome.setAvatarPath("/tmp/me.png")
         document.synced.chrome.setFontSize(15)
         document.synced.chrome.setLineHeightRatio(1.55)
         document.synced.chrome.setSidebarOpacity(0.42)
@@ -84,6 +86,8 @@ enum SettingsStoreTest {
         harness.equal(
             back.synced.chrome.terminalMaterial, .thin, "and the terminal's, which is its own")
         harness.equal(back.synced.chrome.appearanceMode, .light, "and the appearance")
+        harness.equal(back.synced.chrome.userName, "Ada Lovelace", "and the user's name")
+        harness.equal(back.synced.chrome.avatarPath, "/tmp/me.png", "and their picture")
         harness.equal(back.synced.chrome.fontSize, 15, "and the text size, so ⌘+ survives a restart")
         harness.equal(back.synced.chrome.lineHeightRatio, 1.55, "and the line height")
         harness.equal(back.device.chrome.isSidebarCollapsed, true, "and whether the sidebar was hidden")

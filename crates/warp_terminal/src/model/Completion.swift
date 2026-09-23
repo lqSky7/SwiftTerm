@@ -724,8 +724,7 @@ struct CompletionEngine {
             }
 
             if !wanted.isEmpty {
-                let matches = entry.name.lowercased().hasPrefix(wanted.lowercased())
-                    || FuzzyMatcher.match(text: entry.name, pattern: wanted) != nil
+                let matches = entry.name.hasPrefix(wanted)
                 guard matches else { return nil }
             }
 

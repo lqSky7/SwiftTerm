@@ -56,7 +56,7 @@ struct WorkspaceSidebar: View {
     private var profileRow: some View {
         HStack(spacing: Theme.Spacing.lg) {
             avatar
-            Text(Self.userName)
+            Text(workspace.chrome.userName)
                 .font(.system(size: Theme.Typography.profileNameSize, weight: .medium))
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -64,6 +64,16 @@ struct WorkspaceSidebar: View {
         }
         .padding(.horizontal, Theme.Spacing.md)
         .frame(height: Theme.Size.profileRowHeight, alignment: .leading)
+        // **The row is the page's only affordance, so it says so when the page is up.** There is no tab for the
+        // profile to highlight, which is exactly why the row has to do it.
+        .background(
+            RoundedRectangle(cornerRadius: Theme.Radius.control)
+                .fill(workspace.isShowingProfile ? Theme.Colors.ramp(dark: 0.18, light: 0.12) : .clear)
+                .padding(.horizontal, Theme.Spacing.sm))
+        // The whole row, not just the name: a row that is only tappable where its text happens to be is a row people
+        // click and nothing happens.
+        .contentShape(Rectangle())
+        .onTapGesture { workspace.openProfile() }
     }
 
     /// The placeholder avatar: the name's first letter on a filled circle.
@@ -72,22 +82,11 @@ struct WorkspaceSidebar: View {
     /// is standing in for. And not an asset, because there is nothing to put in one until there are
     /// accounts; a letter on a disc is what every app does in that situation and it is honest about being
     /// a placeholder.
+    /// The same avatar the profile page draws, at the row's size — one view, so the sidebar cannot show a letter
+    /// while the page shows the picture the user chose.
     private var avatar: some View {
-        Circle()
-            .fill(Theme.Colors.ramp(dark: 0.3, light: 0.25))
-            .frame(width: Theme.Size.profileAvatarSize, height: Theme.Size.profileAvatarSize)
-            .overlay {
-                Text(Self.userName.prefix(1).uppercased())
-                    .font(
-                        .system(
-                            size: Theme.Size.profileAvatarSize * 0.42, weight: .medium))
-                    .foregroundStyle(.white)
-            }
+        ProfileAvatar(workspace: workspace, diameter: Theme.Size.profileAvatarSize)
     }
-
-    /// The name on the placeholder avatar. One place, so the day it comes from somewhere real there is one
-    /// place to change.
-    private static let userName = "ca5"
 
     /// A plain `List` with no selection binding, deliberately.
     ///
@@ -104,7 +103,7 @@ struct WorkspaceSidebar: View {
                 workspace.moveTabs(from: source, to: destination)
             }
         }
-        .listStyle(.sidebar)
+        .listStyle(.plain)
         // The sidebar's glass is behind this, over the whole window; the list's own material would be a
         // second one on top of it, and two materials in the same place is how a sidebar ends up looking
         // like a mistake.
@@ -119,6 +118,14 @@ struct WorkspaceSidebar: View {
                 onEdit: { workspace.updateRenameDraft($0) },
                 onCommit: { workspace.commitRename() },
                 onCancel: { workspace.cancelRename() })
+                .padding(.horizontal, Theme.Spacing.md)
+                .frame(height: 28)
+                .listRowInsets(
+                    EdgeInsets(
+                        top: 2, leading: Theme.Spacing.sm, bottom: 2,
+                        trailing: Theme.Spacing.sm))
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
         } else {
             let selected = tab.id == workspace.tabs.activeTabID
             HStack(spacing: Theme.Spacing.md) {
@@ -148,9 +155,8 @@ struct WorkspaceSidebar: View {
                 }
             }
             .padding(.horizontal, Theme.Spacing.md)
-            .padding(.vertical, Theme.Spacing.sm)
-            // The fill goes on the content, not on the row: a highlight that reached the row's edges would be
-            // drawing a boundary, and a tab's boundary is not a thing the selection has an opinion about.
+            .frame(height: 28)
+            // The fill is centered inside the row with symmetric margins matching the profile row.
             .background(
                 selected ? Theme.Colors.selectionFill : Color.clear,
                 in: .rect(cornerRadius: Theme.Radius.control))
@@ -162,13 +168,12 @@ struct WorkspaceSidebar: View {
             .onTapGesture { workspace.selectTab(tab.id) }
             .simultaneousGesture(TapGesture(count: 2).onEnded { workspace.beginRename(tab.id) })
             .onHover { inside in workspace.setTabHovered(tab.id, inside) }
-            // The highlight *is* the row, so how wide it is is decided by the row's inset — and the list's
-            // own inset has to be pulled back with a negative one to reach past it. The label then carries
-            // the padding that keeps the text off the edge of the fill.
             .listRowInsets(
                 EdgeInsets(
-                    top: 0, leading: -Theme.Size.sidebarRowBleed, bottom: 0,
-                    trailing: -Theme.Size.sidebarRowBleed))
+                    top: 2, leading: Theme.Spacing.sm, bottom: 2,
+                    trailing: Theme.Spacing.sm))
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
             .contextMenu {
                 Button(tab.isPinned ? "Unpin Tab" : "Pin Tab") {
                     workspace.setPinned(!tab.isPinned, for: tab.id)

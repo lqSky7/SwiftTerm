@@ -25,6 +25,7 @@ enum ChromeSettingsTest {
         everyMaterialArrivesVisible(harness)
         theTwoSurfacesAreIndependent(harness)
         theTextSizeIsClamped(harness)
+        theUserName(harness)
         theAppearanceModes(harness)
         thePanelFillsWhatIsLeft(harness)
 
@@ -259,6 +260,28 @@ enum ChromeSettingsTest {
         harness.expect(
             ChromeSettings.lineHeightRatioRange.lowerBound < 1.19,
             "the range reaches below a font's natural leading")
+    }
+
+    /// The name on the profile page, which is also the name in the sidebar.
+    private static func theUserName(_ harness: Harness) {
+        var settings = ChromeSettings()
+        harness.equal(settings.userName, "CoolUser", "a fresh install is a CoolUser")
+        harness.equal(settings.avatarPath, nil, "with no picture until one is chosen")
+
+        // **An empty name is refused rather than stored.** It would leave the sidebar with a blank row and the page with
+        // nothing on it, which is worse than not being able to clear it.
+        settings.setUserName("")
+        harness.equal(settings.userName, "CoolUser", "clearing the name falls back to the default")
+        settings.setUserName("   ")
+        harness.equal(settings.userName, "CoolUser", "and so does a name that is only spaces")
+
+        settings.setUserName("  Ada Lovelace  ")
+        harness.equal(settings.userName, "Ada Lovelace", "a real name is trimmed and kept")
+
+        settings.setAvatarPath("/tmp/me.png")
+        harness.equal(settings.avatarPath, "/tmp/me.png", "and the picture is a path")
+        settings.setAvatarPath(nil)
+        harness.equal(settings.avatarPath, nil, "which can be cleared again")
     }
 
     /// The appearance selector: three names, a default that has no opinion, and no two of them the same.

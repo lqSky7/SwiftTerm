@@ -130,7 +130,9 @@ in completion's case no file system either:
 | --- | --- |
 | `ShellTokenizer.swift` | a command line as flat, non-overlapping spans: command, argument, flag, string, variable, redirect, control, comment |
 | `CommandResolver.swift` | whether the first word of a command could actually run — three-valued, because aliases are not captured yet |
-| `Completion.swift` | candidates from history, paths and a signature table, plus the ghost text |
+| `FuzzyMatcher.swift` | pure Swift subsequence fuzzy matching with boundary, prefix, and consecutive bonuses, plus smart-case |
+| `Completion.swift` | candidates from top 50+ signatures, local paths, and history, plus ghost text |
+| `CompletionMenu.swift` | windowed selection model and state for the completion popover |
 | `CommandSubmission.swift` | the bytes a submitted buffer becomes: the `" " VT NAK` prefix, and newlines escaped into continuations |
 
 Two rules worth knowing before changing any of them:

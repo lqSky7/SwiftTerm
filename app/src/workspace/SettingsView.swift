@@ -73,7 +73,9 @@ struct MaterialBackground: View {
 ///
 /// The column is a **ceiling rather than a width** (`maxWidth`): a window dragged narrow shrinks the page
 /// instead of cutting the right-hand side off it, which is what a fixed width did.
-private struct SettingsPage<Content: View>: View {
+/// Not `private`: the profile page is built from the same chrome — the top bar with the way back, the surface, the
+/// margins — and a second implementation of that would be a second place that knows what a page looks like.
+struct SettingsPage<Content: View>: View {
     let title: String
     /// The root page has nothing behind it, so it has no way back — a chevron that does nothing is worse
     /// than no chevron.
