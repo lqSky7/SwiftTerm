@@ -1,0 +1,168 @@
+import AppKit
+
+/// The menu bar.
+///
+/// Every item targets `nil`, which is what routes it down the responder chain to the terminal. A
+/// menu item wired straight to an object would work until there is a second window; one that walks
+/// the chain keeps working.
+@MainActor
+enum AppMenus {
+    static func install() {
+        let mainMenu = NSMenu()
+        mainMenu.addItem(appMenu())
+        mainMenu.addItem(fileMenu())
+        mainMenu.addItem(editMenu())
+        mainMenu.addItem(viewMenu())
+        mainMenu.addItem(windowMenu())
+        NSApp.mainMenu = mainMenu
+        NSApp.windowsMenu = mainMenu.item(at: 4)?.submenu
+    }
+
+    private static var applicationName: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? "swiftTerm"
+    }
+
+    /// Tabs and panes, which is what a file is in an app whose documents are shells.
+    ///
+    /// `Close Pane` is `⌘W` rather than closing the window, and the window's own close moved to `⇧⌘W`:
+    /// with more than one pane on screen, the thing a person means by "close this" is the thing they
+    /// are looking at, and closing the window is the rarer intent.
+    private static func fileMenu() -> NSMenuItem {
+        let menu = NSMenu(title: "File")
+        menu.addItem(item("New Tab", #selector(TerminalWindowController.newTab(_:)), key: "t"))
+        menu.addItem(item("Close Pane", #selector(TerminalWindowController.closePane(_:)), key: "w"))
+        menu.addItem(.separator())
+        menu.addItem(item("Split Right", #selector(TerminalWindowController.splitRight(_:)), key: "d"))
+        menu.addItem(
+            item(
+                "Split Down", #selector(TerminalWindowController.splitDown(_:)), key: "d",
+                modifiers: [.command, .shift]))
+        return submenuItem("File", menu)
+    }
+
+    private static func appMenu() -> NSMenuItem {
+        let menu = NSMenu()
+        menu.addItem(
+            item("About \(applicationName)", #selector(NSApplication.orderFrontStandardAboutPanel(_:))))
+        menu.addItem(.separator())
+        // `⌘,`, which is where macOS puts it — and it opens a *tab*, not a window. A settings window
+        // would be a second place that knows what is open.
+        menu.addItem(
+            item("Settings…", #selector(TerminalWindowController.openSettings(_:)), key: ","))
+        menu.addItem(.separator())
+        menu.addItem(item("Hide \(applicationName)", #selector(NSApplication.hide(_:)), key: "h"))
+        let hideOthers = item(
+            "Hide Others", #selector(NSApplication.hideOtherApplications(_:)), key: "h",
+            modifiers: [.command, .option])
+        menu.addItem(hideOthers)
+        menu.addItem(item("Show All", #selector(NSApplication.unhideAllApplications(_:))))
+        menu.addItem(.separator())
+        menu.addItem(item("Quit \(applicationName)", #selector(NSApplication.terminate(_:)), key: "q"))
+        return submenuItem(applicationName, menu)
+    }
+
+    private static func editMenu() -> NSMenuItem {
+        let menu = NSMenu(title: "Edit")
+        // **Cut and Select All are the editor's, and only the editor's.** They were absent here, on the
+        // grounds that a block is the unit of selection — and the cost of that was that `⌘X` and `⌘A` did
+        // *nothing at all*, because a key equivalent with no menu item behind it is never matched: it
+        // reaches the view as a plain `keyDown`, and no view implements `⌘A`.
+        //
+        // Warp's answer is the same one, which is why both items carry the standard selectors: its
+        // `EditorAction::SelectAll` and `EditorAction::Cut` are actions of the *input editor*
+        // (`app/src/editor/view/mod.rs`), and there is no cut on the terminal at all — a terminal's grid is
+        // the shell's output, not a buffer anything can delete from.
+        //
+        // So these are `NSText`'s selectors, targeting `nil`, which routes them down the responder chain:
+        // with the editor focused, `NSTextView`'s own implementations run and the menu validates itself.
+        // With the surface focused, `TerminalSurfaceView`'s overrides run, and they say what "select all"
+        // means for a terminal — the block you are working in, never the whole scrollback.
+        menu.addItem(item("Cut", #selector(NSText.cut(_:)), key: "x"))
+        menu.addItem(item("Copy Output", #selector(TerminalSurfaceView.copy(_:)), key: "c"))
+        menu.addItem(
+            item(
+                "Copy Command", #selector(TerminalSurfaceView.copySelectedCommand(_:)), key: "c",
+                modifiers: [.command, .shift]))
+        menu.addItem(
+            item(
+                "Copy Working Directory",
+                #selector(TerminalSurfaceView.copySelectedWorkingDirectory(_:)), key: "c",
+                modifiers: [.command, .option]))
+        menu.addItem(item("Paste", #selector(TerminalSurfaceView.paste(_:)), key: "v"))
+        menu.addItem(item("Select All", #selector(NSText.selectAll(_:)), key: "a"))
+        menu.addItem(.separator())
+        menu.addItem(
+            item("Clear Scrollback", #selector(TerminalSurfaceView.clearScrollback(_:)), key: "k"))
+        return submenuItem("Edit", menu)
+    }
+
+    private static func viewMenu() -> NSMenuItem {
+        let menu = NSMenu(title: "View")
+        menu.addItem(
+            item(
+                "Bigger", #selector(TerminalSurfaceView.increaseFontSize(_:)), key: "+",
+                modifiers: [.command]))
+        menu.addItem(
+            item(
+                "Smaller", #selector(TerminalSurfaceView.decreaseFontSize(_:)), key: "-",
+                modifiers: [.command]))
+        menu.addItem(item("Actual Size", #selector(TerminalSurfaceView.resetFontSize(_:)), key: "0"))
+        menu.addItem(.separator())
+        // The title is set by the window controller's `validateMenuItem` — the item says what it will
+        // do, so it reads "Show Sidebar" once the sidebar is hidden.
+        menu.addItem(
+            item(
+                "Hide Sidebar", #selector(TerminalWindowController.toggleSidebar(_:)), key: "b",
+                modifiers: [.command, .shift]))
+        menu.addItem(.separator())
+        menu.addItem(
+            item(
+                "Next Tab", #selector(TerminalWindowController.selectNextTab(_:)), key: "]",
+                modifiers: [.command, .shift]))
+        menu.addItem(
+            item(
+                "Previous Tab", #selector(TerminalWindowController.selectPreviousTab(_:)), key: "[",
+                modifiers: [.command, .shift]))
+        menu.addItem(.separator())
+        menu.addItem(
+            item(
+                "Next Pane", #selector(TerminalWindowController.focusNextPane(_:)), key: "]",
+                modifiers: [.command, .option]))
+        menu.addItem(
+            item(
+                "Previous Pane", #selector(TerminalWindowController.focusPreviousPane(_:)), key: "[",
+                modifiers: [.command, .option]))
+        menu.addItem(.separator())
+        menu.addItem(
+            item(
+                "Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), key: "f",
+                modifiers: [.command, .control]))
+        return submenuItem("View", menu)
+    }
+
+    private static func windowMenu() -> NSMenuItem {
+        let menu = NSMenu(title: "Window")
+        menu.addItem(item("Minimize", #selector(NSWindow.performMiniaturize(_:)), key: "m"))
+        menu.addItem(item("Zoom", #selector(NSWindow.performZoom(_:))))
+        menu.addItem(.separator())
+        menu.addItem(
+            item(
+                "Close Window", #selector(NSWindow.performClose(_:)), key: "w",
+                modifiers: [.command, .shift]))
+        return submenuItem("Window", menu)
+    }
+
+    private static func item(
+        _ title: String, _ action: Selector, key: String = "", modifiers: NSEvent.ModifierFlags = .command
+    ) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+        if !key.isEmpty { item.keyEquivalentModifierMask = modifiers }
+        return item
+    }
+
+    private static func submenuItem(_ title: String, _ menu: NSMenu) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        item.submenu = menu
+        return item
+    }
+}
