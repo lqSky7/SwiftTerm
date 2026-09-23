@@ -66,6 +66,27 @@ struct TextSelection: Equatable {
         return from..<to
     }
 
+    /// The word a column is inside, as a half-open range of the line's characters.
+    ///
+    /// **A word is a run of non-blank characters, punctuation included.** That is what a terminal needs rather than a
+    /// text editor's rule: `--amend`, `~/Desktop/x.png` and `a|b` are each one thing to select, and a boundary rule
+    /// borrowed from prose would split every flag and every path at its punctuation.
+    ///
+    /// A column past the end of the text selects the last word rather than nothing, and a column on whitespace
+    /// selects that one cell — both of which are what clicking there looks like it should do.
+    static func wordRange(in text: String, atColumn column: Int) -> Range<Int> {
+        let characters = Array(text)
+        guard !characters.isEmpty else { return 0..<0 }
+        let index = min(max(0, column), characters.count - 1)
+        guard !characters[index].isWhitespace else { return index..<(index + 1) }
+
+        var start = index
+        while start > 0, !characters[start - 1].isWhitespace { start -= 1 }
+        var end = index
+        while end < characters.count, !characters[end].isWhitespace { end += 1 }
+        return start..<end
+    }
+
     /// The text of the selection.
     ///
     /// `line` answers a line's text for a (block, body line) and `height` says how many body lines a block has —

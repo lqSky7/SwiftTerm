@@ -11,6 +11,7 @@ enum TextSelectionTest {
         let harness = Harness("text-selection-test")
 
         itNormalisesADrag(harness)
+        itFindsTheWordUnderAColumn(harness)
         itCoversTheRightColumns(harness)
         itCopiesTheRightText(harness)
         itWalksAcrossBlocks(harness)
@@ -60,6 +61,28 @@ enum TextSelectionTest {
         harness.expect(
             point(0, 1, 40) < point(0, 2, 0), "but the next line is later than any column on this one")
         harness.expect(point(0, 9, 40) < point(1, 0, 0), "and the next block is later than this one")
+    }
+
+    /// A double-click takes the word, punctuation and all.
+    private static func itFindsTheWordUnderAColumn(_ harness: Harness) {
+        let line = "swift build --configuration release"
+        harness.equal(
+            TextSelection.wordRange(in: line, atColumn: 7), 6..<11, "a word in the middle")
+        harness.equal(
+            TextSelection.wordRange(in: line, atColumn: 12), 12..<27,
+            "a flag is one word, hyphen and all — a text editor's boundary rule would split it")
+        harness.equal(
+            TextSelection.wordRange(in: "cd ~/Desktop/x.png", atColumn: 6), 3..<18,
+            "and so is a path, slashes and all")
+
+        // Clicking on whitespace takes that cell rather than a neighbouring word.
+        harness.equal(
+            TextSelection.wordRange(in: line, atColumn: 5), 5..<6, "a space is its own single cell")
+        // And a click past the end takes the last word rather than nothing.
+        harness.equal(
+            TextSelection.wordRange(in: line, atColumn: 99), 28..<35, "past the end is the last word")
+        harness.equal(
+            TextSelection.wordRange(in: "", atColumn: 0), 0..<0, "an empty line has no word")
     }
 
     private static func itCoversTheRightColumns(_ harness: Harness) {

@@ -372,6 +372,9 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
         // *suggestion* is refreshed rather than dropped, because the history just grew by one and the newest
         // command is the one worth suggesting.
         closeCompletion()
+        // **New output invalidates a selection.** It was a range of a document that no longer exists — the rows have
+        // moved — so keeping it would highlight whatever text has slid into those cells, and ⌘C would copy that.
+        selection = nil
         // The shell can report a new `PATH` at any prompt, and both the resolver and the completion list are built
         // from it. Checked rather than rebuilt every time: `executableNames()` is a few thousand `stat` calls.
         if session.searchPath != lastSearchPath {
@@ -950,10 +953,23 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
         // click to this, and the hover control is a control rather than a click on the block.
         if let index, collapseIfAsked(atBlockIndex: index, event: event) { return }
 
-        // A new gesture starts a new selection, collapsed to the cell under the pointer. A *click* therefore leaves it
-        // empty and drawn as nothing, which is why this does not interfere with selecting a block below it — the
-        // selection only becomes visible once a drag moves it.
-        selection = selectionPoint(atViewPoint: point).map { TextSelection(anchor: $0, focus: $0) }
+        // **⇧ extends the selection rather than starting a new one**, which is how every list and text view on the
+        // platform behaves and the only way to reach a range with two clicks.
+        if event.modifierFlags.contains(.shift), let existing = selection,
+            let end = selectionPoint(atViewPoint: point)
+        {
+            selection = TextSelection(anchor: existing.anchor, focus: end)
+            needsDisplay = true
+            return
+        }
+
+        // A double-click takes the **word** under the pointer; a single one starts a selection collapsed to the cell,
+        // which a click leaves empty and drawn as nothing — so this does not interfere with selecting a block below
+        // it, and the selection only becomes visible once a drag moves it.
+        selection =
+            event.clickCount == 2
+            ? selectionPoint(atViewPoint: point).flatMap(wordSelection(at:))
+            : selectionPoint(atViewPoint: point).map { TextSelection(anchor: $0, focus: $0) }
 
         // A click on the block being typed belongs to the editor.
         //
@@ -982,6 +998,19 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
         syncFirstResponder()
     }
 
+    /// The word under a point, as a selection of that word alone.
+    private func wordSelection(at point: TextSelection.Point) -> TextSelection? {
+        guard session.blocks.indices.contains(point.blockIndex),
+            let text = session.blocks[point.blockIndex].bodyLineText(point.bodyLine)
+        else { return nil }
+        let range = TextSelection.wordRange(in: text, atColumn: point.column)
+        return TextSelection(
+            anchor: TextSelection.Point(
+                blockIndex: point.blockIndex, bodyLine: point.bodyLine, column: range.lowerBound),
+            focus: TextSelection.Point(
+                blockIndex: point.blockIndex, bodyLine: point.bodyLine, column: range.upperBound))
+    }
+
     /// Fold on a double-click, unfold on a click. Answers whether the click was this.
     ///
     /// **Only a single click expands.** Collapsing needs the double-click, because a single click is also how a block
@@ -990,6 +1019,13 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
     /// second folds it — which is the direction the user was going in anyway.
     private func collapseIfAsked(atBlockIndex index: Int, event: NSEvent) -> Bool {
         let block = session.blocks[index]
+        // **Only on the header.** A double-click in the body is the platform's "select this word", and a terminal
+        // that folded a block instead would be a terminal whose text could not be selected the way every other text
+        // on the system is. The header is the block's own chrome and has no text worth selecting.
+        if let entry = layout.entries.first(where: { $0.blockIndex == index }) {
+            let documentY = viewportTop + (bounds.maxY - event.locationInWindow.y)
+            guard documentY < entry.contentTop else { return false }
+        }
         if block.isCollapsed, event.clickCount == 1 {
             block.toggleCollapsed()
             needsDisplay = true
