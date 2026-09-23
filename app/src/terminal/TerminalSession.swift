@@ -52,6 +52,26 @@ final class TerminalSession {
     /// Whether a command is running. See `BlockList.isRunningCommand`.
     var isRunningCommand: Bool { blockList.isRunningCommand }
 
+    /// Whether the **shell's** cursor is the one to show, leaving aside who has the keyboard.
+    ///
+    /// The model half of `TerminalSurfaceView.shouldDrawGridCursor`, and it lives here so a harness can hold it: the
+    /// view adds "does this view have the keyboard", and everything else is a fact about the session.
+    ///
+    /// Two states where the shell's cursor is right, and one where it never is:
+    ///
+    /// - A full-screen program is running. `nano` and `opencode` draw their own cursor and expect the terminal to show
+    ///   it, in the shape they asked for with `DECSCUSR`.
+    /// - The shell has never reported a prompt, so there is no integration and the grid *is* the prompt. Hiding the
+    ///   cursor there would leave a terminal with no cursor at all.
+    /// - **A command that is running.** It is not waiting for input, and the cursor the shell left at the end of its
+    ///   output is noise. This is the block cursor that used to flash over `Building for production.` for as long as a
+    ///   build took.
+    var showsShellCursor: Bool {
+        if isAlternateScreen { return true }
+        if isRunningCommand { return false }
+        return !blocks.contains { $0.headerGrid.promptEnd != nil }
+    }
+
     /// The `PATH` the shell last reported, or nil before it has reported one.
     ///
     /// The **shell's**, not the app's. Opened from the Finder the app inherits launchd's
@@ -328,11 +348,14 @@ final class TerminalSession {
             self.title = title
         case .workingDirectoryChanged(let path):
             workingDirectory = path
+            // **The block's directory, not the session's.** Both, and this line is why: it was left behind in the
+            // `searchPathChanged` case below when that case was added, so every block's header showed the shell's
+            // `PATH` where its directory should be.
+            blockList.setWorkingDirectory(path)
         case .searchPathChanged(let path):
             // Reported on every prompt, so a `PATH=` in an rc file or an exported one is picked up without anything
             // having to watch for it.
             searchPath = path
-            blockList.setWorkingDirectory(path)
         case .commandSubmitted(let command):
             reportedCommand = command
         case .shellIntegration(let marker):

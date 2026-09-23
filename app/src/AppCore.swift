@@ -39,6 +39,9 @@ final class AppCore {
     /// coalesces its own. The two drags are the exception and say so where they are.
     @ObservationIgnored private let store = SettingsStore()
 
+    /// Where the window's shape is kept between launches.
+    @ObservationIgnored private let sessionStore = SessionSnapshotStore()
+
     init() {
         let document = store.load()
         chrome = document.synced.chrome
@@ -96,7 +99,7 @@ final class AppCore {
 
         let windowController = TerminalWindowController()
         self.windowController = windowController
-        openTab()
+        restoreSession()
         // Before the window is shown, so the first pane is the active one when its surface arrives
         // in the window — that is the moment the surface claims the keyboard for itself.
         syncActivePane()
@@ -112,6 +115,9 @@ final class AppCore {
     /// outlive the window they were started from — and with more than one pane there is more than
     /// one shell to tell.
     func terminate() {
+        // **Written first**, because it is a description of a window that is about to stop existing — and because
+        // `tabs` is cleared two lines down, after which there is nothing left to describe.
+        saveSession()
         for coordinator in coordinators.values { coordinator.shutdown() }
         coordinators.removeAll()
         tabs = TabList()
@@ -442,11 +448,41 @@ final class AppCore {
         coordinators[pane] = makeCoordinator(in: windowController)
     }
 
-    private func makeCoordinator(in windowController: TerminalWindowController)
-        -> TerminalCoordinator
-    {
+    /// Put back what was open last time, or open one tab if there was nothing.
+    ///
+    /// **The directories come back with it.** A restored layout with every shell in the home directory is a window that
+    /// looks right and is useless, which is why the snapshot records them and why this hands each one to the
+    /// coordinator that starts its shell.
+    private func restoreSession() {
+        guard let windowController else { return }
+        var restored = tabs
+        let panes = sessionStore.load().restore(into: &restored)
+        guard !panes.isEmpty else {
+            // Nothing to restore — a first launch, or a snapshot that could not be read. One tab, as ever.
+            openTab()
+            return
+        }
+        tabs = restored
+        for (pane, directory) in panes {
+            coordinators[pane] = makeCoordinator(in: windowController, startingDirectory: directory)
+        }
+        afterStructuralChange()
+    }
+
+    /// Write down what is open, so the next launch can put it back.
+    private func saveSession() {
+        sessionStore.save(
+            SessionSnapshot(tabs: tabs) { [weak self] pane in
+                self?.coordinators[pane]?.session?.workingDirectory
+            })
+    }
+
+    private func makeCoordinator(
+        in windowController: TerminalWindowController, startingDirectory: String? = nil
+    ) -> TerminalCoordinator {
         let coordinator = TerminalCoordinator(
-            contentSize: paneContentSize(for: windowController.terminalContentSize))
+            contentSize: paneContentSize(for: windowController.terminalContentSize),
+            startingDirectory: startingDirectory)
         // Before it is shown, so a new pane never draws a frame at a different opacity or in a different
         // palette than the one beside it.
         coordinator.setAppearanceMode(chrome.appearanceMode)

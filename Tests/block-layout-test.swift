@@ -15,6 +15,7 @@ enum BlockLayoutTest {
         headerPositions(harness)
         shortDocument(harness)
         theGapBelowEachBlock(harness)
+        thePinnedBlock(harness)
         chipRow(harness)
 
         harness.finish()
@@ -189,6 +190,69 @@ enum BlockLayoutTest {
         harness.equal(
             two.entries[0].bottom, two.entries[1].headerTop,
             "the blocks tile exactly: the gap belongs to the block above it, not to the space between them")
+    }
+
+    /// The block at the bottom does not scroll; everything above it does.
+    ///
+    /// Three *properties*, not three formulas — a formula restated is a test that passes because it was copied:
+    ///
+    /// - at rest, the bottom of the scrolling region is the top of the pinned block, so nothing is hidden under it;
+    /// - scrolled all the way back, the oldest block's top is the top of the scrolling region;
+    /// - the pinned block's bottom is on the view's bottom, at any scroll position and at any document length.
+    private static func thePinnedBlock(_ harness: Harness) {
+        // Three blocks, two lines each: header 10, content 20, no padding. Block 2 is the pinned one.
+        let layout = BlockLayout(
+            contributions: Array(repeating: (lineCount: 2, hasHeader: true), count: 3),
+            headerHeight: 10, lineHeight: 10)
+        harness.equal(layout.totalHeight, 90, "three blocks of thirty")
+        harness.equal(layout.pinnedEntry?.blockIndex, 2, "the pinned block is the last one")
+        harness.equal(layout.scrollableHeight, 60, "and everything above it is what scrolls")
+        harness.equal(layout.pinnedHeight, 30, "while the pinned block keeps its own height")
+
+        let height: CGFloat = 50
+        harness.equal(
+            layout.scrollableTop(scrollPosition: 0, viewportHeight: height)
+                + layout.scrollableViewportHeight(height),
+            layout.scrollableHeight,
+            "at rest the scrolling region ends exactly where the pinned block begins")
+        harness.equal(
+            layout.maximumScroll(viewportHeight: height), 40,
+            "and it can scroll by all of the content above the pinned block")
+        harness.equal(
+            layout.scrollableTop(scrollPosition: layout.maximumScroll(viewportHeight: height), viewportHeight: height),
+            0,
+            "scrolled all the way back, the oldest block is at the top of the scrolling region")
+
+        // **The pinned block does not move.** Its viewport top is a function of the view size and nothing else, so it
+        // is the same however far back the scrollback has gone — which is the whole point of pinning it.
+        harness.equal(
+            layout.pinnedViewportTop(viewportHeight: height) + height, layout.pinnedEntry?.bottom,
+            "the pinned block's bottom lands on the view's bottom")
+
+        // A document shorter than the view: nothing to scroll, and the pinned block still at the bottom. This is the
+        // state a fresh window opens in, so getting it wrong is a prompt that starts halfway up the screen.
+        let one = BlockLayout(
+            contributions: [(lineCount: 2, hasHeader: true)], headerHeight: 10, lineHeight: 10)
+        harness.equal(one.scrollableHeight, 0, "one block has nothing above it")
+        harness.equal(one.maximumScroll(viewportHeight: 100), 0, "so there is nowhere to scroll")
+        harness.equal(
+            one.pinnedViewportTop(viewportHeight: 100) + 100, one.pinnedEntry?.bottom,
+            "and it still sits on the view's bottom")
+
+        // **`scrollPosition(puttingTopAt:)` is the inverse of `scrollableTop`**, and asserting the round trip is
+        // stronger than asserting either formula: it is the property a block jump needs, and it fails the moment the
+        // two drift apart.
+        for target: CGFloat in [0, 20, 40, 60] {
+            let position = layout.scrollPosition(puttingTopAt: target, viewportHeight: height)
+            harness.equal(
+                layout.scrollableTop(scrollPosition: position, viewportHeight: height), target,
+                "putting the top at \(Int(target)) and asking where the top is agree")
+        }
+
+        // A view too short for the pinned block: the scrolling region collapses to nothing rather than going negative.
+        harness.equal(
+            layout.scrollableViewportHeight(10), 0,
+            "a view shorter than the pinned block leaves no scrolling region rather than a negative one")
     }
 
     private static func shortDocument(_ harness: Harness) {

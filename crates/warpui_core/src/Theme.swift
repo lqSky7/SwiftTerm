@@ -45,7 +45,9 @@ enum Theme {
         static let blockHeaderHeight: CGFloat = 26
         /// The row of context chips above a prompt. A fixed height like the header's, and for the same
         /// reason: it makes the document's geometry arithmetic rather than a measurement.
-        static let contextChipHeight: CGFloat = 24
+        /// Tall enough for the label to sit in a shape rather than in a line of text: the chips are the block's own
+        /// metadata and they were the smallest thing on screen.
+        static let contextChipHeight: CGFloat = 30
         /// The strip at the top of the window that still belongs to the *window*.
         ///
         /// The window is drawn with a full-size content view, which is what puts the traffic lights over

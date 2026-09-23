@@ -84,6 +84,62 @@ struct BlockLayout {
         totalHeight = top
     }
 
+    // MARK: - The pinned block
+
+    /// The block at the bottom, which does not scroll.
+    ///
+    /// **Warp keeps the block the input is in fixed at the bottom of the window and scrolls everything above it past
+    /// it.** Ours scrolled the whole document together, so scrolling back took the prompt off the bottom of the
+    /// screen — the one thing you always want to see.
+    ///
+    /// The last entry is that block: it is where the shell is writing, and the moment it is submitted a new one takes
+    /// its place. Nothing has to be tracked to know which block it is.
+    var pinnedEntry: Entry? { entries.last }
+
+    /// The height of everything **above** the pinned block. This is what scrolls.
+    var scrollableHeight: CGFloat { pinnedEntry?.headerTop ?? totalHeight }
+
+    /// The height the pinned block occupies, which the viewport has to leave room for.
+    ///
+    /// Its own height including its bottom padding, so the pinned block's bottom lands exactly on the view's bottom —
+    /// the same place it sits when nothing is scrolled.
+    var pinnedHeight: CGFloat { pinnedEntry.map { $0.bottom - $0.headerTop } ?? 0 }
+
+    /// How tall the scrolling region is, once the pinned block has its room.
+    func scrollableViewportHeight(_ viewportHeight: CGFloat) -> CGFloat {
+        max(0, viewportHeight - pinnedHeight)
+    }
+
+    /// Where the top of the scrolling region sits in the document.
+    ///
+    /// At `scrollPosition == 0` this is the pinned block's top: the scrolling region shows the *bottom* of what is
+    /// above the pinned block, which is the state the window opens in.
+    func scrollableTop(scrollPosition: CGFloat, viewportHeight: CGFloat) -> CGFloat {
+        scrollableHeight - scrollPosition - scrollableViewportHeight(viewportHeight)
+    }
+
+    /// The scroll position that puts a document position at the top of the scrolling region.
+    ///
+    /// **The inverse of `scrollableTop`**, and it lives here rather than in the view for the reason the rest of this
+    /// does: a block jump that computed its own offset would use the whole document's height and land in the wrong
+    /// place — while ordinary scrolling, which goes through `scrollableTop`, stayed correct. Two copies of one piece
+    /// of arithmetic is how that happens.
+    func scrollPosition(puttingTopAt documentY: CGFloat, viewportHeight: CGFloat) -> CGFloat {
+        scrollableHeight - documentY - scrollableViewportHeight(viewportHeight)
+    }
+
+    /// How far back the scrolling region can go before the oldest block is at its top.
+    func maximumScroll(viewportHeight: CGFloat) -> CGFloat {
+        max(0, scrollableHeight - scrollableViewportHeight(viewportHeight))
+    }
+
+    /// The viewport top that puts the pinned block's bottom on the view's bottom.
+    ///
+    /// A constant for a given viewport size, which is the whole point: the pinned block does not move.
+    func pinnedViewportTop(viewportHeight: CGFloat) -> CGFloat {
+        (pinnedEntry?.bottom ?? 0) - viewportHeight
+    }
+
     /// The entries a viewport touches, in document order.
     ///
     /// A linear scan rather than a binary search: the list is bounded by the scrollback cap, the

@@ -357,7 +357,9 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
         let x = Theme.Size.terminalContentInset + CGFloat(promptEnd.column) * font.cellWidth
         // Document coordinates run down from the top; this view is y-up, so the frame's origin is
         // the region's bottom edge.
-        let originY = bounds.maxY - (top + height - viewportTop)
+        // The editor is on the *pinned* block by definition — it is the block being typed into — so it is placed
+        // against that viewport rather than the scrolling one.
+        let originY = bounds.maxY - (top + height - pinnedViewportTop)
         let width = max(font.cellWidth, bounds.width - x - Theme.Size.terminalContentInset)
         editor.frame = NSRect(x: x, y: originY, width: width, height: height)
         editor.isHidden = false
@@ -500,15 +502,9 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
     /// block drew a block cursor over a prompt that already had the editor's caret, and running a command flashed
     /// one over its own output.
     private var shouldDrawGridCursor: Bool {
-        guard window?.firstResponder === self else { return false }
-        if session.isAlternateScreen { return true }
-        // **A running command is the case this exists for.** Asked directly, rather than inferred from whether a
-        // prompt marker has been seen: `bash build-app.sh` is running, its output is arriving, and the cursor the
-        // shell left in the middle of `Building for production.` was being drawn over it. A command that is running
-        // is not waiting for input.
-        if session.isRunningCommand { return false }
-        // No integration means the grid *is* the prompt, so it keeps its cursor.
-        return !session.blocks.contains { $0.headerGrid.promptEnd != nil }
+        // The keyboard first, then the session's own answer — which is harnessed, because every time this rule was
+        // reasoned about rather than asserted it was wrong.
+        window?.firstResponder === self && session.showsShellCursor
     }
 
     /// Whether a prompt is showing that the editor can own: not a full-screen program, not a
@@ -657,7 +653,9 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
             let promptEnd = session.activeBlock?.headerGrid.promptEnd
         else { return NSPoint(x: Theme.Size.terminalContentInset, y: bounds.midY) }
         let documentY = entry.contentTop + CGFloat(promptEnd.line) * renderer.font.cellHeight
-        return NSPoint(x: Theme.Size.terminalContentInset, y: bounds.maxY - (documentY - viewportTop))
+        // Anchored to the pinned block, for the same reason the editor is: the list belongs to the line being typed.
+        return NSPoint(
+            x: Theme.Size.terminalContentInset, y: bounds.maxY - (documentY - pinnedViewportTop))
     }
 
     /// The engine, built for one Tab.
@@ -719,18 +717,38 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
 
     /// The top of the viewport, in document coordinates. Negative when the document is shorter than
     /// the window, which is what anchors a short document to the bottom.
+    /// Where the **scrolling region** starts in the document.
+    ///
+    /// Not `totalHeight - scrollPosition - bounds.height` any more: the pinned block at the bottom does not scroll, so
+    /// the region that does is the view's height *minus* the pinned block's, and it shows the document above it.
     private var viewportTop: CGFloat {
-        layout.totalHeight - scrollPosition - bounds.height
+        layout.scrollableTop(scrollPosition: scrollPosition, viewportHeight: bounds.height)
+    }
+
+    /// The viewport top for the pinned block, which is where the input, the editor and the completion list all live.
+    ///
+    /// A constant for a given view size, which is the whole point: the block the shell is writing into does not move.
+    private var pinnedViewportTop: CGFloat {
+        layout.pinnedViewportTop(viewportHeight: bounds.height)
+    }
+
+    /// Whether a point in this view is over the pinned block rather than over the scrolling region above it.
+    private func isOverPinnedBlock(_ point: CGPoint) -> Bool {
+        point.y < bounds.minY + layout.pinnedHeight
     }
 
     private var maximumScroll: CGFloat {
-        max(0, layout.totalHeight - bounds.height)
+        layout.maximumScroll(viewportHeight: bounds.height)
     }
 
     /// The document position a point in the view sits at. The view is y-up and the document is
     /// y-down, so this is the one place the two are reconciled.
     private func documentY(atViewPoint point: NSPoint) -> CGFloat {
-        viewportTop + (bounds.maxY - point.y)
+        // **Which viewport depends on which region the point is in**, and this is the one place that decides. Every
+        // hit test goes through here — `blockIndex(atViewPoint:)`, `selectionPoint(atViewPoint:)` — so a click and a
+        // drag agree about where a row is without either of them knowing this changed.
+        let top = isOverPinnedBlock(point) ? pinnedViewportTop : viewportTop
+        return top + (bounds.maxY - point.y)
     }
 
     /// The block a point lands on: its header or its output.
@@ -904,7 +922,9 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
     /// Scrolls so that a block's header sits at the top of the viewport.
     private func scrollToBlock(at index: Int) {
         guard let top = layout.headerTop(ofBlock: index) else { return }
-        setScrollPosition(layout.totalHeight - top - bounds.height)
+        // Through the layout's own inverse rather than `totalHeight - top - bounds.height`: the pinned block does not
+        // scroll, so the document's full height is the wrong number to measure against.
+        setScrollPosition(layout.scrollPosition(puttingTopAt: top, viewportHeight: bounds.height))
     }
 
     /// The next header below the top of the viewport, or the previous one above it. Header positions
@@ -919,7 +939,7 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
             setScrollPosition(forward ? 0 : maximumScroll)
             return
         }
-        setScrollPosition(layout.totalHeight - target - bounds.height)
+        setScrollPosition(layout.scrollPosition(puttingTopAt: target, viewportHeight: bounds.height))
     }
 
     // MARK: - Selection
@@ -1023,7 +1043,11 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
         // that folded a block instead would be a terminal whose text could not be selected the way every other text
         // on the system is. The header is the block's own chrome and has no text worth selecting.
         if let entry = layout.entries.first(where: { $0.blockIndex == index }) {
-            let documentY = viewportTop + (bounds.maxY - event.locationInWindow.y)
+            // `locationInWindow` is not a coordinate in this view — the surface sits inside a panel inside a window —
+            // and `documentY(atViewPoint:)` is the one conversion that knows which viewport a point belongs to. Using
+            // the raw window y here meant the header test failed for every double-click, so collapsing stopped
+            // working from the body as well as from the header.
+            let documentY = documentY(atViewPoint: convert(event.locationInWindow, from: nil))
             guard documentY < entry.contentTop else { return false }
         }
         if block.isCollapsed, event.clickCount == 1 {
@@ -1043,8 +1067,12 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
     /// are reconciled for it, so the thing that is drawn and the thing that is clicked are the same rect.
     private func hoverControlRect(atBlockIndex index: Int) -> CGRect? {
         guard let entry = layout.entries.first(where: { $0.blockIndex == index }) else { return nil }
+        // **The entry's own viewport.** The pinned block's control is placed by a constant rather than by the scroll
+        // position, so testing it against the scrolling viewport drew the dots in one place and looked for the click
+        // in another — the control appeared and did nothing, which is exactly what was reported.
+        let top = entry.blockIndex == session.blocks.indices.last ? pinnedViewportTop : viewportTop
         return renderer.hoverControlRect(
-            top: renderer.screenY(entry.headerTop, viewportTop: viewportTop, bounds: bounds),
+            top: renderer.screenY(entry.headerTop, viewportTop: top, bounds: bounds),
             bounds: bounds)
     }
 
@@ -1413,7 +1441,12 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
     /// from, and a live-looking Cut that does nothing is the defect this menu was built to avoid.
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         switch menuItem.action {
-        case #selector(copy(_:)), #selector(copySelectedCommand(_:)),
+        case #selector(copy(_:)):
+            // **A text selection counts too.** This asked only about the selected *block*, so with text selected and
+            // no block selected the item was greyed out — and `⌘C` did nothing, which is the one case where it is
+            // worth pressing.
+            return selectedBlockID != nil || selection?.isEmpty == false
+        case #selector(copySelectedCommand(_:)),
             #selector(copySelectedOutput(_:)), #selector(copySelectedWorkingDirectory(_:)),
             #selector(scrollToSelectedBlock(_:)):
             return selectedBlockID != nil

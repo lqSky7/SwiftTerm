@@ -123,6 +123,38 @@ enum TerminalSessionTest {
         session.stop()
     }
 
+    /// Whether the shell's cursor is the one to show.
+    ///
+    /// **This rule was wrong twice while it was reasoned about rather than asserted**, and both times the symptom was
+    /// a block cursor flashing over output nobody could type into. So it is a fact about the session now, and it is
+    /// checked here.
+    private static func theShellsCursor(_ harness: Harness) {
+        var list = BlockList(size: TerminalSize(columns: 80, rows: 24))
+        _ = list.begin(at: Date(), workingDirectory: "/tmp")
+
+        // A shell that has never reported a prompt: there is no integration, so the grid *is* the prompt and it has to
+        // keep its cursor or the terminal has none at all.
+        harness.expect(
+            !list.blocks.contains { $0.headerGrid.promptEnd != nil },
+            "a session begins with no prompt reported")
+
+        // The prompt is drawn and the shell is reading a command: the editor is showing, so the *editor's* caret is
+        // the cursor. The shell's is not drawn.
+        list.markPromptEnd(line: 0, column: 4)
+        harness.expect(
+            list.blocks.contains { $0.headerGrid.promptEnd != nil },
+            "and reports one once the prompt is drawn")
+
+        // The command is running. This is the state that used to flash a block cursor over the build output: a command
+        // that is running is not waiting for input.
+        list.markCommandSubmitted(command: "swift build", at: Date())
+        harness.expect(list.isRunningCommand, "a submitted, unfinished command is running")
+
+        // And it stops being true the moment the command finishes.
+        list.finish(exitCode: 0, at: Date())
+        harness.expect(!list.isRunningCommand, "and it is not running once it has finished")
+    }
+
     /// Wait for the shell to report its own `PATH`, which its prompt hook does once per prompt.
     private static func waitForSearchPath(
         in session: TerminalSession, timeout: TimeInterval
@@ -148,6 +180,7 @@ enum TerminalSessionTest {
             return
         }
         harness.equal(session.shellType, .zsh, "the shell was recognised")
+        theShellsCursor(harness)
 
         // **The shell's own `PATH`, end to end against a real zsh** — the integration script emits `OSC 9282`, the
         // parser recognises it, the session keeps it. This is the one assertion that covers the whole chain, and it

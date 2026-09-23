@@ -34,9 +34,12 @@ final class TerminalCoordinator {
     /// Set by the window controller, which is the only thing that owns a window.
     @ObservationIgnored var onTitleChange: ((String) -> Void)?
 
+    /// `startingDirectory` is where the shell is started, which is a restored pane's recorded directory. Nil is the
+    /// home directory, which is where a new pane has always started.
     init(
         contentSize: CGSize, pointSize: CGFloat = Theme.Typography.terminalPointSize,
-        lineHeightRatio: CGFloat = Theme.Typography.lineHeightRatio
+        lineHeightRatio: CGFloat = Theme.Typography.lineHeightRatio,
+        startingDirectory: String? = nil
     ) {
         // Measured here rather than read back from the view so the shell is started at the size the
         // window already is. Starting at 80×24 and resizing on the first layout would make the
@@ -49,7 +52,8 @@ final class TerminalCoordinator {
             cellHeight: Int(font.cellHeight * 2))
 
         do {
-            let session = try TerminalSession(size: size)
+            let session = try TerminalSession(
+                size: size, homeDirectory: startingDirectory ?? NSHomeDirectory())
             let surface = TerminalSurfaceView(
                 session: session, pointSize: pointSize, lineHeightRatio: lineHeightRatio)
             self.session = session

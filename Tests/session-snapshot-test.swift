@@ -71,8 +71,10 @@ enum SessionSnapshotTest {
 
     private static func itKeepsTheWorkingDirectories(_ harness: Harness) {
         let (list, _, panes) = listWithThreePanes()
-        let directories = [panes[0]: "/Users/example/project", panes[1]: nil, panes[2]: "/tmp"]
-        let snapshot = SessionSnapshot(tabs: list, workingDirectory: { directories[$0] ?? nil })
+        // Typed as `[PaneID: String]` rather than with an explicit nil: the middle pane is *absent* from the map,
+        // which is the same thing as a pane that had no directory and does not need a double optional to say so.
+        let directories = [panes[0]: "/Users/example/project", panes[2]: "/tmp"]
+        let snapshot = SessionSnapshot(tabs: list, workingDirectory: { directories[$0] })
 
         var restored = TabList()
         let started = snapshot.restore(into: &restored)

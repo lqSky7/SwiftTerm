@@ -203,8 +203,10 @@ final class TerminalRenderer {
         let bottom = screenY(entry.chipTop + entry.chipHeight, viewportTop: viewportTop, bounds: bounds)
         guard bottom < bounds.maxY, top > bounds.minY else { return }
 
-        let padding = Theme.Spacing.md
-        let capsuleHeight = entry.chipHeight - Theme.Spacing.xs * 2
+        // More room inside than the label needs, and a corner that is *rounded* rather than a semicircle: a pill is
+        // what a status tag looks like, and these are labels with a value in them.
+        let padding = Theme.Spacing.lg
+        let chipHeight = entry.chipHeight - Theme.Spacing.xs * 2
         let originY = bottom + Theme.Spacing.xs
         var x = bounds.minX + contentInset
 
@@ -214,27 +216,28 @@ final class TerminalRenderer {
             // Off the end of the window: better to show three chips than to show three and a sliver.
             guard x + width <= bounds.maxX - contentInset else { return }
 
-            let capsule = CGRect(x: x, y: originY, width: width, height: capsuleHeight)
+            let chip = CGRect(x: x, y: originY, width: width, height: chipHeight)
             context.setFillColor(chipBackground.cgColor)
             context.addPath(
                 CGPath(
-                    roundedRect: capsule, cornerWidth: capsuleHeight / 2,
-                    cornerHeight: capsuleHeight / 2, transform: nil))
+                    roundedRect: chip, cornerWidth: Theme.Radius.control,
+                    cornerHeight: Theme.Radius.control, transform: nil))
             context.fillPath()
 
             draw(
                 label,
                 at: CGPoint(
-                    x: capsule.minX + padding,
-                    y: originY + (capsuleHeight - font.cellHeight) / 2 + font.cellHeight
+                    x: chip.minX + padding,
+                    y: originY + (chipHeight - font.cellHeight) / 2 + font.cellHeight
                         - font.baselineFromTop),
                 font: font.base, color: dimInk, in: context)
-            x = capsule.maxX + Theme.Spacing.sm
+            x = chip.maxX + Theme.Spacing.sm
         }
     }
 
-    /// The terminal's own ink, barely lifted — no colour enters the palette that was not in it. A chip
-    /// is a label, not a status: the block's status dot is where colour means something.
+    /// The terminal's own ink, barely lifted — no colour enters the palette that was not in it. A chip is a label,
+    /// not a status, so it is drawn in the terminal's own ink rather than in a colour that would have to mean
+    /// something.
     private var chipBackground: NSColor {
         palette.foreground.nsColor.withAlphaComponent(0.08)
     }
@@ -265,17 +268,113 @@ final class TerminalRenderer {
         // Where the top of the viewport sits in the document. Negative when the document is shorter
         // than the window, which is what anchors a short document to the bottom the way a terminal
         // should rather than to the top.
-        let viewportTop = layout.totalHeight - scrollPosition - bounds.height
-        let viewportBottom = viewportTop + bounds.height
+        // **Two viewports.** The scrolling region shows the blocks above the pinned one; the pinned block — the one
+        // the shell is writing into — is drawn against a constant viewport top that puts its bottom on the view's
+        // bottom. One `viewportTop` for both is what made the prompt scroll off the screen.
+        let scrollableTop = layout.scrollableTop(
+            scrollPosition: scrollPosition, viewportHeight: bounds.height)
+        let pinnedTop = layout.pinnedViewportTop(viewportHeight: bounds.height)
+        let pinnedIndex = session.blocks.indices.last
         let blocks = session.blocks
 
         invalidateCacheIfBlocksChanged(blocks)
 
-        let visible = layout.entries(intersecting: viewportTop, viewportBottom)
-        for entry in visible {
+        var visible = layout.entries(
+            intersecting: scrollableTop,
+            scrollableTop + layout.scrollableViewportHeight(bounds.height))
+        // The pinned block is visible whatever the scroll position — that is what pinning means — and it is not in
+        // the scrolling region's entries once anything is scrolled.
+        if let pinned = layout.pinnedEntry, !visible.contains(where: { $0.blockIndex == pinned.blockIndex }) {
+            visible.append(pinned)
+        }
+        // **The scrolling region is clipped to itself.** Nothing above the pinned block may be drawn *below* it: the
+        // pinned block paints no background of its own — the terminal paints one fill for the whole view — so scrolled
+        // content showed straight through it. Clipping is the honest fix rather than giving the pinned block a
+        // background: a background would hide the symptom while the block above was still drawn where it does not
+        // belong.
+        let scrollingRect = CGRect(
+            x: bounds.minX, y: bounds.minY + layout.pinnedHeight, width: bounds.width,
+            height: layout.scrollableViewportHeight(bounds.height))
+
+        context.saveGState()
+        context.clip(to: scrollingRect)
+        for entry in visible where entry.blockIndex != pinnedIndex {
             guard blocks.indices.contains(entry.blockIndex) else { continue }
             let block = blocks[entry.blockIndex]
-            let isSelected = block.id == selectedBlockID
+            drawEntry(
+                entry, block: block, viewportTop: scrollableTop,
+                isSelected: block.id == selectedBlockID, selection: selection,
+                hoveredBlockID: hoveredBlockID, chips: chips, bounds: bounds, in: context)
+        }
+        context.restoreGState()
+
+        // Then the pinned block, **outside that clip**: it is not in the scrolling region and must not be cut by it.
+        if let pinned = layout.pinnedEntry, blocks.indices.contains(pinned.blockIndex) {
+            let block = blocks[pinned.blockIndex]
+            drawEntry(
+                pinned, block: block, viewportTop: pinnedTop, isSelected: block.id == selectedBlockID,
+                selection: selection, hoveredBlockID: hoveredBlockID, chips: chips, bounds: bounds,
+                in: context)
+        }
+
+        // After the blocks, so a header's own background cannot cover the rule. Every boundary gets one
+        // except a boundary that separates nothing: `headerTop` is the sum of everything above, so a
+        // zero means every block above this one is empty — which is what a fresh terminal is, and a
+        // rule at the top of an empty screen is a line that separates nothing from nothing.
+        context.saveGState()
+        context.clip(to: scrollingRect)
+        for entry in visible where entry.headerTop > 0 && entry.blockIndex != pinnedIndex {
+            drawBlockSeparator(
+                above: entry, viewportTop: scrollableTop, bounds: bounds, in: context)
+        }
+        context.restoreGState()
+        if let pinned = layout.pinnedEntry, pinned.headerTop > 0 {
+            drawBlockSeparator(above: pinned, viewportTop: pinnedTop, bounds: bounds, in: context)
+        }
+
+        // `showsCursor` is not "is the view focused" — see `TerminalSurfaceView.shouldDrawGridCursor`. It is
+        // "is the shell's cursor the cursor the user should see", which is a narrower question with a narrower
+        // answer.
+        guard showsCursor, scrollPosition == 0, let activeIndex = blocks.indices.last else { return }
+        let entry = layout.entries.first { $0.blockIndex == activeIndex }
+        let grid = session.activeGrid
+        guard let entry, grid.cursorLine < entry.contentLineCount else { return }
+        let documentY = entry.contentTop + CGFloat(grid.cursorLine) * font.cellHeight
+        drawCursor(
+            in: context, grid: grid,
+            originX: bounds.minX + contentInset + CGFloat(grid.cursorColumn) * font.cellWidth,
+            // The cursor is on the active block, which is the pinned one, so it is measured against the pinned
+            // viewport like the rest of that block.
+            originY: screenY(documentY + font.cellHeight, viewportTop: pinnedTop, bounds: bounds),
+            markedText: markedText, blinkOn: cursorBlinkOn)
+    }
+
+    /// The block list is what decides which grids exist, so a change to it is the one thing that can
+    /// invalidate the cache wholesale. Rebuilt as a list rather than a set so it is a few comparisons
+    /// in document order, which is the order it is built in.
+    private func invalidateCacheIfBlocksChanged(_ blocks: [Block]) {
+        var identities: [ObjectIdentifier] = []
+        identities.reserveCapacity(blocks.count * 2)
+        for block in blocks {
+            for blockGrid in block.grids { identities.append(ObjectIdentifier(blockGrid.grid)) }
+        }
+        guard identities != cachedGrids else { return }
+        cachedGrids = identities
+        rowCache.removeAll()
+    }
+
+
+    /// One block's entry: its tints, its marks, its header, its hover control, its chips and its rows.
+    ///
+    /// Split out of the loop so the scrolling entries and the pinned one can be drawn in **two passes** — the first
+    /// clipped to the scrolling region and the second outside it. See `drawBlocks` for why that matters.
+    private func drawEntry(
+        _ entry: BlockLayout.Entry, block: Block, viewportTop: CGFloat, isSelected: Bool,
+        selection: TextSelection?, hoveredBlockID: BlockID?, chips: [ContextChip], bounds: CGRect,
+        in context: CGContext
+    ) {
+
+            let viewportBottom = viewportTop + bounds.height
 
             // **Under the text and over the tints**, which is the order the layers have to be in: a selection is
             // something the user made and it has to read as being *behind* the characters, or the glyphs it covers
@@ -355,46 +454,7 @@ final class TerminalRenderer {
                 }
                 rowOrigin += CGFloat(visibleGrid.lines) * font.cellHeight
             }
-        }
-
-        // After the blocks, so a header's own background cannot cover the rule. Every boundary gets one
-        // except a boundary that separates nothing: `headerTop` is the sum of everything above, so a
-        // zero means every block above this one is empty — which is what a fresh terminal is, and a
-        // rule at the top of an empty screen is a line that separates nothing from nothing.
-        for entry in visible where entry.headerTop > 0 {
-            drawBlockSeparator(
-                above: entry, viewportTop: viewportTop, bounds: bounds, in: context)
-        }
-
-        // `showsCursor` is not "is the view focused" — see `TerminalSurfaceView.shouldDrawGridCursor`. It is
-        // "is the shell's cursor the cursor the user should see", which is a narrower question with a narrower
-        // answer.
-        guard showsCursor, scrollPosition == 0, let activeIndex = blocks.indices.last else { return }
-        let entry = layout.entries.first { $0.blockIndex == activeIndex }
-        let grid = session.activeGrid
-        guard let entry, grid.cursorLine < entry.contentLineCount else { return }
-        let documentY = entry.contentTop + CGFloat(grid.cursorLine) * font.cellHeight
-        drawCursor(
-            in: context, grid: grid,
-            originX: bounds.minX + contentInset + CGFloat(grid.cursorColumn) * font.cellWidth,
-            originY: screenY(documentY + font.cellHeight, viewportTop: viewportTop, bounds: bounds),
-            markedText: markedText, blinkOn: cursorBlinkOn)
     }
-
-    /// The block list is what decides which grids exist, so a change to it is the one thing that can
-    /// invalidate the cache wholesale. Rebuilt as a list rather than a set so it is a few comparisons
-    /// in document order, which is the order it is built in.
-    private func invalidateCacheIfBlocksChanged(_ blocks: [Block]) {
-        var identities: [ObjectIdentifier] = []
-        identities.reserveCapacity(blocks.count * 2)
-        for block in blocks {
-            for blockGrid in block.grids { identities.append(ObjectIdentifier(blockGrid.grid)) }
-        }
-        guard identities != cachedGrids else { return }
-        cachedGrids = identities
-        rowCache.removeAll()
-    }
-
     /// A full-screen program owns the screen: no blocks, no headers, no scrollback.
     private func drawAlternateScreen(in context: CGContext, bounds: CGRect, grid: TerminalGrid) {
         for screenRow in 0..<grid.size.rows {
