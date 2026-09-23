@@ -215,6 +215,22 @@ enum VTParserTest {
         harness.expect(parser.grid.pen.attributes.flags.contains(.bold), "the escape that broke it still ran")
         harness.equal(parser.grid.rowText(0), "X", "and the string's contents never printed")
 
+        // **`clear` empties the screen and the blocks go with it** — but only on the primary screen.
+        parser.feed("\u{1B}[2J")
+        harness.equal(
+            events.last, .displayCleared,
+            "erasing the display reports that the session should drop the blocks above")
+        parser.feed("\u{1B}[3J")
+        harness.equal(events.last, .displayCleared, "and so does erasing the saved lines")
+
+        // A full-screen program erases the display on every repaint. Reporting that would be a terminal that forgot
+        // its scrollback whenever a TUI blinked, so the alternate screen is left alone.
+        parser.feed("\u{1B}[?1049h")
+        let before = events.count
+        parser.feed("\u{1B}[2J")
+        harness.equal(events.count, before, "an erase on the alternate screen reports nothing")
+        parser.feed("\u{1B}[?1049l")
+
         parser.feed("\u{1B}]9282;/opt/homebrew/bin:/usr/bin\u{07}")
         harness.equal(
             events.last, .searchPathChanged("/opt/homebrew/bin:/usr/bin"),

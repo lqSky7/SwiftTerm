@@ -352,6 +352,11 @@ final class TerminalSession {
             // `searchPathChanged` case below when that case was added, so every block's header showed the shell's
             // `PATH` where its directory should be.
             blockList.setWorkingDirectory(path)
+        case .displayCleared:
+            // `clear` — or anything else that erases the primary screen. The blocks that were on it go, and the block
+            // the command was typed into stays: the same thing `⌘K` does, because it is the same thing.
+            blockList.clearHistory()
+            routeToActiveGrid()
         case .searchPathChanged(let path):
             // Reported on every prompt, so a `PATH=` in an rc file or an exported one is picked up without anything
             // having to watch for it.

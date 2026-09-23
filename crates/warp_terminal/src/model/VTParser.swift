@@ -283,7 +283,20 @@ final class VTParser {
         case 0x48, 0x66:                                                    // CUP, HVP
             grid.setCursorPosition(row: value(0, 1), column: value(1, 1))
         case 0x49: repeatCount(value(0, 1)) { grid.horizontalTab() }        // CHT
-        case 0x4A: grid.eraseInDisplay(mode: value(0, 0))                   // ED
+        case 0x4A:                                                          // ED
+            let eraseMode = value(0, 0)
+            grid.eraseInDisplay(mode: eraseMode)
+            // **`clear`.** `CSI 2 J` empties the screen and `CSI 3 J` also drops the scrollback; in a terminal made of
+            // blocks the blocks that were on that screen are gone rather than scrolled away, which is what Warp does —
+            // running `clear` in Warp leaves one prompt and nothing above it.
+            //
+            // **Only on the primary screen.** A full-screen program erases the display constantly — `nano` on every
+            // repaint, `htop` on every refresh — and dropping the scrollback each time would be a terminal that forgot
+            // its history whenever a TUI blinked. The alternate screen is a program's own canvas, not the session's
+            // scrollback.
+            if (eraseMode == 2 || eraseMode == 3), !grid.isAlternateScreen {
+                onEvent?(.displayCleared)
+            }
         case 0x4B: grid.eraseInLine(mode: value(0, 0))                      // EL
         case 0x4C: grid.insertLines(value(0, 1))                            // IL
         case 0x4D: grid.deleteLines(value(0, 1))                            // DL

@@ -50,8 +50,8 @@ struct DirectoryEntry: Equatable {
 /// What a command's arguments look like.
 ///
 /// A table rather than a parser, because a table is content: adding `terraform` here is a line, not a
-/// feature. Warp ships 500+ of these in `command-signatures-v2`; this starts with a dozen and grows as
-/// commands turn out to matter.
+/// feature. Warp ships 500+ of these in `command-signatures-v2`; this provides the top 50+ common developer
+/// tools with flags, subcommands, descriptions and path behaviors.
 struct CommandSignature: Equatable {
     struct Flag: Equatable {
         var name: String
@@ -62,12 +62,14 @@ struct CommandSignature: Equatable {
     var flags: [Flag] = []
     /// Whether this command's arguments are usually file paths.
     var takesPaths = true
+    /// Whether this command only accepts directories (like cd).
+    var directoriesOnly = false
 
     static let table: [String: CommandSignature] = [
         "git": CommandSignature(
             subcommands: [
                 "add", "bisect", "blame", "branch", "checkout", "cherry-pick", "clone", "commit",
-                "diff", "fetch", "log", "merge", "pull", "push", "rebase", "reset", "restore",
+                "diff", "fetch", "init", "log", "merge", "pull", "push", "rebase", "remote", "reset", "restore",
                 "revert", "show", "stash", "status", "switch", "tag", "worktree",
             ],
             flags: [
@@ -77,12 +79,15 @@ struct CommandSignature: Equatable {
                 Flag(name: "--stat", description: "diffstat"),
                 Flag(name: "--hard", description: "discard working tree changes"),
                 Flag(name: "-b", description: "create a branch"),
+                Flag(name: "-m", description: "commit message"),
+                Flag(name: "-a", description: "stage all tracked modified files"),
+                Flag(name: "-p", description: "patch interactive mode"),
             ],
             takesPaths: true),
         "docker": CommandSignature(
             subcommands: [
                 "build", "compose", "container", "cp", "exec", "image", "images", "inspect", "logs",
-                "network", "ps", "pull", "push", "restart", "rm", "run", "start", "stop", "volume",
+                "network", "ps", "pull", "push", "restart", "rm", "rmi", "run", "start", "stop", "system", "volume",
             ],
             flags: [
                 Flag(name: "--detach", description: "run in the background"),
@@ -90,12 +95,15 @@ struct CommandSignature: Equatable {
                 Flag(name: "--name", description: "name the container"),
                 Flag(name: "--rm", description: "remove when it exits"),
                 Flag(name: "--volume", description: "mount a volume"),
+                Flag(name: "-it", description: "interactive tty"),
+                Flag(name: "-p", description: "publish a port"),
+                Flag(name: "-d", description: "detached mode"),
             ],
             takesPaths: true),
         "cargo": CommandSignature(
             subcommands: [
-                "add", "bench", "build", "check", "clean", "clippy", "doc", "fmt", "install", "new",
-                "publish", "remove", "run", "test", "tree", "update",
+                "add", "bench", "build", "check", "clean", "clippy", "doc", "fmt", "info", "init", "install", "new",
+                "publish", "remove", "run", "test", "tree", "update", "vendor",
             ],
             flags: [
                 Flag(name: "--all-features", description: "every feature"),
@@ -103,32 +111,403 @@ struct CommandSignature: Equatable {
                 Flag(name: "--release", description: "optimised build"),
                 Flag(name: "--target", description: "target triple"),
                 Flag(name: "--workspace", description: "the whole workspace"),
+                Flag(name: "-p", description: "package to run/build"),
+            ],
+            takesPaths: true),
+        "rustc": CommandSignature(
+            subcommands: [],
+            flags: [
+                Flag(name: "--edition", description: "Rust edition"),
+                Flag(name: "--emit", description: "output types to produce"),
+                Flag(name: "--explain", description: "explain compiler error"),
+                Flag(name: "--opt-level", description: "optimization level"),
+                Flag(name: "--target", description: "target architecture"),
+                Flag(name: "-g", description: "debug info"),
+                Flag(name: "-O", description: "optimize output"),
+                Flag(name: "-v", description: "verbose"),
             ],
             takesPaths: true),
         "npm": CommandSignature(
             subcommands: [
-                "ci", "dedupe", "exec", "init", "install", "link", "outdated", "publish", "run",
-                "test", "uninstall", "update", "view", "why",
+                "ci", "dedupe", "exec", "fund", "init", "install", "link", "ls", "outdated", "publish", "run",
+                "start", "test", "uninstall", "update", "version", "view", "why",
             ],
             flags: [
                 Flag(name: "--global", description: "install globally"),
                 Flag(name: "--save-dev", description: "as a dev dependency"),
                 Flag(name: "--workspace", description: "a workspace"),
+                Flag(name: "-D", description: "save dev dependency"),
+                Flag(name: "-g", description: "global"),
             ],
             takesPaths: true),
+        "pnpm": CommandSignature(
+            subcommands: [
+                "add", "audit", "build", "create", "dlx", "exec", "import", "init", "install", "link",
+                "list", "outdated", "patch", "publish", "remove", "run", "test", "update", "why",
+            ],
+            flags: [
+                Flag(name: "-D", description: "save as dev dependency"),
+                Flag(name: "-g", description: "global"),
+                Flag(name: "-r", description: "recursive across workspace"),
+                Flag(name: "--filter", description: "filter by package"),
+            ],
+            takesPaths: true),
+        "yarn": CommandSignature(
+            subcommands: [
+                "add", "audit", "build", "cache", "config", "create", "dedupe", "info", "init", "install",
+                "link", "list", "outdated", "publish", "remove", "run", "test", "unlink", "upgrade", "why", "workspace",
+            ],
+            flags: [
+                Flag(name: "--dev", description: "save dev dependency"),
+                Flag(name: "-D", description: "save dev dependency"),
+                Flag(name: "--cwd", description: "working directory"),
+            ],
+            takesPaths: true),
+        "bun": CommandSignature(
+            subcommands: [
+                "add", "build", "create", "dev", "init", "install", "link", "pm", "remove", "run", "test", "unlink", "update", "upgrade", "x",
+            ],
+            flags: [
+                Flag(name: "-d", description: "save dev dependency"),
+                Flag(name: "-g", description: "global"),
+                Flag(name: "--watch", description: "watch mode"),
+                Flag(name: "--hot", description: "hot reload"),
+            ],
+            takesPaths: true),
+        "go": CommandSignature(
+            subcommands: [
+                "build", "clean", "doc", "env", "fix", "fmt", "generate", "get", "install", "list", "mod", "run", "test", "tool", "version", "vet", "work",
+            ],
+            flags: [
+                Flag(name: "-v", description: "verbose"),
+                Flag(name: "-race", description: "enable data race detection"),
+                Flag(name: "-o", description: "output file"),
+            ],
+            takesPaths: true),
+        "python": CommandSignature(
+            subcommands: [],
+            flags: [
+                Flag(name: "-m", description: "run library module"),
+                Flag(name: "-c", description: "execute program passed as string"),
+                Flag(name: "-v", description: "verbose"),
+                Flag(name: "-V", description: "print python version"),
+                Flag(name: "-i", description: "inspect interactively after running script"),
+                Flag(name: "-u", description: "unbuffered binary stdout and stderr"),
+            ],
+            takesPaths: true),
+        "python3": CommandSignature(
+            subcommands: [],
+            flags: [
+                Flag(name: "-m", description: "run library module"),
+                Flag(name: "-c", description: "execute program passed as string"),
+                Flag(name: "-v", description: "verbose"),
+                Flag(name: "-V", description: "print python version"),
+                Flag(name: "-i", description: "inspect interactively after running script"),
+                Flag(name: "-u", description: "unbuffered binary stdout and stderr"),
+            ],
+            takesPaths: true),
+        "node": CommandSignature(
+            subcommands: [],
+            flags: [
+                Flag(name: "-e", description: "evaluate inline script"),
+                Flag(name: "-p", description: "evaluate and print"),
+                Flag(name: "--inspect", description: "activate inspector on host:port"),
+                Flag(name: "--watch", description: "watch mode"),
+                Flag(name: "--test", description: "built-in test runner"),
+                Flag(name: "-v", description: "print node version"),
+            ],
+            takesPaths: true),
+        "swift": CommandSignature(
+            subcommands: ["build", "format", "package", "run", "test", "repl"],
+            flags: [
+                Flag(name: "--configuration", description: "debug or release"),
+                Flag(name: "-c", description: "debug or release"),
+                Flag(name: "--disable-sandbox", description: "do not sandbox the build"),
+                Flag(name: "--target", description: "which target"),
+                Flag(name: "-v", description: "verbose"),
+            ],
+            takesPaths: true),
+        "make": CommandSignature(
+            subcommands: [],
+            flags: [
+                Flag(name: "-f", description: "file to use as Makefile"),
+                Flag(name: "-j", description: "number of parallel jobs"),
+                Flag(name: "-B", description: "unconditionally make all targets"),
+                Flag(name: "-C", description: "change directory"),
+                Flag(name: "-n", description: "dry run"),
+                Flag(name: "-s", description: "silent"),
+            ],
+            takesPaths: true),
+        "cmake": CommandSignature(
+            subcommands: [],
+            flags: [
+                Flag(name: "--build", description: "build binary directory"),
+                Flag(name: "--install", description: "install project"),
+                Flag(name: "-B", description: "build directory"),
+                Flag(name: "-S", description: "source directory"),
+                Flag(name: "-G", description: "generator name"),
+                Flag(name: "-D", description: "create or update cmake cache entry"),
+            ],
+            takesPaths: true),
+        "brew": CommandSignature(
+            subcommands: [
+                "autoremove", "cleanup", "config", "doctor", "info", "install", "leaves", "list",
+                "livecheck", "log", "outdated", "pin", "search", "services", "tap", "unpin",
+                "uninstall", "untap", "update", "upgrade", "uses",
+            ],
+            flags: [
+                Flag(name: "--cask", description: "an application"),
+                Flag(name: "--formula", description: "a formula"),
+                Flag(name: "--verbose", description: "verbose output"),
+                Flag(name: "-v", description: "verbose output"),
+            ],
+            takesPaths: false),
+        "curl": CommandSignature(
+            subcommands: [],
+            flags: [
+                Flag(name: "-X", description: "HTTP method"),
+                Flag(name: "-H", description: "custom header"),
+                Flag(name: "-d", description: "HTTP POST data"),
+                Flag(name: "-o", description: "write output to file"),
+                Flag(name: "-O", description: "write output to remote file name"),
+                Flag(name: "-s", description: "silent mode"),
+                Flag(name: "-S", description: "show error when -s is used"),
+                Flag(name: "-v", description: "verbose"),
+                Flag(name: "-u", description: "user:password authentication"),
+                Flag(name: "-L", description: "follow redirects"),
+                Flag(name: "-k", description: "allow insecure SSL connections"),
+                Flag(name: "-I", description: "show response headers only"),
+            ],
+            takesPaths: true),
+        "wget": CommandSignature(
+            subcommands: [],
+            flags: [
+                Flag(name: "-O", description: "output file"),
+                Flag(name: "-c", description: "continue getting partially-downloaded file"),
+                Flag(name: "-q", description: "quiet (no output)"),
+                Flag(name: "-r", description: "recursive download"),
+            ],
+            takesPaths: true),
+        "tar": CommandSignature(
+            subcommands: [],
+            flags: [
+                Flag(name: "-c", description: "create archive"),
+                Flag(name: "-x", description: "extract archive"),
+                Flag(name: "-t", description: "list contents of archive"),
+                Flag(name: "-v", description: "verbose"),
+                Flag(name: "-f", description: "archive file name"),
+                Flag(name: "-z", description: "filter through gzip"),
+                Flag(name: "-j", description: "filter through bzip2"),
+                Flag(name: "-C", description: "change directory"),
+            ],
+            takesPaths: true),
+        "ssh": CommandSignature(
+            subcommands: [],
+            flags: [
+                Flag(name: "-i", description: "identity file / private key"),
+                Flag(name: "-p", description: "port number"),
+                Flag(name: "-v", description: "verbose"),
+                Flag(name: "-N", description: "do not execute a remote command"),
+                Flag(name: "-L", description: "local port forward"),
+                Flag(name: "-R", description: "remote port forward"),
+                Flag(name: "-D", description: "dynamic SOCKS port forward"),
+            ],
+            takesPaths: true),
+        "scp": CommandSignature(
+            subcommands: [],
+            flags: [
+                Flag(name: "-r", description: "recursively copy entire directories"),
+                Flag(name: "-P", description: "port number"),
+                Flag(name: "-i", description: "identity file"),
+                Flag(name: "-C", description: "enable compression"),
+                Flag(name: "-v", description: "verbose"),
+            ],
+            takesPaths: true),
+        "rsync": CommandSignature(
+            subcommands: [],
+            flags: [
+                Flag(name: "-a", description: "archive mode"),
+                Flag(name: "-v", description: "verbose"),
+                Flag(name: "-z", description: "compress file data during transfer"),
+                Flag(name: "-P", description: "show progress during transfer"),
+                Flag(name: "--delete", description: "delete extraneous files from dest dirs"),
+                Flag(name: "--exclude", description: "exclude files matching pattern"),
+                Flag(name: "-n", description: "dry run"),
+            ],
+            takesPaths: true),
+        "find": CommandSignature(
+            subcommands: [],
+            flags: [
+                Flag(name: "-name", description: "match file name pattern"),
+                Flag(name: "-iname", description: "case-insensitive pattern match"),
+                Flag(name: "-type", description: "file type (f, d, l)"),
+                Flag(name: "-maxdepth", description: "descend at most N levels"),
+                Flag(name: "-exec", description: "execute command on matched files"),
+                Flag(name: "-delete", description: "delete matching files"),
+            ],
+            takesPaths: true),
+        "grep": CommandSignature(
+            subcommands: [],
+            flags: [
+                Flag(name: "--extended-regexp", description: "ERE"),
+                Flag(name: "--ignore-case", description: "case insensitive"),
+                Flag(name: "--line-number", description: "show line numbers"),
+                Flag(name: "--recursive", description: "descend directories"),
+                Flag(name: "-i", description: "case insensitive"),
+                Flag(name: "-v", description: "invert match"),
+                Flag(name: "-n", description: "show line numbers"),
+                Flag(name: "-r", description: "descend directories"),
+                Flag(name: "-l", description: "files with matches"),
+                Flag(name: "-E", description: "extended regex"),
+            ],
+            takesPaths: true),
+        "kill": CommandSignature(
+            subcommands: [],
+            flags: [
+                Flag(name: "-9", description: "SIGKILL"),
+                Flag(name: "-15", description: "SIGTERM"),
+                Flag(name: "-l", description: "list signal names"),
+            ],
+            takesPaths: false),
+        "ps": CommandSignature(
+            subcommands: [],
+            flags: [
+                Flag(name: "-a", description: "processes of other users too"),
+                Flag(name: "-u", description: "user-oriented format"),
+                Flag(name: "-x", description: "processes without controlling ttys"),
+                Flag(name: "-ef", description: "standard full listing format"),
+                Flag(name: "aux", description: "all running processes"),
+            ],
+            takesPaths: false),
+        "top": CommandSignature(
+            subcommands: [],
+            flags: [
+                Flag(name: "-o", description: "order by key (cpu, mem, pid)"),
+                Flag(name: "-s", description: "delay interval"),
+                Flag(name: "-u", description: "monitor by user"),
+            ],
+            takesPaths: false),
+        "htop": CommandSignature(
+            subcommands: [],
+            flags: [
+                Flag(name: "-d", description: "delay interval in tenths of second"),
+                Flag(name: "-u", description: "filter by user name"),
+                Flag(name: "-p", description: "show specified PIDs"),
+            ],
+            takesPaths: false),
+        "chmod": CommandSignature(
+            subcommands: [],
+            flags: [
+                Flag(name: "-R", description: "change files and directories recursively"),
+                Flag(name: "-v", description: "verbose output"),
+                Flag(name: "+x", description: "make executable"),
+                Flag(name: "-x", description: "remove execute permission"),
+                Flag(name: "755", description: "rwxr-xr-x"),
+                Flag(name: "644", description: "rw-r--r--"),
+                Flag(name: "600", description: "rw-------"),
+            ],
+            takesPaths: true),
+        "chown": CommandSignature(
+            subcommands: [],
+            flags: [
+                Flag(name: "-R", description: "recursively change ownership"),
+                Flag(name: "-v", description: "verbose"),
+            ],
+            takesPaths: true),
+        "cat": CommandSignature(
+            subcommands: [],
+            flags: [
+                Flag(name: "-n", description: "number all output lines"),
+                Flag(name: "-b", description: "number non-blank output lines"),
+                Flag(name: "-s", description: "squeeze consecutive blank lines"),
+            ],
+            takesPaths: true),
+        "head": CommandSignature(
+            subcommands: [],
+            flags: [
+                Flag(name: "-n", description: "number of lines"),
+                Flag(name: "-c", description: "number of bytes"),
+            ],
+            takesPaths: true),
+        "tail": CommandSignature(
+            subcommands: [],
+            flags: [
+                Flag(name: "-f", description: "follow file changes"),
+                Flag(name: "-n", description: "number of lines"),
+                Flag(name: "-c", description: "number of bytes"),
+            ],
+            takesPaths: true),
+        "env": CommandSignature(
+            subcommands: [],
+            flags: [
+                Flag(name: "-i", description: "start with empty environment"),
+                Flag(name: "-u", description: "unset environment variable"),
+            ],
+            takesPaths: false),
+        "export": CommandSignature(subcommands: [], flags: [Flag(name: "-p", description: "print exported variables")], takesPaths: false),
+        "source": CommandSignature(subcommands: [], flags: [], takesPaths: true),
+        "echo": CommandSignature(subcommands: [], flags: [Flag(name: "-n", description: "do not output trailing newline")], takesPaths: false),
+        "which": CommandSignature(subcommands: [], flags: [Flag(name: "-a", description: "list all instances of executables")], takesPaths: false),
         "kubectl": CommandSignature(
             subcommands: [
-                "apply", "config", "delete", "describe", "edit", "exec", "get", "logs", "port-forward",
-                "rollout", "scale", "top", "version",
+                "apply", "config", "create", "delete", "describe", "diff", "edit", "exec", "expose",
+                "get", "logs", "port-forward", "rollout", "run", "scale", "top", "version",
             ],
             flags: [
                 Flag(name: "--all-namespaces", description: "every namespace"),
+                Flag(name: "-A", description: "all namespaces"),
                 Flag(name: "--context", description: "which cluster"),
                 Flag(name: "--namespace", description: "which namespace"),
-                Flag(name: "--output", description: "output format"),
+                Flag(name: "-n", description: "namespace"),
+                Flag(name: "--output", description: "output format (yaml, json, wide)"),
+                Flag(name: "-o", description: "output format"),
                 Flag(name: "--watch", description: "stream changes"),
+                Flag(name: "-w", description: "watch"),
             ],
             takesPaths: true),
+        "gh": CommandSignature(
+            subcommands: [
+                "auth", "browse", "cache", "codespace", "gist", "issue", "org", "pr", "project",
+                "release", "repo", "run", "search", "secret", "ssh-key", "variable", "workflow",
+            ],
+            flags: [
+                Flag(name: "--help", description: "show help"),
+                Flag(name: "--version", description: "show version"),
+                Flag(name: "-R", description: "select repository using [HOST/]OWNER/REPO format"),
+            ],
+            takesPaths: true),
+        "aws": CommandSignature(
+            subcommands: [
+                "s3", "ec2", "lambda", "iam", "sts", "configure", "ecr", "eks", "dynamodb", "sqs", "sns", "rds", "cloudfront",
+            ],
+            flags: [
+                Flag(name: "--profile", description: "AWS CLI profile to use"),
+                Flag(name: "--region", description: "AWS region"),
+                Flag(name: "--output", description: "output format (json, text, table)"),
+            ],
+            takesPaths: true),
+        "terraform": CommandSignature(
+            subcommands: [
+                "apply", "destroy", "fmt", "get", "graph", "import", "init", "output", "plan",
+                "providers", "refresh", "show", "state", "validate", "version", "workspace",
+            ],
+            flags: [
+                Flag(name: "-auto-approve", description: "skip interactive approval"),
+                Flag(name: "-var", description: "set a variable"),
+                Flag(name: "-var-file", description: "set variables from an HCL file"),
+            ],
+            takesPaths: true),
+        "gcloud": CommandSignature(
+            subcommands: [
+                "auth", "compute", "container", "config", "projects", "iam", "logging", "run", "artifacts", "sql", "storage",
+            ],
+            flags: [
+                Flag(name: "--project", description: "Google Cloud project ID"),
+                Flag(name: "--account", description: "Google Cloud account"),
+                Flag(name: "--format", description: "output format"),
+            ],
+            takesPaths: true),
+        "cd": CommandSignature(subcommands: [], flags: [], takesPaths: true, directoriesOnly: true),
         "ls": CommandSignature(
             subcommands: [],
             flags: [
@@ -138,40 +517,85 @@ struct CommandSignature: Equatable {
                 Flag(name: "-a", description: "include dotfiles"),
                 Flag(name: "-h", description: "sizes people can read"),
                 Flag(name: "-l", description: "long format"),
+                Flag(name: "-t", description: "sort by modification time"),
+                Flag(name: "-r", description: "reverse sort"),
+                Flag(name: "-R", description: "recursive list"),
+                Flag(name: "-1", description: "one file per line"),
             ],
             takesPaths: true),
-        "cd": CommandSignature(subcommands: [], flags: [], takesPaths: true),
-        "grep": CommandSignature(
+        "mkdir": CommandSignature(
             subcommands: [],
             flags: [
-                Flag(name: "--extended-regexp", description: "ERE"),
-                Flag(name: "--ignore-case", description: "case insensitive"),
-                Flag(name: "--line-number", description: "show line numbers"),
-                Flag(name: "--recursive", description: "descend directories"),
-                Flag(name: "-i", description: "case insensitive"),
-                Flag(name: "-n", description: "show line numbers"),
-                Flag(name: "-r", description: "descend directories"),
+                Flag(name: "-p", description: "create intermediate parent directories"),
+                Flag(name: "-v", description: "verbose"),
+                Flag(name: "-m", description: "set file mode permissions"),
+            ],
+            takesPaths: true,
+            directoriesOnly: true),
+        "rmdir": CommandSignature(
+            subcommands: [],
+            flags: [
+                Flag(name: "-p", description: "remove directory and its ancestors"),
+            ],
+            takesPaths: true,
+            directoriesOnly: true),
+        "rm": CommandSignature(
+            subcommands: [],
+            flags: [
+                Flag(name: "-r", description: "remove directories and their contents recursively"),
+                Flag(name: "-R", description: "recursive remove"),
+                Flag(name: "-f", description: "ignore nonexistent files, force"),
+                Flag(name: "-rf", description: "force recursive remove"),
+                Flag(name: "-i", description: "prompt before every removal"),
+                Flag(name: "-v", description: "verbose"),
             ],
             takesPaths: true),
-        "make": CommandSignature(subcommands: [], flags: [], takesPaths: true),
-        "swift": CommandSignature(
-            subcommands: ["build", "format", "package", "run", "test"],
+        "cp": CommandSignature(
+            subcommands: [],
             flags: [
-                Flag(name: "--configuration", description: "debug or release"),
-                Flag(name: "--disable-sandbox", description: "do not sandbox the build"),
-                Flag(name: "--target", description: "which target"),
+                Flag(name: "-r", description: "copy directories recursively"),
+                Flag(name: "-R", description: "copy directories recursively"),
+                Flag(name: "-f", description: "force copy"),
+                Flag(name: "-i", description: "prompt before overwrite"),
+                Flag(name: "-v", description: "verbose"),
+                Flag(name: "-p", description: "preserve attributes"),
             ],
             takesPaths: true),
-        "brew": CommandSignature(
-            subcommands: [
-                "cleanup", "doctor", "info", "install", "leaves", "list", "outdated", "search",
-                "services", "uninstall", "update", "upgrade",
-            ],
+        "mv": CommandSignature(
+            subcommands: [],
             flags: [
-                Flag(name: "--cask", description: "an application"),
-                Flag(name: "--formula", description: "a formula"),
+                Flag(name: "-f", description: "force overwrite without prompt"),
+                Flag(name: "-i", description: "prompt before overwrite"),
+                Flag(name: "-v", description: "verbose"),
+                Flag(name: "-n", description: "do not overwrite existing file"),
+            ],
+            takesPaths: true),
+        "touch": CommandSignature(
+            subcommands: [],
+            flags: [
+                Flag(name: "-a", description: "change access time"),
+                Flag(name: "-m", description: "change modification time"),
+                Flag(name: "-c", description: "do not create any files"),
+            ],
+            takesPaths: true),
+        "man": CommandSignature(
+            subcommands: [],
+            flags: [
+                Flag(name: "-k", description: "apropos keyword search"),
+                Flag(name: "-f", description: "whatis equivalent"),
+                Flag(name: "-a", description: "display all matches"),
             ],
             takesPaths: false),
+        "open": CommandSignature(
+            subcommands: [],
+            flags: [
+                Flag(name: "-a", description: "specify application to open with"),
+                Flag(name: "-e", description: "open with TextEdit"),
+                Flag(name: "-R", description: "reveal in Finder"),
+                Flag(name: "-g", description: "do not bring app to foreground"),
+                Flag(name: "-n", description: "open new instance of the application"),
+            ],
+            takesPaths: true),
     ]
 }
 
@@ -186,10 +610,6 @@ struct CompletionEngine {
     var history: [String] = []
     var signatures: [String: CommandSignature] = CommandSignature.table
     /// The executable names on the shell's `PATH`, plus its builtins.
-    ///
-    /// Injected exactly like `listDirectory`, so the engine stays pure and a harness drives it with a list.
-    /// Empty is a legitimate value — a caller with nothing to offer — and the signature table alone still
-    /// answers in that case.
     var commands: [String] = []
     var workingDirectory: String
     var listDirectory: (String) -> [DirectoryEntry]
@@ -204,23 +624,42 @@ struct CompletionEngine {
         let before = String(characters[0..<wordStart])
 
         // The first word of a line is a command; everything after it is that command's business.
-        //
-        // **Unless the first word is a path.** `./build.sh` and `~/bin/x` are files, not names to look up on `PATH`,
-        // and nothing on `PATH` begins with `./` — so treating one as a command name offered an empty list, which is
-        // why typing `./` produced no popover and no suggestion at all. The file system is the only thing with an
-        // answer there.
         if !before.contains(where: { !$0.isWhitespace }) {
             if word.contains("/") || word.hasPrefix("~") {
-                return rank(pathCandidates(prefix: word), prefix: word)
+                return rank(pathCandidates(prefix: word), query: word)
             }
-            return rank(commandCandidates(prefix: word), prefix: word)
+            var candidates = commandCandidates(prefix: word)
+            if !word.isEmpty {
+                for hist in history {
+                    if let _ = FuzzyMatcher.match(text: hist, pattern: word), hist != word {
+                        candidates.append(CompletionCandidate(text: hist, kind: .history, description: "history"))
+                    }
+                }
+            }
+            return rank(candidates, query: word)
         }
+
         guard let command = firstWord(characters) else { return [] }
-        if word.hasPrefix("-") { return rank(flagCandidates(command: command, prefix: word), prefix: word) }
+        if word.hasPrefix("-") {
+            return rank(flagCandidates(command: command, prefix: word), query: word)
+        }
 
         var candidates = subcommandCandidates(command: command, prefix: word)
-        if signatures[command]?.takesPaths ?? true { candidates += pathCandidates(prefix: word) }
-        return rank(candidates, prefix: word)
+        if signatures[command]?.takesPaths ?? true {
+            candidates += pathCandidates(prefix: word, command: command)
+        }
+
+        // Include matching historical lines
+        let trimmed = buffer.trimmingCharacters(in: .whitespaces)
+        if !trimmed.isEmpty {
+            for hist in history {
+                if let _ = FuzzyMatcher.match(text: hist, pattern: trimmed), hist != trimmed {
+                    candidates.append(CompletionCandidate(text: hist, kind: .history, description: "history"))
+                }
+            }
+        }
+
+        return rank(candidates, query: word)
     }
 
     /// The rest of the most recent history entry that starts with what has been typed.
@@ -241,13 +680,9 @@ struct CompletionEngine {
         var candidates = signatures.keys.sorted().map {
             CompletionCandidate(text: $0, kind: .command, description: nil)
         }
-        // The shell's own answer to "what can I run". The table's entries come first because they are the ones
-        // with descriptions, and a name both sources know is deduplicated by `rank`.
         candidates += commands.map {
             CompletionCandidate(text: $0, kind: .command, description: nil)
         }
-        // A command that has actually been run is worth offering even if it is not on `PATH` any more — a
-        // script in a directory since deleted is still something you ran.
         for line in history {
             guard let word = line.split(separator: " ").first, !word.isEmpty else { continue }
             candidates.append(
@@ -270,38 +705,43 @@ struct CompletionEngine {
         }
     }
 
-    private func pathCandidates(prefix: String) -> [CompletionCandidate] {
+    private func pathCandidates(prefix: String, command: String? = nil) -> [CompletionCandidate] {
+        let isDirectoriesOnly = command.flatMap { signatures[$0]?.directoriesOnly } ?? false
         let split = prefix.lastIndex(of: "/")
         let directoryPart = split.map { String(prefix[prefix.startIndex...$0]) } ?? ""
         let namePart = split.map { String(prefix[prefix.index(after: $0)...]) } ?? prefix
 
         let absolute = absoluteDirectory(for: directoryPart)
-        // Matched on the *name*, with the backslashes the user may already have typed taken off. `Calibre\ L`
-        // and `Calibre L` are the same request, and a filter that compared the typed text against the name
-        // literally would drop the first one — which is the one somebody types once they have learned they
-        // have to escape.
         let wanted = namePart.replacingOccurrences(of: "\\", with: "")
-        return listDirectory(absolute).map { entry in
+
+        let entries = listDirectory(absolute)
+        return entries.compactMap { entry in
+            if isDirectoriesOnly && !entry.isDirectory { return nil }
+
+            // Dotfile rule: only show hidden files if user explicitly typed a leading dot
+            if !wanted.hasPrefix(".") && entry.name.hasPrefix(".") {
+                return nil
+            }
+
+            if !wanted.isEmpty {
+                let matches = entry.name.lowercased().hasPrefix(wanted.lowercased())
+                    || FuzzyMatcher.match(text: entry.name, pattern: wanted) != nil
+                guard matches else { return nil }
+            }
+
             let suffix = entry.isDirectory ? "/" : ""
+            let displayText = directoryPart + entry.name + suffix
+            let insertionText = directoryPart + Self.shellEscaped(entry.name) + suffix
+
             return CompletionCandidate(
-                text: directoryPart + entry.name + suffix,
+                text: displayText,
                 kind: .path,
                 description: entry.isDirectory ? "directory" : nil,
-                insertion: directoryPart + Self.shellEscaped(entry.name) + suffix)
+                insertion: insertionText)
         }
-        .filter { wanted.isEmpty || $0.text.dropFirst(directoryPart.count).hasPrefix(wanted) }
     }
 
     /// A file name as the shell needs to receive it.
-    ///
-    /// `Calibre Library` is one argument, and written out plainly it is two — which is exactly the bug this
-    /// exists for: the completion inserted the readable name, the shell read two words, and there was no way
-    /// to `cd` into the directory the list had just offered. Warp escapes the same thing at the same place
-    /// (`shell_escape()` on the relative path name in `crates/warp_completer/src/completer/engine/path.rs`).
-    ///
-    /// An **allow-list** rather than a list of dangerous characters: the set of characters a shell reads as
-    /// literal is small and closed, and the set it reads as special is neither. A character that is not on the
-    /// list gets a backslash, which every POSIX shell reads as "this one, literally".
     static func shellEscaped(_ name: String) -> String {
         let literal = "._-+,:@%^/="
         var escaped = ""
@@ -316,12 +756,6 @@ struct CompletionEngine {
         return escaped
     }
 
-    /// A directory the file system can be asked about. An empty part means the working directory, and
-    /// a bare `~` means home — the two expansions worth doing here rather than leaving to the shell.
-    ///
-    /// The trailing slash is dropped: it is part of the *text* being completed, not of the directory
-    /// being listed, and a path that depends on which of the two a caller passed is a path that will
-    /// be wrong half the time.
     private func absoluteDirectory(for directoryPart: String) -> String {
         if directoryPart.isEmpty { return workingDirectory }
         var part = directoryPart
@@ -334,32 +768,43 @@ struct CompletionEngine {
 
     // MARK: - Ranking
 
-    /// Prefix matches first, then the rest in source order — which puts history newest-first and the
-    /// table's own order after it. Deduplicated on the text, keeping the first.
-    ///
-    /// **Non-matching candidates are dropped, not ranked last.** They used to be kept, which was harmless
-    /// while the only source was a table of thirteen commands — and became a two-thousand-entry list the moment
-    /// `PATH` arrived. A completion list is a list of things that match; "here is everything, best guess first"
-    /// is only a defensible answer when there is nothing to match against, which is the empty-prefix case the
-    /// guard below returns early for.
-    private func rank(_ candidates: [CompletionCandidate], prefix: String) -> [CompletionCandidate] {
-        let lowered = prefix.lowercased()
+    /// Ranks candidates using FuzzyMatcher scores, deduplicating on text.
+    private func rank(_ candidates: [CompletionCandidate], query: String) -> [CompletionCandidate] {
         var seen = Set<String>()
         let unique = candidates.filter { seen.insert($0.text).inserted }
-        guard !lowered.isEmpty else { return unique }
-        return unique.filter { Self.matchesPrefix($0, lowered) }
-    }
+        guard !query.isEmpty else { return unique }
 
-    /// Whether a candidate is a prefix match.
-    ///
-    /// Checked against both the text the row *reads* and the text it *inserts*: a path typed with its space
-    /// already escaped (`Calibre\ L`) matches neither the readable name nor anything else literally, and the
-    /// person who typed it meant the same request as the one who typed `Calibre L`. Ranking it last would be
-    /// punishing them for knowing how the shell works.
-    private static func matchesPrefix(_ candidate: CompletionCandidate, _ lowered: String) -> Bool {
-        if candidate.text.lowercased().hasPrefix(lowered) { return true }
-        guard let insertion = candidate.insertion else { return false }
-        return insertion.lowercased().hasPrefix(lowered)
+        let scored = unique.compactMap { candidate -> (candidate: CompletionCandidate, score: Int)? in
+            let text = candidate.text
+            let insertion = candidate.insertion ?? ""
+
+            // Prefix match gets highest score
+            if text.lowercased().hasPrefix(query.lowercased()) {
+                return (candidate, 1000 - text.count)
+            }
+            if !insertion.isEmpty && insertion.lowercased().hasPrefix(query.lowercased()) {
+                return (candidate, 900 - insertion.count)
+            }
+
+            // Subsequence fuzzy match score
+            if let res = FuzzyMatcher.match(text: text, pattern: query) {
+                return (candidate, res.score)
+            }
+            if !insertion.isEmpty, let res = FuzzyMatcher.match(text: insertion, pattern: query) {
+                return (candidate, res.score)
+            }
+
+            return nil
+        }
+
+        return scored
+            .sorted { a, b in
+                if a.score != b.score {
+                    return a.score > b.score
+                }
+                return a.candidate.text.count < b.candidate.text.count
+            }
+            .map { $0.candidate }
     }
 
     // MARK: - The word under the cursor

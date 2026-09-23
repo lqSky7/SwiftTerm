@@ -19,4 +19,9 @@ enum TerminalEvent: Hashable, Sendable {
     /// The grid cannot give this up: the prompt and the command are one drawn line, and splitting
     /// them would mean guessing where the user's prompt ends. Only the shell knows.
     case commandSubmitted(String)
+    /// The screen was erased on the **primary** screen, which is what `clear` sends.
+    ///
+    /// A grid can only empty its own cells; what `clear` means in a terminal made of blocks is that the blocks that
+    /// were on that screen are *gone* rather than scrolled away, and only the session can do that.
+    case displayCleared
 }
