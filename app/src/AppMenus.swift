@@ -27,8 +27,13 @@ enum AppMenus {
     /// `Close Pane` is `⌘W` rather than closing the window, and the window's own close moved to `⇧⌘W`:
     /// with more than one pane on screen, the thing a person means by "close this" is the thing they
     /// are looking at, and closing the window is the rarer intent.
+    ///
+    /// `New Window` targets `nil` like every other item here, but it is not one of `TerminalWindowController`'s
+    /// selectors: no object in the responder chain below `AppDelegate` can open a *second* window, so this is
+    /// the one item that relies on the chain reaching all the way past the window controller to the app itself.
     private static func fileMenu() -> NSMenuItem {
         let menu = NSMenu(title: "File")
+        menu.addItem(item("New Window", #selector(AppDelegate.newWindow(_:)), key: "n"))
         menu.addItem(item("New Tab", #selector(TerminalWindowController.newTab(_:)), key: "t"))
         menu.addItem(item("Close Pane", #selector(TerminalWindowController.closePane(_:)), key: "w"))
         menu.addItem(.separator())

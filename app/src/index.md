@@ -2,8 +2,8 @@
 
 | Path | Holds |
 | --- | --- |
-| `AppCore.swift` | composition root; owns the window's tabs and one shell per pane |
-| `AppDelegate.swift` | application lifecycle |
+| `AppCore.swift` | composition root; owns one window's tabs and one shell per pane |
+| `AppDelegate.swift` | application lifecycle; owns one `AppCore` per open window, so `⌘N`/Dock "New Window" can start another |
 | `AppMenus.swift` | the menu bar |
 | `SwiftTermApp.swift` | `@main` |
 | `workspace/` | the window as a whole: the sidebar, the tab strip, where the panes go |

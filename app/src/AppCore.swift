@@ -42,10 +42,24 @@ final class AppCore {
     /// Where the window's shape is kept between launches.
     @ObservationIgnored private let sessionStore = SessionSnapshotStore()
 
-    init() {
+    /// Whether this window reads and writes the shared session file.
+    ///
+    /// There is one window on disk, not one per window on screen: `AppDelegate` opens the first
+    /// window with this `true`, so it is the one that comes back with last launch's tabs, and opens
+    /// every later one — `⌘N`, the Dock's "New Window" — with it `false`. A second window that also
+    /// restored would be a duplicate of the first, and one that also saved would overwrite the first's
+    /// tabs with its own single blank one the moment it closed.
+    @ObservationIgnored private let persistsSession: Bool
+
+    /// Told to the window controller so it can hand back to `AppDelegate` when this window closes by
+    /// any path — the traffic light, `⇧⌘W`, or the last tab closing it from the inside.
+    @ObservationIgnored var onWindowClosed: (() -> Void)?
+
+    init(persistsSession: Bool = true) {
         let document = store.load()
         chrome = document.synced.chrome
         layout = document.device.chrome
+        self.persistsSession = persistsSession
     }
 
     /// Write the settings back, keeping whatever else the document holds.
@@ -94,10 +108,15 @@ final class AppCore {
 
     /// Built in `start()` rather than in an initialiser so the window can exist first and the shell
     /// can be started at the size the pane it will be drawn in already is.
-    func start() {
+    ///
+    /// `isPrimary` only decides how the window itself behaves — remembering its frame between
+    /// launches, versus cascading from whichever window opened last; `persistsSession` is what decides
+    /// whether *tabs* come back. `AppDelegate` passes the same value for both, but they answer
+    /// different questions and a window controller has no business knowing about session files.
+    func start(isPrimary: Bool = true) {
         guard windowController == nil else { return }
 
-        let windowController = TerminalWindowController()
+        let windowController = TerminalWindowController(isPrimary: isPrimary)
         self.windowController = windowController
         restoreSession()
         // Before the window is shown, so the first pane is the active one when its surface arrives
@@ -114,14 +133,26 @@ final class AppCore {
     /// Called on the way out. Every shell gets a hangup, so a job control shell's children do not
     /// outlive the window they were started from — and with more than one pane there is more than
     /// one shell to tell.
+    ///
+    /// Safe to call more than once: closing this window's last tab already empties `coordinators` and
+    /// `tabs` through `closeIfEmpty()`, and the window closing itself calls this again on its way out.
     func terminate() {
         // **Written first**, because it is a description of a window that is about to stop existing — and because
         // `tabs` is cleared two lines down, after which there is nothing left to describe.
-        saveSession()
+        if persistsSession { saveSession() }
         for coordinator in coordinators.values { coordinator.shutdown() }
         coordinators.removeAll()
         tabs = TabList()
         windowController = nil
+    }
+
+    /// The window is about to close, by whichever door: the traffic light, `⇧⌘W`, or Mission
+    /// Control. Every one of those bypasses `terminate()`'s usual caller — `AppDelegate` only calls it
+    /// directly when the *app* is quitting — so this is the one place a window closing on its own
+    /// still gets its shells a hangup and tells `AppDelegate` to stop holding onto it.
+    func windowWillClose() {
+        terminate()
+        onWindowClosed?()
     }
 
     // MARK: - Tabs
@@ -511,8 +542,15 @@ final class AppCore {
     /// **The directories come back with it.** A restored layout with every shell in the home directory is a window that
     /// looks right and is useless, which is why the snapshot records them and why this hands each one to the
     /// coordinator that starts its shell.
+    ///
+    /// A window opened after launch — `⌘N`, the Dock's "New Window" — does not read the snapshot at all: it is
+    /// `persistsSession == false`, and one blank tab is what "new window" means.
     private func restoreSession() {
         guard let windowController else { return }
+        guard persistsSession else {
+            openTab()
+            return
+        }
         var restored = tabs
         let panes = sessionStore.load().restore(into: &restored)
         guard !panes.isEmpty else {

@@ -8,7 +8,7 @@ import SwiftUI
 /// where the menu bar's tab and pane commands land — every menu item targets `nil`, which walks the
 /// responder chain, and a window controller is in that chain after its window.
 @MainActor
-final class TerminalWindowController: NSWindowController {
+final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     /// Weak, deliberately: `AppCore` owns this controller, and the root view it hosts already holds
     /// `AppCore` strongly. A second strong edge back would be a cycle that only `terminate()` could
     /// break, and a cycle is a thing you find out about by reading a leak report years later.
@@ -21,7 +21,15 @@ final class TerminalWindowController: NSWindowController {
         window?.contentLayoutRect.size ?? Theme.Size.defaultWindow
     }
 
-    init() {
+    /// Where the last cascaded window landed, so the next one steps further down and to the right
+    /// instead of landing squarely on top of it — which is what `center()` would do for every one of
+    /// them alike.
+    private static var lastCascadePoint = NSPoint.zero
+
+    /// `isPrimary` is the window `AppDelegate` opens at launch. It is the one whose position and size
+    /// macOS remembers between launches — a second window sharing that same autosave name would pull
+    /// every later window to the first one's saved frame instead of cascading from it.
+    init(isPrimary: Bool = true) {
         let window = NSWindow(
             contentRect: NSRect(origin: .zero, size: Theme.Size.defaultWindow),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
@@ -48,10 +56,21 @@ final class TerminalWindowController: NSWindowController {
         window.title = "swiftTerm"
         window.minSize = Theme.Size.minimumWindow
         window.isReleasedWhenClosed = false
-        window.center()
-        window.setFrameAutosaveName("SwiftTermMainWindow")
 
         super.init(window: window)
+        window.delegate = self
+
+        if isPrimary {
+            window.center()
+            window.setFrameAutosaveName("SwiftTermMainWindow")
+        } else {
+            if Self.lastCascadePoint == .zero {
+                window.center()
+                Self.lastCascadePoint = window.frame.origin
+            } else {
+                Self.lastCascadePoint = window.cascadeTopLeft(from: Self.lastCascadePoint)
+            }
+        }
     }
 
     @available(*, unavailable)
@@ -102,7 +121,17 @@ final class TerminalWindowController: NSWindowController {
         window?.makeFirstResponder(surface)
     }
 
+    /// The window is closing, by whichever door — the traffic light, `⇧⌘W`, Mission Control. Forwarded
+    /// so `AppCore` can give its shells a hangup and tell `AppDelegate` to stop holding this window open.
+    func windowWillClose(_ notification: Notification) {
+        workspace?.windowWillClose()
+    }
+
     // MARK: - Menu actions
+
+    // `New Window` is not among these: it targets `nil` too, but nothing here implements it, so the
+    // chain carries it past this controller to `NSApplication` and on to `AppDelegate`, which is the
+    // one object that can open a second window at all.
 
     // Each of these is a one-line forward. The commands belong to `AppCore`, which owns the tabs;
     // these exist so the menu bar has something in the responder chain to reach.
