@@ -235,6 +235,12 @@ final class CommandEditorView: NSTextView {
         if flags.contains(.control), let value = scalar?.value {
             if value == 0x03 || value == 0x04 || value == 0x1A {
                 onRawBytes?([UInt8(value)])
+                // The pty's own line discipline has nothing buffered — this editor is the buffer — so
+                // without this Ctrl-C would abort whatever is running but leave a typed command sitting
+                // in the box, which is not what Ctrl-C does anywhere else.
+                if value == 0x03 && !string.isEmpty {
+                    reset()
+                }
                 return
             }
             // Ctrl-R is the shell's history search. The editor's own history is ghost text and Tab.
