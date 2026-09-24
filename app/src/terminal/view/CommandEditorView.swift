@@ -13,8 +13,9 @@ import AppKit
 /// reserved height. See `EDITOR.md` §6 and §9.
 ///
 /// What it *does* own, because a shell's line editor is not usable without them: `⌘A` and `⌘X` through
-/// `NSTextView`'s own `selectAll:` and `cut:` (the menu carries both — see `AppMenus`), and ↑/↓ walking the
-/// commands already run, with the rule itself in `HistoryNavigation` rather than here.
+/// `NSTextView`'s own `selectAll:` and `cut:` (the menu carries both — see `AppMenus`), and ↑/↓ (or ⌥↑/⌥↓
+/// from anywhere in a multi-line buffer) walking the commands already run, with the rule itself in
+/// `HistoryNavigation` rather than here.
 ///
 /// The model half is already built, tested and waiting: `ShellTokenizer`, `CommandResolver`,
 /// `Completion` and `CommandSubmission`. See `docs/phase-3-todo.md` and `docs/learnings.md`.
@@ -253,9 +254,15 @@ final class CommandEditorView: NSTextView {
         // ↑ and ↓ walk the commands already run, which is what they do in every terminal and what makes a
         // history usable without leaving the keyboard. They only do that while the buffer is **one line**:
         // a multi-line buffer's earlier lines are reachable no other way, so there the arrows stay arrows.
+        // ⌥↑/⌥↓ skip that check — recalling the previous command shouldn't require walking out of a
+        // multi-line one first — while plain ↑/↓ still move the caret through it line by line.
         //
         // This is after the Command branch above, so `⌘↑`/`⌘↓` are still the surface's block jumping.
-        if isSingleLine, let key = event.specialKey, key == .upArrow || key == .downArrow {
+        // `flags == .option` would never match: arrow keys always carry `.numericPad` alongside
+        // whatever else is held, so the check has to be `contains`, not equality.
+        if (isSingleLine || flags.contains(.option)), let key = event.specialKey,
+            key == .upArrow || key == .downArrow
+        {
             let recalled =
                 key == .upArrow
                 ? history.previous(in: onHistory?() ?? [], from: string)
