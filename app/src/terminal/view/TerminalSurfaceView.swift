@@ -55,6 +55,10 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
     /// The completion list, when it is open. **Nil is the closed state**, so "is it open" and "what is it
     /// showing" cannot disagree — a `Bool` beside a menu is two things that have to be kept in step.
     private var completion: CompletionMenu?
+    /// The buffer and caret as they were when the list opened — what every preview is computed against,
+    /// since `editor.string` already holds the previous candidate's insertion by the next cycle.
+    private var completionOriginalBuffer: String?
+    private var completionOriginalCaret: Int?
     private let completionPopover = CompletionPopover()
     /// The hover control's actions, on glass. A panel of our own rather than an `NSMenu`, because the point of
     /// the three dots is that what they open belongs to the terminal.
@@ -89,11 +93,7 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
         // owns arrive as raw bytes, and navigation chords fall through to the surface's handler.
         editor.isHidden = true
         addSubview(editor)
-        editor.onSubmit = { [weak self] buffer in
-            guard let self else { return }
-            send(CommandSubmission.bytes(for: buffer))
-            self.editor.reset()
-        }
+        editor.onSubmit = { [weak self] buffer in self?.submit(buffer) }
         editor.onRawBytes = { [weak self] bytes in self?.send(bytes) }
         editor.onNavigationKey = { [weak self] event in self?.handleNavigationKey(event) ?? false }
         editor.onHistory = { [weak self] in self?.commandHistory ?? [] }
@@ -577,8 +577,11 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
             closeCompletion()
             return false
         }
+        completionOriginalBuffer = editor.string
+        completionOriginalCaret = editor.selectedRange().location
         completion = menu
         positionCompletion()
+        previewSelection(menu)
         return true
     }
 
@@ -598,12 +601,14 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
             menu.moveDown()
             completion = menu
             positionCompletion()
+            previewSelection(menu)
             return true
         }
         if key == .upArrow {
             menu.moveUp()
             completion = menu
             positionCompletion()
+            previewSelection(menu)
             return true
         }
         if characters == "\r" || characters == "\n" || key == .carriageReturn || key == .enter
@@ -613,6 +618,9 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
             return true
         }
         if characters == "\u{1B}" {
+            if let original = completionOriginalBuffer {
+                editor.setBuffer(original, caret: completionOriginalCaret ?? (original as NSString).length)
+            }
             closeCompletion()
             return true
         }
@@ -621,17 +629,28 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
         return false
     }
 
-    /// Put the chosen candidate where the word under the caret was, and close the list.
+    /// Put the highlighted candidate into the line live, so it doesn't lag a keystroke behind the popover.
+    private func previewSelection(_ menu: CompletionMenu) {
+        guard let base = completionOriginalBuffer, let accepted = menu.accepted(in: base) else { return }
+        editor.setBuffer(accepted.text, caret: accepted.caret)
+    }
+
+    /// Return takes the highlighted candidate and runs it in one keystroke — a deliberate divergence from
+    /// Warp's accept-then-a-second-Return, since Return already means "run this" everywhere else here.
     private func acceptCompletion(_ menu: CompletionMenu) {
-        if let accepted = menu.accepted(in: editor.string) {
-            editor.setBuffer(accepted.text, caret: accepted.caret)
+        guard let base = completionOriginalBuffer, let accepted = menu.accepted(in: base) else {
+            closeCompletion()
+            return
         }
         closeCompletion()
+        submit(accepted.text)
     }
 
     private func closeCompletion() {
         guard completion != nil else { return }
         completion = nil
+        completionOriginalBuffer = nil
+        completionOriginalCaret = nil
         completionPopover.hide()
     }
 
@@ -1207,6 +1226,12 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
         guard !bytes.isEmpty else { return }
         session.write(bytes)
         scrollToBottom()
+    }
+
+    /// Send the buffer to the shell and put the editor back to empty, ready for the next prompt.
+    private func submit(_ buffer: String) {
+        send(CommandSubmission.bytes(for: buffer))
+        editor.reset()
     }
 
     private func handleNavigationKey(_ event: NSEvent) -> Bool {

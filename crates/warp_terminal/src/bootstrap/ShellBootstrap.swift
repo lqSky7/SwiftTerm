@@ -63,8 +63,20 @@ struct ShellBootstrap {
             .appending(path: integrationDirectoryName, directoryHint: .isDirectory)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
 
-        // zsh resolves its dotfiles through ZDOTDIR, so that is where the user's originals are.
-        let userDirectory = shell == .zsh ? (environment["ZDOTDIR"] ?? homeDirectory) : homeDirectory
+        // zsh resolves its dotfiles through ZDOTDIR — except `directory` is a *stable* path, so a pane
+        // launched from inside an already-bootstrapped swiftTerm shell inherits ZDOTDIR pointed at us,
+        // not the user, and would have the shim source itself until it runs out of file handles. The
+        // parent session's own resolved answer, SWIFTTERM_USER_ZDOTDIR, is authoritative in that case.
+        let inheritedZDOTDIR = environment["ZDOTDIR"]
+        let userDirectory: String
+        switch (shell, inheritedZDOTDIR) {
+        case (.zsh, .some(let zdotdir)) where zdotdir != directory.path:
+            userDirectory = zdotdir
+        case (.zsh, _):
+            userDirectory = environment["SWIFTTERM_USER_ZDOTDIR"] ?? homeDirectory
+        default:
+            userDirectory = homeDirectory
+        }
         environment["SWIFTTERM_USER_ZDOTDIR"] = userDirectory
         environment["SWIFTTERM_BOOTSTRAP_ZDOTDIR"] = directory.path
         environment["SWIFTTERM_INTEGRATION"] = directory.appending(path: integrationFileName(for: shell)).path

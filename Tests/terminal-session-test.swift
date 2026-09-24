@@ -273,6 +273,25 @@ enum TerminalSessionTest {
         harness.expect(zshrc.contains("SWIFTTERM_USER_ZDOTDIR"), "the shim sources the user's own zshrc")
         harness.expect(zshrc.contains("SWIFTTERM_INTEGRATION"), "and then the integration")
 
+        // A pane started from inside an already-bootstrapped shell inherits ZDOTDIR pointed at our own
+        // directory — the bug behind "too many open files: .../.zlogin" from sourcing itself forever.
+        let nested = try? ShellBootstrap.prepare(
+            shellPath: "/bin/zsh",
+            environment: [
+                "HOME": "/Users/example", "PATH": "/usr/bin", "ZDOTDIR": directory.path,
+                "SWIFTTERM_USER_ZDOTDIR": "/Users/example/config",
+            ], homeDirectory: "/Users/example", baseDirectory: base)
+        harness.equal(
+            nested?.environment["SWIFTTERM_USER_ZDOTDIR"], "/Users/example/config",
+            "the real ZDOTDIR from the parent session is recovered rather than the self-reference")
+
+        let nestedWithoutMemory = try? ShellBootstrap.prepare(
+            shellPath: "/bin/zsh", environment: ["HOME": "/Users/example", "PATH": "/usr/bin", "ZDOTDIR": directory.path],
+            homeDirectory: "/Users/example", baseDirectory: base)
+        harness.equal(
+            nestedWithoutMemory?.environment["SWIFTTERM_USER_ZDOTDIR"], "/Users/example",
+            "and falls back to the home directory when there is nothing to recover it from")
+
         let bash = try? ShellBootstrap.prepare(
             shellPath: "/bin/bash", environment: environment, homeDirectory: "/Users/example",
             baseDirectory: base)
