@@ -1497,18 +1497,18 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
 
     // MARK: - Pasteboard
 
-    /// Pastes as literal text, with newlines normalised to carriage returns so a paste into a
-    /// readline never leaves a stray line feed. A shell that asked for bracketed paste gets the
-    /// wrapper, which is the only thing standing between a pasted script and running every line of it
-    /// the moment it arrives.
+    /// Pastes into the shell's line editor rather than running it. Bracketed paste makes a raw `\r`
+    /// safe, so a shell that asked for it gets the wrapper; one that never asked gets
+    /// `CommandSubmission`'s newline-continuation escaping instead, the same trick that keeps a
+    /// multi-line `⇧↩` submission from running line by line. Either way `↩` stays the user's.
     func insertPastedText(_ text: String) {
-        let normalized = text
-            .replacingOccurrences(of: "\r\n", with: "\r")
-            .replacingOccurrences(of: "\n", with: "\r")
         if session.activeGrid.modes.bracketedPaste {
+            let normalized = text
+                .replacingOccurrences(of: "\r\n", with: "\r")
+                .replacingOccurrences(of: "\n", with: "\r")
             session.write("\u{1B}[200~\(normalized)\u{1B}[201~")
         } else {
-            session.write(normalized)
+            session.write(CommandSubmission.escaped(text))
         }
         scrollToBottom()
     }
