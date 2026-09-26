@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// The sidebar's leading column: the traffic lights' row, a row to open a tab, and the tabs.
+/// The sidebar's leading column: the traffic lights' row, whose window this is, and the tabs.
 ///
 /// This is the only place tabs are listed. There is no strip above the panes — a second list of the
 /// same tabs is a second answer to "which one is showing", and the first version of this drew every tab
@@ -66,10 +66,19 @@ struct WorkspaceSidebar: View {
         .frame(height: Theme.Size.profileRowHeight, alignment: .leading)
         // **The row is the page's only affordance, so it says so when the page is up.** There is no tab for the
         // profile to highlight, which is exactly why the row has to do it.
-        .background(
-            RoundedRectangle(cornerRadius: Theme.Radius.control)
-                .fill(workspace.isShowingProfile ? Theme.Colors.ramp(dark: 0.18, light: 0.12) : .clear)
-                .padding(.horizontal, Theme.Spacing.sm))
+        //
+        // The same highlight a selected tab gets, because it means the same thing — this is the row you are
+        // in. A different treatment here would be a second answer to that question. Its corner is the larger
+        // one because the row is twice a tab's height, and the highlight's corners are a *ratio* of its
+        // height in the reference rather than a fixed radius; `Radius.panel` is that ratio at this size.
+        .background {
+            if workspace.isShowingProfile {
+                SidebarRowHighlight(cornerRadius: Theme.Radius.panel)
+            }
+        }
+        // Inset last, so the inset is outside the highlight rather than inside it: this is the number that
+        // decides how close to the sidebar's edges the highlight runs, and a selected tab gets the same one.
+        .padding(.horizontal, Theme.Size.sidebarRowInset)
         // The whole row, not just the name: a row that is only tappable where its text happens to be is a row people
         // click and nothing happens.
         .contentShape(Rectangle())
@@ -90,10 +99,13 @@ struct WorkspaceSidebar: View {
 
     /// A plain `List` with no selection binding, deliberately.
     ///
-    /// `.sidebar` styling would draw the system's own selection bar across the row's full width, and
-    /// what is wanted is a fill *inside* the row that says nothing about its edges. So the highlight is
-    /// drawn by the row itself and the list is left to do the two things it does better than we would:
-    /// the row metrics, and the drag-to-reorder.
+    /// `.sidebar` styling would draw the system's own selection bar across the row's full width, and what is
+    /// wanted is the highlight `SidebarRowHighlight` draws — a fill with two lit edges and open sides. So the
+    /// highlight is drawn by the row itself and the list is left to do the two things it does better than we
+    /// would: the row metrics, and the drag-to-reorder.
+    ///
+    /// **The rows are inset almost to the list's edges** — see `rowInsets` — because that is what makes the
+    /// highlight read as the row rather than as a chip inside it.
     private var tabList: some View {
         List {
             ForEach(workspace.tabs.tabs, id: \.id) { tab in
@@ -119,16 +131,20 @@ struct WorkspaceSidebar: View {
                 onCommit: { workspace.commitRename() },
                 onCancel: { workspace.cancelRename() })
                 .padding(.horizontal, Theme.Spacing.md)
-                .frame(height: 28)
-                .listRowInsets(
-                    EdgeInsets(
-                        top: 2, leading: Theme.Spacing.sm, bottom: 2,
-                        trailing: Theme.Spacing.sm))
+                .frame(height: Theme.Size.sidebarRowHeight)
+                .padding(.horizontal, Theme.Size.sidebarRowInset)
+                .listRowInsets(Self.rowInsets)
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
         } else {
             let selected = tab.id == workspace.tabs.activeTabID
             HStack(spacing: Theme.Spacing.md) {
+                // The identity mark, at the leading edge of every row and before the pin — it is what the
+                // row *is*, and the pin is a badge on it. The reference puts a mark in this place on every
+                // row, and this is the app's own.
+                IdentityMarkView(
+                    width: Theme.Size.identityMarkWidth,
+                    color: Theme.Colors.identityMark)
                 if tab.isPinned {
                     Image(systemName: "pin.fill")
                         .font(.system(size: 10))
@@ -155,11 +171,11 @@ struct WorkspaceSidebar: View {
                 }
             }
             .padding(.horizontal, Theme.Spacing.md)
-            .frame(height: 28)
-            // The fill is centered inside the row with symmetric margins matching the profile row.
-            .background(
-                selected ? Theme.Colors.selectionFill : Color.clear,
-                in: .rect(cornerRadius: Theme.Radius.control))
+            .frame(height: Theme.Size.sidebarRowHeight)
+            .background { if selected { SidebarRowHighlight() } }
+            // Outside the background, so it moves the highlight rather than the row's contents: this is the
+            // half of the inset that is the design's, and `rowInsets` takes back the half that is the list's.
+            .padding(.horizontal, Theme.Size.sidebarRowInset)
             .contentShape(Rectangle())
             // A plain tap rather than a `Button`, so the cross can be a `Button` of its own — a button inside
             // another button's label is the kind of thing that works until it does not. The double-click is a
@@ -168,10 +184,7 @@ struct WorkspaceSidebar: View {
             .onTapGesture { workspace.selectTab(tab.id) }
             .simultaneousGesture(TapGesture(count: 2).onEnded { workspace.beginRename(tab.id) })
             .onHover { inside in workspace.setTabHovered(tab.id, inside) }
-            .listRowInsets(
-                EdgeInsets(
-                    top: 2, leading: Theme.Spacing.sm, bottom: 2,
-                    trailing: Theme.Spacing.sm))
+            .listRowInsets(Self.rowInsets)
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
             .contextMenu {
@@ -183,6 +196,90 @@ struct WorkspaceSidebar: View {
                 Button("Close Tab") { workspace.closeTab(tab.id) }
             }
         }
+    }
+
+    /// What every row is inset by.
+    ///
+    /// **The leading and trailing numbers are negative, and that is the whole of how the highlight
+    /// reaches the sidebar's edges.** A `List` keeps its rows clear of its own edges and `.listRowInsets`
+    /// can only add to that, so reaching past it takes a negative inset —
+    /// `Theme.Size.sidebarRowBleed`, which is that inset, measured. The row then pads itself back in by
+    /// `Theme.Size.sidebarRowInset`, so the highlight's width is decided by one number here and one
+    /// there, and the profile row above uses the same pair. A selected tab and a selected profile have
+    /// to land on the same edges or the sidebar looks like it was assembled from two designs.
+    ///
+    /// The vertical pair is the gap between two highlights. Smaller than the horizontal one on purpose:
+    /// rows are read as a stack, and a stack with wide gutters between its rows is a list of chips.
+    private static let rowInsets = EdgeInsets(
+        top: 2,
+        leading: -Theme.Size.sidebarRowBleed,
+        bottom: 2,
+        trailing: -Theme.Size.sidebarRowBleed)
+}
+
+/// The lit row: the fill, and the two hairlines that are the whole of the highlight.
+///
+/// **The hairline is on the top and bottom edges and nowhere else**, and along each of those it is lit at
+/// one end and gone at the other — the top edge at its leading end, the bottom edge at its trailing one.
+/// That is the reference the sidebar is drawn from, and it is a *diagonal*: light arriving from one side
+/// and catching the two corners that face it. Lit evenly along both edges the same hairline reads as a
+/// border, which makes a selected row look like a button you could press; run down the vertical sides as
+/// well and the row reads as a box. Two lit corners and open sides is the whole of the effect.
+///
+/// Two `Rectangle`s rather than a masked `strokeBorder`, and that is the correction: a mask on a stroke
+/// cannot tell the top edge from the left one, so the only way to keep the light off the vertical sides
+/// is to not draw a stroke there in the first place. The rectangles run the full width and are cut to the
+/// shape at the end, so their ends land on the corner arcs rather than short of them.
+private struct SidebarRowHighlight: View {
+    /// The tab row's radius. The profile row passes its own, because the reference's corners are a ratio
+    /// of the highlight's height rather than a fixed radius, and that row is taller.
+    var cornerRadius: CGFloat = Theme.Radius.sidebarRow
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(Theme.Colors.selectionFill)
+            hairline(Self.leadingGlow)
+                .frame(maxHeight: .infinity, alignment: .top)
+            hairline(Self.trailingGlow)
+                .frame(maxHeight: .infinity, alignment: .bottom)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+    }
+
+    private func hairline(_ fade: LinearGradient) -> some View {
+        Rectangle()
+            .fill(Theme.Colors.selectionEdge)
+            .frame(height: Theme.Size.sidebarRowHairline)
+            .mask(fade)
+    }
+
+    /// The top edge: bright at the leading end, settling to the faint line, gone by the trailing end.
+    private static var leadingGlow: LinearGradient {
+        glow(brightAtLeading: true)
+    }
+
+    /// The bottom edge: the same, mirrored.
+    private static var trailingGlow: LinearGradient {
+        glow(brightAtLeading: false)
+    }
+
+    /// One expression of the two, so the bright end and the faint one cannot disagree about where the
+    /// floor starts or how dark it is.
+    private static func glow(brightAtLeading: Bool) -> LinearGradient {
+        let span = Theme.Size.sidebarRowGlowSpan
+        let floor = Color.black.opacity(Theme.Size.sidebarRowGlowFloor)
+        let bright: Color = .black
+        let dim: Color = .clear
+        return LinearGradient(
+            stops: [
+                .init(color: brightAtLeading ? bright : dim, location: 0),
+                .init(color: floor, location: span),
+                .init(color: floor, location: 1 - span),
+                .init(color: brightAtLeading ? dim : bright, location: 1),
+            ],
+            startPoint: .leading,
+            endPoint: .trailing)
     }
 }
 

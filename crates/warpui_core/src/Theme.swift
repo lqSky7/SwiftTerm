@@ -20,6 +20,10 @@ enum Theme {
     enum Radius {
         static let panel: CGFloat = 12
         static let control: CGFloat = 6
+        /// A sidebar row's highlight. Larger than `control` because a tab row is taller than a control
+        /// is: the reference's corners are a *ratio* of the highlight's height rather than a fixed
+        /// radius, and at `sidebarRowHeight` that ratio is this.
+        static let sidebarRow: CGFloat = 8
         /// Where two rounded corners sit adjacent, `inner = outer - gap`.
         static let inset: CGFloat = 4
     }
@@ -47,7 +51,7 @@ enum Theme {
         /// reason: it makes the document's geometry arithmetic rather than a measurement.
         /// Tall enough for the label to sit in a shape rather than in a line of text: the chips are the block's own
         /// metadata and they were the smallest thing on screen.
-        static let contextChipHeight: CGFloat = 30
+        static let contextChipHeight: CGFloat = 36
         /// The strip at the top of the window that still belongs to the *window*.
         ///
         /// The window is drawn with a full-size content view, which is what puts the traffic lights over
@@ -68,6 +72,48 @@ enum Theme {
         /// like the things you can click to switch.
         static let profileAvatarSize: CGFloat = 36
         static let profileRowHeight: CGFloat = 56
+        /// A tab row, and the pill the selection draws inside it. A token because three places have to
+        /// agree about it — the row, the rename field that replaces it, and the pill's own geometry.
+        static let sidebarRowHeight: CGFloat = 34
+        /// The identity mark's width in a row, and how heavy its stroke is as a fraction of that width.
+        ///
+        /// The icon's own SVG draws the stroke at 3 units in a 100-unit box, and that is right on a
+        /// 1024-point canvas and wrong on a row: at this size it comes out under three quarters of a
+        /// point, which reads as a printing defect rather than as a mark. **A glyph needs its stroke
+        /// heavier relative to its size, not lighter** — this is the icon's shape at a row's weight.
+        static let identityMarkWidth: CGFloat = 22
+        static let identityMarkStrokeRatio: CGFloat = 0.08
+        /// The mark's aspect, from the icon's 100×80 viewBox. Here rather than in the shape because a
+        /// caller laying the mark out has to know it, and two copies of `80/100` would drift.
+        static let identityMarkAspect: CGFloat = 0.8
+        /// How far the selection highlight sits from the sidebar's edges.
+        ///
+        /// **Small on purpose.** The highlight runs almost edge to edge: the reference the sidebar is
+        /// drawn from insets it by about two per cent of the sidebar's width, and this used to be
+        /// fourteen points, which turned the highlight into a chip floating inside the row rather than
+        /// the row itself being lit.
+        static let sidebarRowInset: CGFloat = 4
+        /// How much of the `List`'s own content inset a row has to take *back* to reach the sidebar's
+        /// edges.
+        ///
+        /// A `List` keeps its rows clear of its own edges, and `.listRowInsets` can only add to that —
+        /// so the number is negative and it is the only way past it. **Measured, not guessed**: with
+        /// `leading: 0` a row's highlight lands twelve points in from the sidebar's edge, so eight of
+        /// those are the list's and `sidebarRowInset` is the other four. Get this wrong and the
+        /// highlight stops short of the edge by exactly the error, which is what it did.
+        static let sidebarRowBleed: CGFloat = 8
+        /// The hairline along the highlight's top and bottom edges.
+        static let sidebarRowHairline: CGFloat = 1
+        /// How far along each of those edges its bright end reaches before settling to the faint line
+        /// that runs the rest of the way.
+        ///
+        /// The highlight is a **diagonal**: the top edge is lit at its leading end and the bottom edge at
+        /// its trailing one, which is what a surface catching light from one side looks like. Lit evenly
+        /// along both edges it reads as a border, and lit down the vertical sides it reads as a box.
+        static let sidebarRowGlowSpan: CGFloat = 0.22
+        /// What the hairline drops to once past its bright end. Not zero — the edge is still there, it is
+        /// just not catching anything — and about a third of the peak, which is the reference's ratio.
+        static let sidebarRowGlowFloor: CGFloat = 0.35
         /// The settings root is a centred column rather than a full-width list: a page of two choices reads
         /// as a page when it is in the middle of the window and as a menu when it is pinned to a corner.
         ///
@@ -104,13 +150,6 @@ enum Theme {
         /// between them is the window's own backdrop, so there is no rule to draw and no second piece
         /// of geometry to keep in step with the layout's.
         static let paneGap: CGFloat = 1
-        /// How far a tab's highlight extends *past* the inset the list gives its rows.
-        ///
-        /// A negative row inset, which is the only way to reach past a `List`'s own content inset — the
-        /// `.sidebar` style keeps about eighteen points at each end, and `.listRowInsets` can only take them
-        /// back. It is a token rather than a literal because it is the one number that decides how wide the
-        /// highlight is, and it is the number to change if the corners start being clipped by the sidebar.
-        static let sidebarRowBleed: CGFloat = 12
         /// How wide the strip you grab to drag a divider is. Wider than the gap itself, which is one point
         /// and would be a poor target: the gap is what is *drawn*, this is what is *hit*.
         static let paneDividerHit: CGFloat = 9
@@ -175,19 +214,39 @@ enum Theme {
         /// The band the window draws behind its title, so the title stays readable over any shell.
         static let titlebarInk = ramp(dark: 0.75, light: 0.7)
 
-        /// The fill behind the selected tab.
+        /// The fill behind the selected row.
+        ///
+        /// A scrim that **darkens** in both appearances — black, at a much higher alpha in dark mode.
+        /// The reference the sidebar is drawn from lights the selected row by *recessing* it: the row is
+        /// the darkest thing on the sidebar, and that is what makes it read as the one you are in.
         ///
         /// Not the accent colour: `NSColor.selectedContentBackgroundColor` resolves to `#0064E1` in light
-        /// mode on this machine, a blue bar through a list that is meant to read as a stack of paper. Not
-        /// a *lighter* fill either, which is what the reference screenshot shows and what the first
-        /// version of this used — a white lift is invisible the moment the window's background is opaque
-        /// white, which is a state the opacity control can reach. `ramp` is the one that survives both: a
-        /// little black on light, a little white on dark, so it reads on the window's background at any
-        /// opacity and on the material behind it.
+        /// mode on this machine, a blue bar through a list that is meant to read as a stack of paper.
+        /// And not `ramp`, which cannot express this at all — `ramp` is white on dark, and a white lift
+        /// is invisible the moment the window's background is opaque white, which is a state the opacity
+        /// control can reach. A scrim survives both: it is black on light and black on dark, so it reads
+        /// on the window's background at any opacity and on the material behind it.
         ///
-        /// There is deliberately no stroke to go with it. A border draws the row's boundary, and the point
-        /// of the fill is that it sits *inside* the row and says nothing about its edges.
-        static let selectionFill = ramp(dark: 0.16, light: 0.07)
+        /// The hairline that goes with it is `selectionEdge`, and it is drawn on two edges rather than
+        /// four — see `SidebarRowHighlight` for why.
+        static let selectionFill = Color(nsColor: NSColor(name: nil) { appearance in
+            let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            return NSColor.black.withAlphaComponent(isDark ? 0.55 : 0.06)
+        })
+
+        /// The hairline along the selected row's top and bottom edges.
+        ///
+        /// Dim, and deliberately: in the reference it measures about a fifth of the way from the row's
+        /// fill to its surroundings. Brighter and it stops being the edge of a surface catching light
+        /// and becomes a border, which is the thing this design is avoiding.
+        static let selectionEdge = ramp(dark: 0.18, light: 0.12)
+
+        /// The identity mark's ink in a sidebar row.
+        ///
+        /// **The same in a selected row and an unselected one**, which is what the reference does. The mark
+        /// is the app's rather than the row's, so it does not brighten when the row becomes the one you are
+        /// in — the label does that, and a mark that also lit up would be two things saying it at once.
+        static let identityMark = ramp(dark: 0.38, light: 0.32)
     }
 
     enum Motion {

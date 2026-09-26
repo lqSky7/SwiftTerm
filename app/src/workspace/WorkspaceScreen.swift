@@ -100,7 +100,7 @@ struct WorkspaceScreen: View {
                 .background(
                     MaterialBackground(material: workspace.chrome.terminalMaterial)
                         .allowsHitTesting(false))
-                .frame(width: frame.width, height: frame.height)
+                .frame(width: frame.width, height: frame.height, alignment: .topLeading)
                 // Rounded on the leading side only. Those are the corners that meet the sidebar, and the
                 // curve into it is the whole of the effect; the other two sit at the window's own edges,
                 // which are already square.
@@ -198,11 +198,12 @@ struct WorkspaceScreen: View {
                         .frame(
                             width: horizontal ? hit : divider.frame.width,
                             height: horizontal ? divider.frame.height : hit)
-                        .offset(
-                            x: horizontal ? divider.frame.midX - hit / 2 : divider.frame.minX,
-                            y: horizontal ? divider.frame.minY : divider.frame.midY - hit / 2)
+                        .position(
+                            x: divider.frame.midX,
+                            y: divider.frame.midY)
                 }
             }
+            .frame(width: bounds.width, height: bounds.height, alignment: .topLeading)
         }
     }
 
@@ -213,13 +214,14 @@ struct WorkspaceScreen: View {
                 if let coordinator = workspace.coordinator(for: entry.pane) {
                     TerminalPane(coordinator: coordinator)
                         .frame(width: entry.frame.width, height: entry.frame.height)
-                        .offset(x: entry.frame.minX, y: entry.frame.minY)
+                        .position(x: entry.frame.midX, y: entry.frame.midY)
                         // Identity is the pane, so a split adds a surface rather than repainting the one
                         // that was already there.
                         .id(entry.pane)
                 }
             }
         }
+        .frame(width: bounds.width, height: bounds.height, alignment: .topLeading)
     }
 }
 
@@ -232,31 +234,45 @@ private struct DividerHandle: View {
     let divider: PaneLayout.Divider
 
     var body: some View {
-        Rectangle()
-            .fill(.clear)
-            .contentShape(Rectangle())
-            .onHover { inside in
-                if inside {
-                    if divider.axis == .horizontal {
-                        NSCursor.resizeLeftRight.push()
-                    } else {
-                        NSCursor.resizeUpDown.push()
-                    }
-                } else {
-                    NSCursor.pop()
-                }
+        ZStack {
+            // Invisible wider hit target so dragging is reliable
+            Rectangle()
+                .fill(Color.clear)
+                .contentShape(Rectangle())
+
+            // Visible crisp hairline separator between panes
+            if divider.axis == .horizontal {
+                Rectangle()
+                    .fill(Theme.Colors.ramp(dark: 0.35, light: 0.22))
+                    .frame(width: 1)
+            } else {
+                Rectangle()
+                    .fill(Theme.Colors.ramp(dark: 0.35, light: 0.22))
+                    .frame(height: 1)
             }
-            .gesture(
-                DragGesture(minimumDistance: 1)
-                    .onChanged { value in
-                        if value.translation == .zero { workspace.beginDividerDrag() }
-                        let moved =
-                            divider.axis == .horizontal
-                            ? value.translation.width : value.translation.height
-                        workspace.dragDivider(divider, by: moved)
-                    }
-                    .onEnded { _ in workspace.endDividerDrag() }
-            )
+        }
+        .onHover { inside in
+            if inside {
+                if divider.axis == .horizontal {
+                    NSCursor.resizeLeftRight.push()
+                } else {
+                    NSCursor.resizeUpDown.push()
+                }
+            } else {
+                NSCursor.pop()
+            }
+        }
+        .gesture(
+            DragGesture(minimumDistance: 1)
+                .onChanged { value in
+                    if value.translation == .zero { workspace.beginDividerDrag() }
+                    let moved =
+                        divider.axis == .horizontal
+                        ? value.translation.width : value.translation.height
+                    workspace.dragDivider(divider, by: moved)
+                }
+                .onEnded { _ in workspace.endDividerDrag() }
+        )
     }
 }
 

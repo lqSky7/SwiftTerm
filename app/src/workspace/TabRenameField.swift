@@ -88,4 +88,16 @@ private final class FocusOnArrivalField: NSTextField {
         window?.makeFirstResponder(self)
         currentEditor()?.selectAll(nil)
     }
+
+    /// A tab's name is not a thing to correct, complete or offer a password for. The field's own half
+    /// first, then the field editor's — which only exists once this is the first responder. See
+    /// `TextIntelligence.swift`.
+    override func becomeFirstResponder() -> Bool {
+        let accepted = super.becomeFirstResponder()
+        if accepted {
+            disableTextIntelligence()
+            disableTextIntelligenceInFieldEditor()
+        }
+        return accepted
+    }
 }
