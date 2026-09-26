@@ -5,14 +5,15 @@ The app draws its mark from `app/assets/swiftTerm.icon/Assets/SVG Image.svg`: tw
 stroked, round caps. This rasterises those same two polylines and emits them as `▀` cells with
 24-bit colour, because the terminal has no image protocol to hand an actual PNG to.
 
-    ./Scripts/banner.py                # the mark, 44 columns
-    ./Scripts/banner.py --width 60     # bigger
+    ./Scripts/banner.py                # the mark, centred, 64 columns
+    ./Scripts/banner.py --width 88     # bigger
     ./Scripts/banner.py --plain        # no colour, for a log or a diff
 
 Stdlib only, so it runs anywhere the project's `python3` does.
 """
 
 import argparse
+import shutil
 import sys
 
 # The two chevrons, in the SVG's own 100x80 box. Same order as the file.
@@ -106,16 +107,18 @@ def render(width, height, stroke, plain, feather):
 
 def main():
     ap = argparse.ArgumentParser(description="swiftTerm logo, as terminal art.")
-    ap.add_argument("--width", type=int, default=44, help="columns (default 44)")
+    ap.add_argument("--width", type=int, default=64, help="columns (default 64)")
     ap.add_argument("--height", type=int, default=None, help="rows (default: from the aspect)")
-    ap.add_argument("--stroke", type=float, default=6.0, help="stroke width in SVG units")
+    ap.add_argument("--stroke", type=float, default=9.0, help="stroke width in SVG units")
     ap.add_argument("--feather", type=float, default=0.0, help="subpixels of edge bias")
     ap.add_argument("--plain", action="store_true", help="no colour")
-    ap.add_argument("--pad", type=int, default=4, help="blank columns down each side")
+    ap.add_argument("--pad", type=int, default=None, help="left margin (default: centre it)")
     a = ap.parse_args()
 
     height = a.height or max(1, round(a.width / BOX[0] * BOX[1] / 2))
-    pad = " " * a.pad
+    # Centred on the window it is being screenshotted in, not on some assumed width.
+    pad = " " * (a.pad if a.pad is not None
+                 else max(0, (shutil.get_terminal_size((100, 40)).columns - a.width) // 2))
     for line in render(a.width, height, a.stroke, a.plain, a.feather):
         sys.stdout.write(pad + line + "\n")
     sys.stdout.write(RESET)
