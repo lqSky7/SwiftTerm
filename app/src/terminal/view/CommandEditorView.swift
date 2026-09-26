@@ -231,6 +231,27 @@ final class CommandEditorView: NSTextView {
         }
     }
 
+    /// **The same question `copy` answers, asked before it runs — and it has to be asked here.**
+    ///
+    /// A menu item's target is the first object up the responder chain that implements the action, and
+    /// while a prompt is showing that object is *this* view, not the surface. So this is what the menu
+    /// asks whether there is anything to copy, and `NSTextView`'s own answer is only ever about the buffer
+    /// being typed into — which greys the item out whenever the selection is a grid selection, and a greyed
+    /// item means `⌘C` does nothing at all. That is the one case worth pressing it in.
+    ///
+    /// `TerminalSurfaceView.validateMenuItem` has carried the same correction for the same reason since the
+    /// block menu was built; this is the other half of the responder chain, and it was missed.
+    override func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(copy(_:)) {
+            return selectedRange().length > 0 || surface?.hasCopyableSelection == true
+        }
+        return super.validateMenuItem(menuItem)
+    }
+
+    /// The surface this editor is the input for. It is added as that view's subview, and the two already
+    /// reach each other this way for Find.
+    private var surface: TerminalSurfaceView? { superview as? TerminalSurfaceView }
+
     // MARK: - Find in Terminal
 
     @objc func performFind(_ sender: Any?) {

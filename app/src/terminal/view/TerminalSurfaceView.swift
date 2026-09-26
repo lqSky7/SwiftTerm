@@ -1485,10 +1485,22 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
         coordinator?.copyBlock(.output, id: selectedBlockID)
     }
 
+    /// Whether the grid has a text selection to copy.
+    ///
+    /// **The question the menu asks before the action runs**, which is why it must not build the text —
+    /// `copySelectedText` does that, and only when the action actually fires. Both go through this one
+    /// expression, so "is there something to copy" has one answer; the expensive half then agrees with it
+    /// except for a selection of nothing but blanks, which validates as copyable and copies nothing, which
+    /// is what a text view does too.
+    ///
+    /// `CommandEditorView.validateMenuItem` asks this, because the editor is the menu's target while a
+    /// prompt is showing and `NSTextView`'s own answer knows nothing about the grid.
+    var hasCopyableSelection: Bool { selection?.isEmpty == false }
+
     /// Put the selected text on the pasteboard. Answers whether there was any.
     @discardableResult
     private func copySelectedText() -> Bool {
-        guard let selection, !selection.isEmpty else { return false }
+        guard hasCopyableSelection, let selection else { return false }
         let text = selection.text(
             height: { [session] index in
                 session.blocks.indices.contains(index) ? session.blocks[index].visibleLineCount : 0
