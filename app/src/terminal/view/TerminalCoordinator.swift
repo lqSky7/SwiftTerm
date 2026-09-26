@@ -30,6 +30,9 @@ final class TerminalCoordinator {
 
     @ObservationIgnored private(set) var session: TerminalSession?
     @ObservationIgnored private(set) var surface: TerminalSurfaceView?
+    @ObservationIgnored var savedCommands: [String] = [] {
+        didSet { surface?.savedCommands = savedCommands }
+    }
 
     /// Set by the window controller, which is the only thing that owns a window.
     @ObservationIgnored var onTitleChange: ((String) -> Void)?
@@ -135,6 +138,7 @@ final class TerminalCoordinator {
     /// The terminal's background opacity, pushed in by `AppCore` when it is set and when a pane is
     /// created. The surface has no way to ask for it and should not: the setting belongs to the app.
     func setTerminalOpacity(_ opacity: Double) { surface?.setTerminalOpacity(opacity) }
+    func setChipMaterial(_ material: ChipMaterial) { surface?.setChipMaterial(material) }
 
     /// Which appearance the terminal draws in, pushed in for the same reason and at the same moments as the
     /// opacity: which palette is right is the app's decision, and the surface resolves it against its own

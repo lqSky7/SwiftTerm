@@ -9,6 +9,7 @@
 | `CommandEditorView.swift` | the command line, as an `NSTextView`: what a Return means, which keys belong to the shell, ghost text, and palette-driven text/cursor styling |
 | `CompletionPopover.swift` | the completion candidates list, floating above the caret with glass blur, keyboard navigation, and palette-driven badges |
 | `BlockMenuPopover.swift` | floating context menu for block actions (copy command/output, rerun) styled with the active palette |
+| `TerminalFindBar.swift` | floating in-terminal find bar on liquid glass with search query input, match counter, next/prev navigation, and keyboard shortcuts |
 | `TerminalPane.swift` | one pane's content: the surface, or why the shell could not start |
 | `TerminalWindowController.swift` | the `NSWindow`, and the responder-chain landing point for the tab and pane commands |
 

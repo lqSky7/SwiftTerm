@@ -12,13 +12,13 @@ import AppKit
 final class BlockMenuPopover: NSGlassEffectView {
     /// A menu row is taller than a completion row: this is a list of things to *read and choose*, not a list to
     /// scan while typing.
-    static let rowHeight: CGFloat = 26
-    static let horizontalPadding: CGFloat = 14
-    static let verticalPadding: CGFloat = 4
-    static let minimumWidth: CGFloat = 200
+    static let rowHeight: CGFloat = 28
+    static let horizontalPadding: CGFloat = 16
+    static let verticalPadding: CGFloat = 6
+    static let minimumWidth: CGFloat = 210
     /// How far below the control the menu hangs.
-    static let gap: CGFloat = 3
-    static let margin: CGFloat = 4
+    static let gap: CGFloat = 4
+    static let margin: CGFloat = 6
 
     private let rows = BlockMenuRowsView()
 
@@ -136,7 +136,9 @@ private final class BlockMenuRowsView: NSView {
 
     private func row(at event: NSEvent) -> Int? {
         let point = convert(event.locationInWindow, from: nil)
-        let index = Int((bounds.maxY - point.y - BlockMenuPopover.verticalPadding) / BlockMenuPopover.rowHeight)
+        let relativeY = bounds.maxY - BlockMenuPopover.verticalPadding - point.y
+        guard relativeY >= 0 else { return nil }
+        let index = Int(relativeY / BlockMenuPopover.rowHeight)
         return titles.indices.contains(index) ? index : nil
     }
 
@@ -148,13 +150,14 @@ private final class BlockMenuRowsView: NSView {
                 height: BlockMenuPopover.rowHeight)
 
             if index == hoveredRow {
-                palette.ansi[4].nsColor.withAlphaComponent(0.25).setFill()
-                let path = NSBezierPath(roundedRect: rowRect.insetBy(dx: 4, dy: 1), xRadius: 5, yRadius: 5)
+                palette.ansi[4].nsColor.withAlphaComponent(0.20).setFill()
+                let pillRect = rowRect.insetBy(dx: 6, dy: 1.5)
+                let path = NSBezierPath(roundedRect: pillRect, xRadius: 5, yRadius: 5)
                 path.fill()
-                palette.ansi[4].nsColor.withAlphaComponent(0.4).setStroke()
-                path.lineWidth = 1
-                path.stroke()
             }
+
+            let textSize = (title as NSString).size(withAttributes: [.font: font])
+            let textY = (rowRect.midY - textSize.height / 2).rounded()
 
             NSAttributedString(
                 string: title,
@@ -163,7 +166,7 @@ private final class BlockMenuRowsView: NSView {
                     .foregroundColor: palette.foreground.nsColor,
                 ]
             )
-            .draw(at: NSPoint(x: BlockMenuPopover.horizontalPadding, y: rowRect.midY - font.capHeight / 2))
+            .draw(at: NSPoint(x: BlockMenuPopover.horizontalPadding, y: textY))
         }
     }
 }

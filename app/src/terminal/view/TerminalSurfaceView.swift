@@ -71,6 +71,17 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
     /// list is built per block — a row index means nothing without the list it came from.
     private var blockMenuActions: [(title: String, action: Selector)] = []
 
+    private struct SearchMatch: Equatable {
+        let blockIndex: Int
+        let bodyLine: Int
+        let columnRange: Range<Int>
+    }
+
+    /// In-terminal search floating bar
+    private let findBar = TerminalFindBar()
+    private var searchMatches: [SearchMatch] = []
+    private var searchMatchIndex = 0
+
     init(
         session: TerminalSession, pointSize: CGFloat = Theme.Typography.terminalPointSize,
         lineHeightRatio: CGFloat = Theme.Typography.lineHeightRatio
@@ -108,6 +119,11 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
         // Above everything: a menu the terminal's own text could be drawn over is not a menu.
         addSubview(blockMenuPopover, positioned: .above, relativeTo: nil)
         blockMenuPopover.onSelect = { [weak self] row in self?.performBlockAction(row) }
+        addSubview(findBar, positioned: .above, relativeTo: nil)
+        findBar.onSearch = { [weak self] query in self?.performSearch(query: query) }
+        findBar.onNext = { [weak self] in self?.findNext(nil) }
+        findBar.onPrevious = { [weak self] in self?.findPrevious(nil) }
+        findBar.onClose = { [weak self] in self?.closeFindBar() }
         editor.onBufferChanged = { [weak self] in
             guard let self else { return }
             // Typing belongs at the bottom; a buffer change that arrived while the reader is
@@ -138,6 +154,11 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
         updateGridForBounds()
+        if findBar.isOpen {
+            let x = bounds.maxX - TerminalFindBar.width - 16
+            let y = bounds.maxY - TerminalFindBar.height - 12
+            findBar.frame = NSRect(x: x, y: y, width: TerminalFindBar.width, height: TerminalFindBar.height)
+        }
     }
 
     override func viewDidMoveToWindow() {
@@ -280,6 +301,11 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
         needsDisplay = true
     }
 
+    func setChipMaterial(_ material: ChipMaterial) {
+        renderer.chipMaterial = material
+        needsDisplay = true
+    }
+
     /// Pushes a custom theme palette directly to the renderer.
     func setPalette(_ palette: TerminalPalette) {
         customPalette = palette
@@ -311,6 +337,7 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
         editor.update(palette: palette)
         completionPopover.update(palette: palette)
         blockMenuPopover.update(palette: palette)
+        findBar.update(palette: palette)
         needsDisplay = true
     }
 
@@ -412,6 +439,9 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
         }
         refreshGhostText()
         refreshChips()
+        if findBar.isOpen && !findBar.currentQuery.isEmpty {
+            performSearch(query: findBar.currentQuery, selectMatch: false)
+        }
         needsDisplay = true
         syncFirstResponder()
     }
@@ -551,11 +581,11 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
     private var commandHistory: [String] {
         var seen = Set<String>()
         var combined: [String] = []
-        for command in session.history.entries + session.blocks.compactMap(Self.commandText(of:))
-        where seen.insert(command).inserted {
+        let all = session.history.entries + session.blocks.compactMap(Self.commandText(of:))
+        for command in all.reversed() where seen.insert(command).inserted {
             combined.append(command)
         }
-        return combined
+        return combined.reversed()
     }
 
     /// The command a submitted block ran, as far as the shell reported it.
@@ -703,11 +733,14 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
             x: Theme.Size.terminalContentInset, y: bounds.maxY - (documentY - pinnedViewportTop))
     }
 
+    var savedCommands: [String] = []
+
     /// The engine, built for one Tab.
     private var completionEngine: CompletionEngine {
-        CompletionEngine(
+        let combinedCommands = Array(Set(commandNames + savedCommands)).sorted()
+        return CompletionEngine(
             history: commandHistory.reversed(),
-            commands: commandNames,
+            commands: combinedCommands,
             workingDirectory: session.workingDirectory ?? NSHomeDirectory(),
             listDirectory: Self.listDirectory)
     }
@@ -1545,6 +1578,130 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
         scrollToBlock(at: index)
     }
 
+    // MARK: - Find in Terminal
+
+    var isFindBarOpen: Bool { findBar.isOpen }
+
+    @objc func performFind(_ sender: Any?) {
+        var query: String? = nil
+        if let selection, !selection.isEmpty {
+            let text = selection.text(
+                height: { [session] in session.blocks.indices.contains($0) ? session.blocks[$0].visibleLineCount : 0 },
+                line: { [session] in session.blocks.indices.contains($0) ? session.blocks[$0].bodyLineText($1) : nil }
+            )
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty && !trimmed.contains("\n") {
+                query = trimmed
+            }
+        }
+        findBar.show(within: bounds, query: query)
+    }
+
+    @objc func findNext(_ sender: Any?) {
+        guard !searchMatches.isEmpty else {
+            if !findBar.isOpen { performFind(sender) }
+            return
+        }
+        searchMatchIndex = (searchMatchIndex + 1) % searchMatches.count
+        selectCurrentMatch()
+    }
+
+    @objc func findPrevious(_ sender: Any?) {
+        guard !searchMatches.isEmpty else {
+            if !findBar.isOpen { performFind(sender) }
+            return
+        }
+        searchMatchIndex = (searchMatchIndex - 1 + searchMatches.count) % searchMatches.count
+        selectCurrentMatch()
+    }
+
+    func closeFindBar() {
+        findBar.hide()
+        searchMatches.removeAll()
+        searchMatchIndex = 0
+        selection = nil
+        syncFirstResponder()
+        needsDisplay = true
+    }
+
+    private func performSearch(query: String, selectMatch: Bool = true) {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            searchMatches = []
+            searchMatchIndex = 0
+            findBar.updateMatchCount(current: 0, total: 0)
+            selection = nil
+            needsDisplay = true
+            return
+        }
+
+        var matches: [SearchMatch] = []
+        for (blockIndex, block) in session.blocks.enumerated() {
+            let lineCount = block.visibleLineCount
+            for line in 0..<lineCount {
+                guard let lineText = block.bodyLineText(line) else { continue }
+                var searchRange = lineText.startIndex..<lineText.endIndex
+                while let found = lineText.range(of: trimmed, options: [.caseInsensitive], range: searchRange) {
+                    let colStart = lineText.distance(from: lineText.startIndex, to: found.lowerBound)
+                    let colEnd = lineText.distance(from: lineText.startIndex, to: found.upperBound)
+                    matches.append(SearchMatch(
+                        blockIndex: blockIndex,
+                        bodyLine: line,
+                        columnRange: colStart..<colEnd
+                    ))
+                    if found.upperBound < lineText.endIndex {
+                        searchRange = found.upperBound..<lineText.endIndex
+                    } else {
+                        break
+                    }
+                }
+            }
+        }
+
+        searchMatches = matches
+        searchMatchIndex = 0
+        findBar.updateMatchCount(current: searchMatches.isEmpty ? 0 : searchMatchIndex, total: searchMatches.count)
+        if !searchMatches.isEmpty {
+            if selectMatch {
+                selectCurrentMatch()
+            }
+        } else {
+            selection = nil
+            needsDisplay = true
+        }
+    }
+
+    private func selectCurrentMatch() {
+        guard searchMatches.indices.contains(searchMatchIndex) else { return }
+        let match = searchMatches[searchMatchIndex]
+        findBar.updateMatchCount(current: searchMatchIndex, total: searchMatches.count)
+        selection = TextSelection(
+            anchor: TextSelection.Point(blockIndex: match.blockIndex, bodyLine: match.bodyLine, column: match.columnRange.lowerBound),
+            focus: TextSelection.Point(blockIndex: match.blockIndex, bodyLine: match.bodyLine, column: match.columnRange.upperBound)
+        )
+        scrollToMatch(match)
+        needsDisplay = true
+    }
+
+    private func scrollToMatch(_ match: SearchMatch) {
+        if match.blockIndex == layout.pinnedEntry?.blockIndex {
+            setScrollPosition(0)
+            return
+        }
+        guard let entry = layout.entries.first(where: { $0.blockIndex == match.blockIndex }) else { return }
+        let lineTop = entry.contentTop + CGFloat(match.bodyLine) * renderer.font.cellHeight
+        let target = max(0, lineTop - bounds.height * 0.35)
+        setScrollPosition(layout.scrollPosition(puttingTopAt: target, viewportHeight: bounds.height))
+    }
+
+    override func cancelOperation(_ sender: Any?) {
+        if findBar.isOpen {
+            closeFindBar()
+            return
+        }
+        super.cancelOperation(sender)
+    }
+
     /// Every block action is enabled only with a block selected, so an item explains itself by being
     /// greyed rather than by doing nothing when it is clicked.
     ///
@@ -1569,6 +1726,10 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
             return editor.selectedRange().length > 0
         case #selector(selectAll(_:)):
             return editorIsVisible || !session.blocks.isEmpty
+        case #selector(findNext(_:)), #selector(findPrevious(_:)):
+            return !searchMatches.isEmpty || findBar.isOpen
+        case #selector(performFind(_:)):
+            return true
         default:
             return true
         }

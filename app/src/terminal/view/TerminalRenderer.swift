@@ -67,6 +67,7 @@ final class TerminalRenderer {
     /// it completely. The renderer is the only thing that knows the palette, so this is where the terminal's
     /// background belongs; the panel's fill is gone.
     var backgroundOpacity = CGFloat(ChromeSettings.defaultTerminalOpacity)
+    var chipMaterial: ChipMaterial = .thinMaterial
 
     init(palette: TerminalPalette, font: TerminalFont) {
         self.palette = palette
@@ -213,10 +214,9 @@ final class TerminalRenderer {
         let bottom = screenY(entry.chipTop + entry.chipHeight, viewportTop: viewportTop, bounds: bounds)
         guard bottom < bounds.maxY, top > bounds.minY else { return }
 
-        // More room inside than the label needs, and a corner that is *rounded* rather than a semicircle: a pill is
-        // what a status tag looks like, and these are labels with a value in them.
+        // Original chip pill size, with no borders and increased distance from top block
         let padding = Theme.Spacing.lg
-        let chipHeight = entry.chipHeight - Theme.Spacing.xs * 2
+        let chipHeight: CGFloat = 22
         let originY = bottom + Theme.Spacing.xs
         var x = bounds.minX + contentInset
 
@@ -227,7 +227,7 @@ final class TerminalRenderer {
             guard x + width <= bounds.maxX - contentInset else { return }
 
             let chipRect = CGRect(x: x, y: originY, width: width, height: chipHeight)
-            let (bg, stroke, text) = chipColors(for: chip)
+            let (bg, _, text) = chipColors(for: chip)
 
             context.setFillColor(bg.cgColor)
             let path = CGPath(
@@ -235,11 +235,6 @@ final class TerminalRenderer {
                 cornerHeight: Theme.Radius.control, transform: nil)
             context.addPath(path)
             context.fillPath()
-
-            context.setStrokeColor(stroke.cgColor)
-            context.setLineWidth(1)
-            context.addPath(path)
-            context.strokePath()
 
             draw(
                 label,
@@ -252,18 +247,22 @@ final class TerminalRenderer {
         }
     }
 
-    /// Colors for contextual prompt chips derived from the active theme palette.
+    /// Colors for contextual prompt chips derived from the active theme palette and chip material.
     private func chipColors(for chip: ContextChip) -> (background: NSColor, stroke: NSColor, text: NSColor) {
+        let isGlass = chipMaterial == .glass
         switch chip.kind {
         case .directory:
             let accent = palette.ansi[4].nsColor
-            return (accent.withAlphaComponent(0.12), accent.withAlphaComponent(0.35), palette.foreground.nsColor)
+            let bgAlpha = isGlass ? 0.22 : 0.12
+            return (accent.withAlphaComponent(bgAlpha), .clear, palette.foreground.nsColor)
         case .branch:
             let accent = palette.ansi[5].nsColor
-            return (accent.withAlphaComponent(0.14), accent.withAlphaComponent(0.40), accent)
+            let bgAlpha = isGlass ? 0.24 : 0.14
+            return (accent.withAlphaComponent(bgAlpha), .clear, accent)
         case .environment:
             let accent = palette.ansi[2].nsColor
-            return (accent.withAlphaComponent(0.14), accent.withAlphaComponent(0.40), accent)
+            let bgAlpha = isGlass ? 0.24 : 0.14
+            return (accent.withAlphaComponent(bgAlpha), .clear, accent)
         }
     }
 
@@ -541,50 +540,50 @@ final class TerminalRenderer {
 
     // MARK: - The hover control
 
-    /// The box the three dots sit in. Also the box the click is tested against — one number for both, for the
-    /// reason above.
-    static let hoverControlSize: CGFloat = 22
-    private static let hoverControlDotDiameter: CGFloat = 3
-    private static let hoverControlDotSpacing: CGFloat = 3
+    static let hoverControlWidth: CGFloat = 26
+    static let hoverControlHeight: CGFloat = 18
+    /// Kept for backwards compatibility if callers inspect size
+    static var hoverControlSize: CGFloat { max(hoverControlWidth, hoverControlHeight) }
+    private static let hoverControlDotDiameter: CGFloat = 2.5
+    private static let hoverControlDotSpacing: CGFloat = 3.0
 
-    /// Where a block's hover control sits: the **top**-right corner of its header, inside the content inset.
-    ///
-    /// `top` is the block's top edge, which is also the header strip's top, so this is measured *down* from
-    /// that edge rather than centred in the strip — the control belongs in the corner of the block, not in the
-    /// middle of a row that also carries the path and the duration.
+    /// Where a block's hover control sits: the trailing corner of its header, vertically centered in the header strip.
     func hoverControlRect(top: CGFloat, bounds: CGRect) -> CGRect {
-        CGRect(
-            x: bounds.maxX - contentInset - Self.hoverControlSize,
-            y: top - Self.hoverControlSize - Theme.Spacing.xxs,
-            width: Self.hoverControlSize,
-            height: Self.hoverControlSize)
+        let height = Theme.Size.blockHeaderHeight
+        let y = top - height + (height - Self.hoverControlHeight) / 2
+        return CGRect(
+            x: bounds.maxX - contentInset - Self.hoverControlWidth,
+            y: y,
+            width: Self.hoverControlWidth,
+            height: Self.hoverControlHeight)
     }
 
-    /// The three dots, drawn for the one block the pointer is over.
-    ///
-    /// Drawn rather than a subview: the block list is a document the renderer paints, and a control that lived
-    /// in the view hierarchy would have to be moved on every scroll — which is the frame arithmetic that has
-    /// gone wrong here before.
+    /// The sleek ellipsis action pill, drawn for the one block the pointer is over.
     func drawHoverControl(top: CGFloat, bounds: CGRect, in context: CGContext) {
         let rect = hoverControlRect(top: top, bounds: bounds)
         guard rect.maxY > bounds.minY, rect.minY < bounds.maxY else { return }
 
-        // A faint disc under them. Three 3pt dots on a line that already has a path and a duration on it are
-        // specks; the disc is what makes them read as a target.
-        context.setFillColor(palette.foreground.nsColor.withAlphaComponent(0.1).cgColor)
-        context.fillEllipse(in: rect)
+        // Sleek rounded rectangle pill background
+        let pillPath = CGPath(roundedRect: rect, cornerWidth: 5, cornerHeight: 5, transform: nil)
+        context.setFillColor(palette.foreground.nsColor.withAlphaComponent(0.12).cgColor)
+        context.addPath(pillPath)
+        context.fillPath()
 
-        // **Vertical**, which is what a menu trigger looks like on this platform — three dots stacked are
-        // "more actions", three in a row are "loading". One `x`, three `y`s.
+        // Subtle hairline stroke for crisp definition
+        context.setStrokeColor(palette.foreground.nsColor.withAlphaComponent(0.15).cgColor)
+        context.setLineWidth(1)
+        context.addPath(pillPath)
+        context.strokePath()
+
+        // Three horizontal dots (macOS HIG ellipsis)
         let diameter = Self.hoverControlDotDiameter
         let spacing = Self.hoverControlDotSpacing
-        context.setFillColor(palette.foreground.nsColor.withAlphaComponent(0.75).cgColor)
-        for index in 0..<3 {
-            let centreY = rect.midY - CGFloat(index - 1) * (diameter + spacing)
-            context.fillEllipse(
-                in: CGRect(
-                    x: rect.midX - diameter / 2, y: centreY - diameter / 2,
-                    width: diameter, height: diameter))
+        context.setFillColor(palette.foreground.nsColor.withAlphaComponent(0.85).cgColor)
+        let midX = rect.midX
+        let dotY = (rect.midY - diameter / 2).rounded()
+        for offset in [-1, 0, 1] {
+            let dotX = (midX + CGFloat(offset) * (diameter + spacing) - diameter / 2).rounded()
+            context.fillEllipse(in: CGRect(x: dotX, y: dotY, width: diameter, height: diameter))
         }
     }
 

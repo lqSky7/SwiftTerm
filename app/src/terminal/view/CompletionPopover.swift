@@ -17,15 +17,15 @@ import AppKit
 final class CompletionPopover: NSGlassEffectView {
     /// One row, which is one cell of the terminal's own line height and then some: a list of eight is a
     /// glance, and eight rows of a terminal-sized font is not a glance.
-    static let rowHeight: CGFloat = 22
-    static let horizontalPadding: CGFloat = 10
-    static let verticalPadding: CGFloat = 6
+    static let rowHeight: CGFloat = 28
+    static let horizontalPadding: CGFloat = 12
+    static let verticalPadding: CGFloat = 8
     /// How far the list sits from the line it belongs to.
     static let gap: CGFloat = 4
     /// How far it keeps from the surface's edges when it has to be moved to fit.
     static let margin: CGFloat = 4
     /// Wide enough for a path and its description, narrow enough to leave the terminal visible behind it.
-    static let maximumWidth: CGFloat = 440
+    static let maximumWidth: CGFloat = 500
 
     private let list = CompletionRowsView()
 
@@ -88,19 +88,17 @@ private final class CompletionRowsView: NSView {
     var selectedRow = 0
     var palette: TerminalPalette = .builtin
 
-    private let textFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
-    private let detailFont = NSFont.systemFont(ofSize: 11)
+    private let textFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+    private let detailFont = NSFont.systemFont(ofSize: 12)
 
     /// What the popover should be sized to. Measured from the rows rather than fixed, so a list of short
     /// subcommands is a small panel and a list of deep paths is a wide one — up to the cap.
-    /// Not called `fittingSize`: `NSView` already has one, and it means something else — the size that
-    /// satisfies the view's constraints. Overriding it would be a lie about what this answers.
     var preferredSize: NSSize {
         let height =
             CGFloat(rows.count) * CompletionPopover.rowHeight + CompletionPopover.verticalPadding * 2
-        guard !rows.isEmpty else { return NSSize(width: 120, height: height) }
+        guard !rows.isEmpty else { return NSSize(width: 140, height: height) }
         let widest = rows.map { row in
-            width(row.text, font: textFont) + 12 + width(row.kind.displayName, font: detailFont)
+            width(row.text, font: textFont) + 14 + width(row.kind.displayName, font: detailFont)
                 + descriptionWidth(row)
         }
         .max() ?? 0
@@ -111,7 +109,7 @@ private final class CompletionRowsView: NSView {
 
     private func descriptionWidth(_ row: CompletionCandidate) -> CGFloat {
         guard let description = row.description else { return 0 }
-        return 12 + width(description, font: detailFont)
+        return 14 + width(description, font: detailFont)
     }
 
     private func width(_ string: String, font: NSFont) -> CGFloat {
@@ -128,30 +126,29 @@ private final class CompletionRowsView: NSView {
 
             if index == selectedRow {
                 palette.ansi[4].nsColor.withAlphaComponent(0.25).setFill()
-                let path = NSBezierPath(roundedRect: rowRect.insetBy(dx: 3, dy: 1), xRadius: 5, yRadius: 5)
+                let path = NSBezierPath(roundedRect: rowRect.insetBy(dx: 4, dy: 2), xRadius: 6, yRadius: 6)
                 path.fill()
                 palette.ansi[4].nsColor.withAlphaComponent(0.4).setStroke()
                 path.lineWidth = 1
                 path.stroke()
             }
 
-            let baseline = rowRect.midY - textFont.capHeight / 2 + 0.5
             var x = CompletionPopover.horizontalPadding
-            draw(row.text, at: x, baseline: baseline, font: textFont, color: palette.foreground.nsColor)
-            x += width(row.text, font: textFont) + 12
+            drawText(row.text, at: x, in: rowRect, font: textFont, color: palette.foreground.nsColor)
+            x += width(row.text, font: textFont) + 14
 
-            // The kind, right after the text: it is the reason to trust the suggestion, and the text alone
-            // does not say whether this is a subcommand or something that was run last week.
-            draw(row.kind.displayName, at: x, baseline: baseline, font: detailFont, color: palette.ansi[6].nsColor)
+            drawText(row.kind.displayName, at: x, in: rowRect, font: detailFont, color: palette.ansi[6].nsColor)
 
             guard let description = row.description else { continue }
-            x += width(row.kind.displayName, font: detailFont) + 12
-            draw(description, at: x, baseline: baseline, font: detailFont, color: palette.foreground.nsColor.withAlphaComponent(0.6))
+            x += width(row.kind.displayName, font: detailFont) + 14
+            drawText(description, at: x, in: rowRect, font: detailFont, color: palette.foreground.nsColor.withAlphaComponent(0.6))
         }
     }
 
-    private func draw(_ string: String, at x: CGFloat, baseline: CGFloat, font: NSFont, color: NSColor) {
+    private func drawText(_ string: String, at x: CGFloat, in rowRect: CGRect, font: NSFont, color: NSColor) {
+        let size = (string as NSString).size(withAttributes: [.font: font])
+        let y = (rowRect.midY - size.height / 2).rounded()
         NSAttributedString(string: string, attributes: [.font: font, .foregroundColor: color])
-            .draw(at: NSPoint(x: x, y: baseline))
+            .draw(at: NSPoint(x: x, y: y))
     }
 }

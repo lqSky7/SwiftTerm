@@ -125,6 +125,13 @@ final class CommandEditorView: NSTextView {
         isGrammarCheckingEnabled = false
         usesFindBar = false
 
+        // **The same list again, in the spelling that is not deprecated.** The eight above are the
+        // legacy accessors and cover about half of it; the modern `NSTextInputTraits` family is what
+        // carries text completion, data and link detection, inline prediction and Writing Tools — and
+        // what the system AutoFill service hangs off. See `TextIntelligence.swift` for why a terminal
+        // wants none of them.
+        disableTextIntelligence()
+
         typingAttributes = baseAttributes
     }
 
@@ -222,6 +229,28 @@ final class CommandEditorView: NSTextView {
         if selectedRange().length > 0 || onCopyWithoutSelection?() != true {
             super.copy(sender)
         }
+    }
+
+    // MARK: - Find in Terminal
+
+    @objc func performFind(_ sender: Any?) {
+        (superview as? TerminalSurfaceView)?.performFind(sender)
+    }
+
+    @objc func findNext(_ sender: Any?) {
+        (superview as? TerminalSurfaceView)?.findNext(sender)
+    }
+
+    @objc func findPrevious(_ sender: Any?) {
+        (superview as? TerminalSurfaceView)?.findPrevious(sender)
+    }
+
+    override func cancelOperation(_ sender: Any?) {
+        if let surface = superview as? TerminalSurfaceView, surface.isFindBarOpen {
+            surface.closeFindBar()
+            return
+        }
+        super.cancelOperation(sender)
     }
 
     // MARK: - Keys
