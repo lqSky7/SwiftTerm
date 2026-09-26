@@ -96,6 +96,13 @@ enum AppMenus {
         menu.addItem(item("Paste", #selector(TerminalSurfaceView.paste(_:)), key: "v"))
         menu.addItem(item("Select All", #selector(NSText.selectAll(_:)), key: "a"))
         menu.addItem(.separator())
+        menu.addItem(item("Find…", #selector(TerminalSurfaceView.performFind(_:)), key: "f"))
+        menu.addItem(item("Find Next", #selector(TerminalSurfaceView.findNext(_:)), key: "g"))
+        menu.addItem(
+            item(
+                "Find Previous", #selector(TerminalSurfaceView.findPrevious(_:)), key: "g",
+                modifiers: [.command, .shift]))
+        menu.addItem(.separator())
         menu.addItem(
             item("Clear Scrollback", #selector(TerminalSurfaceView.clearScrollback(_:)), key: "k"))
         return submenuItem("Edit", menu)
@@ -120,14 +127,32 @@ enum AppMenus {
                 "Hide Sidebar", #selector(TerminalWindowController.toggleSidebar(_:)), key: "b",
                 modifiers: [.command, .shift]))
         menu.addItem(.separator())
+        // **The chords come from `Keymap`, not from a literal here.** The settings page lists what
+        // `Keymap` says and this is the only thing that can make a chord fire, so a literal here would be
+        // a second answer to "what is the shortcut for the next tab" — and the two would drift the first
+        // time one of them changed. `⌥⌘↓`/`⌥⌘↑`.
+        menu.addItem(
+            item(
+                "Next Tab", #selector(TerminalWindowController.selectNextTab(_:)),
+                chord: Keymap.defaultKeymap.shortcut(for: .nextTab)))
+        menu.addItem(
+            item(
+                "Previous Tab", #selector(TerminalWindowController.selectPreviousTab(_:)),
+                chord: Keymap.defaultKeymap.shortcut(for: .previousTab)))
+        // **The bracket pair as well, and a hidden item is the only way to have a second chord.** A menu
+        // item carries exactly one key equivalent, so the alternative is a second row with the same
+        // title in the same menu. Hidden, AppKit still matches it — `isHidden` takes the item out of the
+        // menu's *drawing*, not out of its key handling — so the extra pair costs no rows.
+        //
+        // `⇧⌘]`/`⇧⌘[` because they are every tabbed app's and there is no reason to lose them.
         menu.addItem(
             item(
                 "Next Tab", #selector(TerminalWindowController.selectNextTab(_:)), key: "]",
-                modifiers: [.command, .shift]))
+                modifiers: [.command, .shift], hidden: true))
         menu.addItem(
             item(
                 "Previous Tab", #selector(TerminalWindowController.selectPreviousTab(_:)), key: "[",
-                modifiers: [.command, .shift]))
+                modifiers: [.command, .shift], hidden: true))
         menu.addItem(.separator())
         menu.addItem(
             item(
@@ -157,11 +182,46 @@ enum AppMenus {
         return submenuItem("Window", menu)
     }
 
+    /// The arrow keys as AppKit spells them on a menu item.
+    ///
+    /// `KeyEquivalent` spells them as words — `"DownArrow"` — and a menu item given the word matches
+    /// nothing at all, silently, which is the worst way for a shortcut to fail. This is the one place
+    /// that translation happens.
+    private static func menuKey(
+        for equivalent: KeyEquivalent
+    ) -> (key: String, modifiers: NSEvent.ModifierFlags) {
+        let key: String
+        switch equivalent.key {
+        case "UpArrow": key = "\u{F700}"
+        case "DownArrow": key = "\u{F701}"
+        case "LeftArrow": key = "\u{F702}"
+        case "RightArrow": key = "\u{F703}"
+        default: key = equivalent.key
+        }
+
+        var modifiers: NSEvent.ModifierFlags = []
+        if equivalent.modifiers.contains(.command) { modifiers.insert(.command) }
+        if equivalent.modifiers.contains(.shift) { modifiers.insert(.shift) }
+        if equivalent.modifiers.contains(.option) { modifiers.insert(.option) }
+        if equivalent.modifiers.contains(.control) { modifiers.insert(.control) }
+        return (key, modifiers)
+    }
+
     private static func item(
-        _ title: String, _ action: Selector, key: String = "", modifiers: NSEvent.ModifierFlags = .command
+        _ title: String, _ action: Selector, chord equivalent: KeyEquivalent, hidden: Bool = false
+    ) -> NSMenuItem {
+        let translated = menuKey(for: equivalent)
+        return item(title, action, key: translated.key, modifiers: translated.modifiers, hidden: hidden)
+    }
+
+    private static func item(
+        _ title: String, _ action: Selector, key: String = "",
+        modifiers: NSEvent.ModifierFlags = .command, hidden: Bool = false
     ) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
         if !key.isEmpty { item.keyEquivalentModifierMask = modifiers }
+        // Out of the menu's drawing, still in its key handling — see the tab items in `viewMenu`.
+        item.isHidden = hidden
         return item
     }
 

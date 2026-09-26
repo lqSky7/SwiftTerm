@@ -6,6 +6,10 @@
 	<string>en</string>
 	<key>CFBundleExecutable</key>
 	<string>SwiftTerm</string>
+	<key>CFBundleIconFile</key>
+	<string>swiftTerm</string>
+	<key>CFBundleIconName</key>
+	<string>swiftTerm</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.swiftterm.app</string>
 	<key>CFBundleInfoDictionaryVersion</key>
@@ -17,7 +21,7 @@
 	<key>CFBundleShortVersionString</key>
 	<string>0.1.0</string>
 	<key>CFBundleVersion</key>
-	<string>78</string>
+	<string>88</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.developer-tools</string>
 	<key>LSMinimumSystemVersion</key>

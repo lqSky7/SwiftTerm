@@ -130,10 +130,14 @@ enum KeymapAction: String, CaseIterable, Identifiable, Hashable, Sendable, Codab
             return KeyEquivalent(key: "t", modifiers: [.command])
         case .closeTab:
             return KeyEquivalent(key: "w", modifiers: [.shift, .command])
+        // `⌥⌘↓`/`⌥⌘↑` rather than the bracket pair every tabbed app uses, and the arrow pair is the one
+        // a terminal can spare: `⌘↑`/`⌘↓` are already the block jumps, and this is the same gesture one
+        // modifier further out, which is what moving through a list is. The brackets are not lost — the
+        // menu carries them as hidden alternates, because a menu item has room for exactly one.
         case .nextTab:
-            return KeyEquivalent(key: "]", modifiers: [.shift, .command])
+            return KeyEquivalent(key: "DownArrow", modifiers: [.command, .option])
         case .previousTab:
-            return KeyEquivalent(key: "[", modifiers: [.shift, .command])
+            return KeyEquivalent(key: "UpArrow", modifiers: [.command, .option])
         case .jumpPreviousBlock:
             return KeyEquivalent(key: "UpArrow", modifiers: [.command])
         case .jumpNextBlock:

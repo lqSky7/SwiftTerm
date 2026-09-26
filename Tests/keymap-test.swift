@@ -28,6 +28,28 @@ enum KeymapTest {
 
         let nextBlock = keymap.shortcut(for: .jumpNextBlock)
         harness.equal(nextBlock.displayString, "⌘↓", "Jump next block display string")
+
+        // **The two arrow pairs, and that they are two.** `⌘↑`/`⌘↓` are the block jumps and `⌥⌘↑`/`⌥⌘↓`
+        // are the tabs, which is the whole reason the tab pair is spelled the way it is — one modifier
+        // further out is the same gesture. They are one modifier apart, so a mistake here is not a
+        // shortcut that fails but a shortcut that does the *other* thing.
+        harness.equal(
+            keymap.shortcut(for: .nextTab).displayString, "⌥⌘↓", "Next tab display string")
+        harness.equal(
+            keymap.shortcut(for: .previousTab).displayString, "⌥⌘↑", "Previous tab display string")
+
+        harness.equal(
+            keymap.action(for: "DownArrow", modifiers: [.command, .option]), .nextTab,
+            "⌥⌘↓ moves to the next tab")
+        harness.equal(
+            keymap.action(for: "UpArrow", modifiers: [.command, .option]), .previousTab,
+            "⌥⌘↑ moves to the previous tab")
+        harness.equal(
+            keymap.action(for: "DownArrow", modifiers: [.command]), .jumpNextBlock,
+            "⌘↓ is still the next block")
+        harness.equal(
+            keymap.action(for: "UpArrow", modifiers: [.command]), .jumpPreviousBlock,
+            "⌘↑ is still the previous block")
     }
 
     private static func testKeyMatchingAndOverrides(_ harness: Harness) {
