@@ -19,7 +19,7 @@ let package = Package(
             // Info.plist, which Scripts/build-app.sh copies into the bundle itself.
             exclude: [
                 "Tests", "docs", "Scripts", "dist",
-                "app/Info.plist", "app/SwiftTerm.entitlements",
+                "app/Info.plist", "app/SwiftTerm.entitlements", "app/assets",
                 "README.md", "READ_ME.md", "EDITOR.md", "index.md",
                 "AGENTS.md", "tinycast_architecture_and_rules.md", "warp_features.md",
                 // Every directory carries an index.md for the next agent to read. SwiftPM has no

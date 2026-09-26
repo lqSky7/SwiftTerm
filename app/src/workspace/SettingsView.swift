@@ -307,6 +307,7 @@ struct SettingsView: View {
         switch category {
         case .appearance: AppearanceSettingsView(workspace: workspace)
         case .themes: ThemeSettingsView(workspace: workspace)
+        case .commands: CommandsSettingsView(workspace: workspace)
         case .keymaps: KeymapSettingsView(workspace: workspace)
         case .sidebar: SidebarSettingsView(workspace: workspace)
         }
@@ -317,6 +318,7 @@ struct SettingsView: View {
 private enum SettingsCategory: String, CaseIterable, Identifiable {
     case appearance
     case themes
+    case commands
     case keymaps
     case sidebar
 
@@ -326,6 +328,7 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
         switch self {
         case .appearance: "Appearance"
         case .themes: "Themes & Colors"
+        case .commands: "Commands & History"
         case .keymaps: "Keyboard Shortcuts"
         case .sidebar: "Sidebar"
         }
@@ -337,6 +340,7 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
         switch self {
         case .appearance: "macwindow"
         case .themes: "paintpalette.fill"
+        case .commands: "terminal"
         case .keymaps: "keyboard"
         case .sidebar: "sidebar.left"
         }
@@ -348,6 +352,8 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
             "What the window is made of, and how opaque each of its surfaces is."
         case .themes:
             "Theme presets, ANSI color palettes, and color customization."
+        case .commands:
+            "Manage saved commands and autocomplete suggestions."
         case .keymaps:
             "Configurable keyboard shortcuts and navigation mappings."
         case .sidebar:
@@ -442,6 +448,8 @@ struct AppearanceSettingsView: View {
                     value: terminalOpacity,
                     defaultValue: workspace.chrome.terminalMaterial.defaultOpacity,
                     set: { workspace.setTerminalOpacity($0) })
+                SettingsRowDivider()
+                SettingsRow(title: "Chip background") { chipMaterialPicker }
             }
         }
     }
@@ -552,6 +560,23 @@ struct AppearanceSettingsView: View {
             get: { workspace.chrome.terminalOpacity },
             set: { workspace.setTerminalOpacity($0) })
     }
+
+    private var chipMaterialPicker: some View {
+        Picker("Chip background", selection: chipMaterial) {
+            ForEach(ChipMaterial.allCases, id: \.self) { candidate in
+                Text(candidate.displayName).tag(candidate)
+            }
+        }
+        .pickerStyle(.menu)
+        .labelsHidden()
+        .fixedSize()
+    }
+
+    private var chipMaterial: Binding<ChipMaterial> {
+        Binding(
+            get: { workspace.chrome.chipMaterial },
+            set: { workspace.setChipMaterial($0) })
+    }
 }
 
 /// A percentage row: a title, a small slider between "Less" and "More", and the way back to the default.
@@ -644,6 +669,12 @@ struct ThemeSettingsView: View {
 
     var body: some View {
         SettingsPage(title: "Themes & Colors", showsBackButton: true) {
+            SettingsGroup(label: "Appearance") {
+                SettingsRow(title: "Color Mode") {
+                    appearancePicker
+                }
+            }
+
             SettingsGroup(label: "Theme Preset") {
                 SettingsRow(title: "Active Theme") {
                     presetPicker
@@ -693,6 +724,23 @@ struct ThemeSettingsView: View {
                 ansiColorRow(title: "White", normalIndex: 7, brightIndex: 15)
             }
         }
+    }
+
+    private var appearancePicker: some View {
+        Picker("Color Mode", selection: appearanceMode) {
+            ForEach(AppearanceMode.allCases, id: \.self) { mode in
+                Text(mode.displayName).tag(mode)
+            }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .fixedSize()
+    }
+
+    private var appearanceMode: Binding<AppearanceMode> {
+        Binding(
+            get: { workspace.chrome.appearanceMode },
+            set: { workspace.setAppearanceMode($0) })
     }
 
     private var presetPicker: some View {
@@ -868,6 +916,67 @@ struct KeymapSettingsView: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - Commands & Autocomplete
+
+struct CommandsSettingsView: View {
+    let workspace: AppCore
+
+    var body: some View {
+        SettingsPage(title: "Commands & History", showsBackButton: true) {
+            SettingsGroup(label: "Add Command") {
+                HStack(spacing: Theme.Spacing.md) {
+                    TextField("e.g. ./build-app.sh release", text: draft)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 13, design: .monospaced))
+                    Button("Add") {
+                        workspace.addSavedCommand(workspace.newCommandDraft)
+                        workspace.setNewCommandDraft("")
+                    }
+                    .controlSize(.small)
+                    .disabled(workspace.newCommandDraft.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+                .padding(.horizontal, Theme.Spacing.lg)
+                .padding(.vertical, Theme.Spacing.md)
+            }
+
+            SettingsGroup(label: "Saved Commands (\(workspace.savedCommands.count))") {
+                if workspace.savedCommands.isEmpty {
+                    Text("No custom commands added yet. Added commands appear automatically in autocomplete.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, Theme.Spacing.lg)
+                        .padding(.vertical, Theme.Spacing.md)
+                } else {
+                    ForEach(Array(workspace.savedCommands.enumerated()), id: \.offset) { index, command in
+                        if index > 0 { SettingsRowDivider() }
+                        HStack(spacing: Theme.Spacing.md) {
+                            Text(command)
+                                .font(.system(size: 13, design: .monospaced))
+                            Spacer()
+                            Button {
+                                workspace.removeSavedCommand(at: index)
+                            } label: {
+                                Image(systemName: "trash")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(.horizontal, Theme.Spacing.lg)
+                        .padding(.vertical, Theme.Spacing.md)
+                    }
+                }
+            }
+        }
+    }
+
+    private var draft: Binding<String> {
+        Binding(
+            get: { workspace.newCommandDraft },
+            set: { workspace.setNewCommandDraft($0) })
     }
 }
 

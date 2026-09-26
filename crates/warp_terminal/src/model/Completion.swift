@@ -668,7 +668,12 @@ struct CompletionEngine {
     /// suggestion about a buffer that does not exist yet.
     func ghostText(for buffer: String, cursor: Int) -> String? {
         guard cursor == buffer.count, !buffer.isEmpty else { return nil }
-        guard let match = history.first(where: { $0.hasPrefix(buffer) && $0.count > buffer.count })
+        guard let match = history.first(where: { entry in
+            guard entry.hasPrefix(buffer) && entry.count > buffer.count else { return false }
+            let parts = entry.split(separator: " ")
+            if parts.count >= 2 && parts[0] == parts[1] { return false }
+            return true
+        })
         else { return nil }
         return String(match.dropFirst(buffer.count))
     }

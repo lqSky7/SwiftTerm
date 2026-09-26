@@ -109,7 +109,7 @@ struct CompletionMenu: Equatable {
         guard let candidate = selectedCandidate else { return nil }
         let insertion = candidate.insertion ?? candidate.text
         var characters = Array(buffer)
-        let start = min(max(0, wordStart), characters.count)
+        let start = candidate.kind == .history ? 0 : min(max(0, wordStart), characters.count)
         let end = min(max(start, caret), characters.count)
         characters.replaceSubrange(start..<end, with: Array(insertion))
         return (String(characters), start + insertion.count)

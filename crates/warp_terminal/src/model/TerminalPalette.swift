@@ -31,39 +31,31 @@ struct TerminalPalette: Hashable, Sendable, Codable {
 
     // MARK: - Built-in Presets
 
-    static let warpDark = TerminalPalette(
+    static let swiftTermMono = TerminalPalette(
         ansi: [
-            TerminalRGB(hex: 0x1D1F21), TerminalRGB(hex: 0xCC6666),
-            TerminalRGB(hex: 0xB5BD68), TerminalRGB(hex: 0xF0C674),
-            TerminalRGB(hex: 0x81A2BE), TerminalRGB(hex: 0xB294BB),
-            TerminalRGB(hex: 0x8ABEB7), TerminalRGB(hex: 0xC5C8C6),
-            TerminalRGB(hex: 0x666666), TerminalRGB(hex: 0xD54E53),
-            TerminalRGB(hex: 0xB9CA4A), TerminalRGB(hex: 0xE6C547),
-            TerminalRGB(hex: 0x7AA6DA), TerminalRGB(hex: 0xC397D8),
-            TerminalRGB(hex: 0x70C0BA), TerminalRGB(hex: 0xEAEAEA),
+            TerminalRGB(hex: 0x161616),
+            TerminalRGB(hex: 0xEE5555),
+            TerminalRGB(hex: 0x9E9E9E),
+            TerminalRGB(hex: 0xB0B0B0),
+            TerminalRGB(hex: 0xC4C4C4),
+            TerminalRGB(hex: 0xD0D0D0),
+            TerminalRGB(hex: 0xDBDBDB),
+            TerminalRGB(hex: 0xEAEAEA),
+            TerminalRGB(hex: 0x505050),
+            TerminalRGB(hex: 0xFF6E6E),
+            TerminalRGB(hex: 0xAAAAAA),
+            TerminalRGB(hex: 0xBEBEBE),
+            TerminalRGB(hex: 0xD2D2D2),
+            TerminalRGB(hex: 0xDEDEDE),
+            TerminalRGB(hex: 0xE6E6E6),
+            TerminalRGB(hex: 0xFFFFFF),
         ],
-        foreground: TerminalRGB(hex: 0xC5C8C6),
-        background: TerminalRGB(hex: 0x1D1F21),
-        cursor: TerminalRGB(hex: 0xC5C8C6))
+        foreground: TerminalRGB(hex: 0xE0E0E0),
+        background: TerminalRGB(hex: 0x121212),
+        cursor: TerminalRGB(hex: 0xFFFFFF))
 
-    static let builtin = warpDark
-
-    static let warpLight = TerminalPalette(
-        ansi: [
-            TerminalRGB(hex: 0x000000), TerminalRGB(hex: 0xC82829),
-            TerminalRGB(hex: 0x718C00), TerminalRGB(hex: 0xEAB700),
-            TerminalRGB(hex: 0x4271AE), TerminalRGB(hex: 0x8959A8),
-            TerminalRGB(hex: 0x3E999F), TerminalRGB(hex: 0xD6D6D6),
-            TerminalRGB(hex: 0x969896), TerminalRGB(hex: 0xC82829),
-            TerminalRGB(hex: 0x718C00), TerminalRGB(hex: 0xEAB700),
-            TerminalRGB(hex: 0x4271AE), TerminalRGB(hex: 0x8959A8),
-            TerminalRGB(hex: 0x3E999F), TerminalRGB(hex: 0xFFFFFF),
-        ],
-        foreground: TerminalRGB(hex: 0x4D4D4C),
-        background: TerminalRGB(hex: 0xFFFFFF),
-        cursor: TerminalRGB(hex: 0x4D4D4C))
-
-    static let light = warpLight
+    static let builtin = swiftTermMono
+    static let light = swiftTermMono
 
     static let dracula = TerminalPalette(
         ansi: [
@@ -157,8 +149,7 @@ struct TerminalPalette: Hashable, Sendable, Codable {
 
     /// The list of standard presets presented in the theme selector.
     static let presets: [(name: String, palette: TerminalPalette)] = [
-        ("Warp Dark", warpDark),
-        ("Warp Light", warpLight),
+        ("SwiftTerm Mono", swiftTermMono),
         ("Dracula", dracula),
         ("Solarized Dark", solarizedDark),
         ("Solarized Light", solarizedLight),
@@ -169,6 +160,8 @@ struct TerminalPalette: Hashable, Sendable, Codable {
 
     static func preset(named name: String) -> TerminalPalette? {
         presets.first { $0.name.caseInsensitiveCompare(name) == .orderedSame }?.palette
+            ?? (name.caseInsensitiveCompare("Warp Dark") == .orderedSame ? swiftTermMono : nil)
+            ?? (name.caseInsensitiveCompare("Warp Light") == .orderedSame ? swiftTermMono : nil)
     }
 }
 

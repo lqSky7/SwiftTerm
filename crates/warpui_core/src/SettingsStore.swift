@@ -116,10 +116,11 @@ private struct VersionOneChrome: Decodable {
 /// What roams.
 struct SyncedSettings: Codable, Equatable {
     var chrome = ChromeSettings()
-    var themeName: String = "Warp Dark"
+    var themeName: String = "SwiftTerm Mono"
     var activeCustomPalette: TerminalPalette? = nil
     var customPalettes: [String: TerminalPalette] = [:]
     var customKeymap: [String: KeyEquivalent] = [:]
+    var savedCommands: [String] = []
 
     private enum CodingKeys: String, CodingKey {
         case chrome
@@ -127,6 +128,7 @@ struct SyncedSettings: Codable, Equatable {
         case activeCustomPalette
         case customPalettes
         case customKeymap
+        case savedCommands
     }
 
     init() {}
@@ -141,6 +143,7 @@ struct SyncedSettings: Codable, Equatable {
         activeCustomPalette = (try? container.decodeIfPresent(TerminalPalette.self, forKey: .activeCustomPalette)) ?? nil
         customPalettes = (try? container.decode([String: TerminalPalette].self, forKey: .customPalettes)) ?? fallback.customPalettes
         customKeymap = (try? container.decode([String: KeyEquivalent].self, forKey: .customKeymap)) ?? fallback.customKeymap
+        savedCommands = (try? container.decode([String].self, forKey: .savedCommands)) ?? fallback.savedCommands
     }
 
     func encode(to encoder: Encoder) throws {
@@ -150,6 +153,7 @@ struct SyncedSettings: Codable, Equatable {
         try container.encodeIfPresent(activeCustomPalette, forKey: .activeCustomPalette)
         try container.encode(customPalettes, forKey: .customPalettes)
         try container.encode(customKeymap, forKey: .customKeymap)
+        try container.encode(savedCommands, forKey: .savedCommands)
     }
 }
 

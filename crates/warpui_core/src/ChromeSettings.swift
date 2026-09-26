@@ -13,7 +13,7 @@ enum AppearanceMode: String, CaseIterable, Equatable, Codable {
 
     var displayName: String {
         switch self {
-        case .system: "System"
+        case .system: "Auto"
         case .light: "Light"
         case .dark: "Dark"
         }
@@ -71,6 +71,19 @@ enum ChromeMaterial: String, CaseIterable, Equatable, Codable {
         case .ultraThin: 0.55
         case .thin: 0.62
         case .glassRegular, .glassClear: 0.6
+        }
+    }
+}
+
+/// What contextual prompt chips in the terminal are made of.
+enum ChipMaterial: String, CaseIterable, Equatable, Codable {
+    case thinMaterial
+    case glass
+
+    var displayName: String {
+        switch self {
+        case .thinMaterial: "Thin Material"
+        case .glass: "Glass"
         }
     }
 }
@@ -157,6 +170,9 @@ struct ChromeSettings: Equatable {
     /// That is the honest reading of two fills, and it is why one slider for both could not have said it.
     var terminalOpacity: Double = ChromeSettings.defaultTerminalOpacity
 
+    /// What the terminal's context chips are made of.
+    var chipMaterial: ChipMaterial = .thinMaterial
+
     /// What the terminal's opacity resets to. Named rather than written into the view's `Reset`, because a
     /// default is a decision and a literal in a button is a decision nobody can find.
     /// **Zero, on purpose.** The terminal's own background fill is what the slider moves, and at zero none of it is
@@ -222,6 +238,10 @@ struct ChromeSettings: Equatable {
         terminalMaterial = material
         terminalOpacity = material.defaultOpacity
     }
+
+    mutating func setChipMaterial(_ material: ChipMaterial) {
+        chipMaterial = material
+    }
 }
 
 extension ChromeSettings: Codable {
@@ -235,6 +255,7 @@ extension ChromeSettings: Codable {
         case terminalMaterial
         case sidebarOpacity
         case terminalOpacity
+        case chipMaterial
     }
 
     /// Tolerant, and **clamped**, on the way in.
@@ -276,6 +297,9 @@ extension ChromeSettings: Codable {
             try container.decodeIfPresent(Double.self, forKey: .sidebarOpacity) ?? fallback.sidebarOpacity)
         setTerminalOpacity(
             try container.decodeIfPresent(Double.self, forKey: .terminalOpacity) ?? fallback.terminalOpacity)
+        chipMaterial =
+            (try container.decodeIfPresent(String.self, forKey: .chipMaterial))
+            .flatMap(ChipMaterial.init(rawValue:)) ?? fallback.chipMaterial
     }
 
     func encode(to encoder: Encoder) throws {
@@ -289,6 +313,7 @@ extension ChromeSettings: Codable {
         try container.encode(terminalMaterial.rawValue, forKey: .terminalMaterial)
         try container.encode(sidebarOpacity, forKey: .sidebarOpacity)
         try container.encode(terminalOpacity, forKey: .terminalOpacity)
+        try container.encode(chipMaterial.rawValue, forKey: .chipMaterial)
     }
 }
 

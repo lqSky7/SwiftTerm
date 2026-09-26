@@ -13,12 +13,17 @@ enum ThemePaletteTest {
     }
 
     private static func testPresets(_ harness: Harness) {
-        harness.equal(TerminalPalette.presets.count, 8, "Expected 8 built-in presets")
+        harness.equal(TerminalPalette.presets.count, 7, "Expected 7 built-in presets")
 
         for (name, palette) in TerminalPalette.presets {
             harness.equal(palette.ansi.count, 16, "Preset \(name) must have 16 ANSI colors")
             harness.expect(palette.foreground != palette.background, "Preset \(name) must have contrasting fg and bg")
         }
+
+        let mono = TerminalPalette.preset(named: "SwiftTerm Mono")
+        harness.expect(mono != nil, "Should find SwiftTerm Mono preset")
+        harness.equal(mono?.ansi[1], TerminalRGB(hex: 0xEE5555), "SwiftTerm Mono error color is red")
+        harness.expect(mono!.ansi[2].red == mono!.ansi[2].green && mono!.ansi[2].green == mono!.ansi[2].blue, "SwiftTerm Mono ANSI 2 is monochrome")
 
         let dracula = TerminalPalette.preset(named: "Dracula")
         harness.expect(dracula != nil, "Should find Dracula preset")

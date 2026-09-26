@@ -18,43 +18,65 @@ struct HistoryNavigation: Equatable {
     private var index: Int?
     /// What was in the buffer when the walk started, so ↓ can hand it back.
     private var draft = ""
+    /// Filtered entry indices when navigating with a prefix.
+    private var filteredIndices: [Int]? = nil
 
     var isNavigating: Bool { index != nil }
 
     /// ↑. `entries` is oldest-first, which is the order a shell keeps them in and the opposite of the order
-    /// they are offered in.
+    /// they are offered in. If the buffer is non-empty, filters to entries sharing the prefix.
     mutating func previous(in entries: [String], from buffer: String) -> String? {
         guard !entries.isEmpty else {
-            // A history that emptied under the walk ends it rather than leaving a position pointing at
-            // nothing — and an empty history is not a walk at all, so the key goes back to the shell.
             reset()
             return nil
         }
         if index == nil {
             draft = buffer
-            index = entries.count - 1
+            if !draft.isEmpty {
+                let matching = entries.indices.filter { entries[$0].hasPrefix(draft) }
+                filteredIndices = matching.isEmpty ? nil : matching
+            } else {
+                filteredIndices = nil
+            }
+
+            if let filtered = filteredIndices {
+                index = filtered.count - 1
+                let entryIndex = filtered[index ?? 0]
+                return entries[entryIndex]
+            } else {
+                index = entries.count - 1
+                return entries[index ?? 0]
+            }
         } else {
-            index = max(0, (index ?? 0) - 1)
+            if let filtered = filteredIndices {
+                index = max(0, (index ?? 0) - 1)
+                let entryIndex = filtered[index ?? 0]
+                return entries[entryIndex]
+            } else {
+                index = max(0, (index ?? 0) - 1)
+                let clamped = min(max(0, index ?? 0), entries.count - 1)
+                index = clamped
+                return entries[clamped]
+            }
         }
-        // **Clamped, not trusted.** The history is the session's, so a block evicted by the scrollback cap
-        // mid-walk leaves this index past the end of the list. The honest answer there is the nearest entry
-        // that still exists; returning nil would make ↑ silently dead, which is a worse failure than
-        // recalling the wrong line — one is visible, the other is not.
-        let clamped = min(max(0, index ?? 0), entries.count - 1)
-        index = clamped
-        return entries[clamped]
     }
 
     /// ↓. One past the newest is not a failure — it is the draft coming back.
     mutating func next(in entries: [String]) -> String? {
-        guard let index else { return nil }
-        let forward = index + 1
-        if forward >= entries.count {
-            self.index = nil
-            return draft
+        guard let currentIndex = index else { return nil }
+        let forward = currentIndex + 1
+        let maxCount = filteredIndices?.count ?? entries.count
+        if forward >= maxCount {
+            let saved = draft
+            reset()
+            return saved
         }
         self.index = forward
-        return entries[forward]
+        if let filtered = filteredIndices {
+            return entries[filtered[forward]]
+        } else {
+            return entries[forward]
+        }
     }
 
     /// The buffer is somebody's own again — a command was submitted, or the editor was emptied. Without
@@ -62,5 +84,6 @@ struct HistoryNavigation: Equatable {
     mutating func reset() {
         index = nil
         draft = ""
+        filteredIndices = nil
     }
 }

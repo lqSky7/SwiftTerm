@@ -40,6 +40,7 @@ final class AppCore {
     private(set) var activeCustomPalette: TerminalPalette?
     private(set) var customPalettes: [String: TerminalPalette]
     private(set) var customKeymap: [String: KeyEquivalent]
+    private(set) var savedCommands: [String] = []
     private(set) var recordingKeymapAction: KeymapAction?
     @ObservationIgnored private var keyEventMonitor: Any?
 
@@ -72,6 +73,7 @@ final class AppCore {
         activeCustomPalette = document.synced.activeCustomPalette
         customPalettes = document.synced.customPalettes
         customKeymap = document.synced.customKeymap
+        savedCommands = document.synced.savedCommands
         self.persistsSession = persistsSession
     }
 
@@ -84,6 +86,18 @@ final class AppCore {
     /// The revision goes up by one on every write. It is what a sync backend compares to tell a stale write from
     /// a fresh one, and it has to be incremented from the first write rather than from the first *sync* — a
     /// revision that starts at zero when the backend arrives cannot order the writes that came before it.
+    private var persistTask: Task<Void, Never>?
+
+    private func schedulePersist() {
+        persistTask?.cancel()
+        persistTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            guard !Task.isCancelled, let self else { return }
+            self.persist()
+            self.persistTask = nil
+        }
+    }
+
     private func persist() {
         var document = store.load()
         document.synced.chrome = chrome
@@ -92,8 +106,34 @@ final class AppCore {
         document.synced.activeCustomPalette = activeCustomPalette
         document.synced.customPalettes = customPalettes
         document.synced.customKeymap = customKeymap
+        document.synced.savedCommands = savedCommands
         document.revision += 1
         store.save(document)
+    }
+
+    private(set) var newCommandDraft: String = ""
+
+    func addSavedCommand(_ command: String) {
+        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !savedCommands.contains(trimmed) else { return }
+        savedCommands.append(trimmed)
+        for coordinator in coordinators.values {
+            coordinator.savedCommands = savedCommands
+        }
+        persist()
+    }
+
+    func removeSavedCommand(at index: Int) {
+        guard savedCommands.indices.contains(index) else { return }
+        savedCommands.remove(at: index)
+        for coordinator in coordinators.values {
+            coordinator.savedCommands = savedCommands
+        }
+        persist()
+    }
+
+    func setNewCommandDraft(_ text: String) {
+        newCommandDraft = text
     }
 
     /// The pane the window is showing, and the one the keyboard belongs to. `nil` when the settings page
@@ -154,6 +194,11 @@ final class AppCore {
     /// Safe to call more than once: closing this window's last tab already empties `coordinators` and
     /// `tabs` through `closeIfEmpty()`, and the window closing itself calls this again on its way out.
     func terminate() {
+        if persistTask != nil {
+            persistTask?.cancel()
+            persistTask = nil
+            persist()
+        }
         cancelRecordingKeymap()
         // **Written first**, because it is a description of a window that is about to stop existing — and because
         // `tabs` is cleared two lines down, after which there is nothing left to describe.
@@ -327,7 +372,7 @@ final class AppCore {
 
     func setSidebarOpacity(_ opacity: Double) {
         chrome.setSidebarOpacity(opacity)
-        persist()
+        schedulePersist()
     }
 
     func setTerminalMaterial(_ material: ChromeMaterial) {
@@ -345,7 +390,7 @@ final class AppCore {
     func setFontSize(_ size: Double) {
         chrome.setFontSize(size)
         applyTypography()
-        persist()
+        schedulePersist()
     }
 
     /// `⌘+` and `⌘−`. Stepped and clamped by the setting, and **saved** — a text size that resets when the window
@@ -356,7 +401,7 @@ final class AppCore {
     func setLineHeightRatio(_ ratio: Double) {
         chrome.setLineHeightRatio(ratio)
         applyTypography()
-        persist()
+        schedulePersist()
     }
 
     /// Push the text size and the line height into every surface, like the appearance and the opacity.
@@ -369,6 +414,14 @@ final class AppCore {
 
     func setTerminalOpacity(_ opacity: Double) {
         chrome.setTerminalOpacity(opacity)
+        for coordinator in coordinators.values {
+            coordinator.setTerminalOpacity(chrome.terminalOpacity)
+        }
+        schedulePersist()
+    }
+
+    func setChipMaterial(_ material: ChipMaterial) {
+        chrome.setChipMaterial(material)
         applyAppearance()
         persist()
     }
@@ -391,6 +444,7 @@ final class AppCore {
         for coordinator in coordinators.values {
             coordinator.setAppearanceMode(chrome.appearanceMode)
             coordinator.setTerminalOpacity(chrome.terminalOpacity)
+            coordinator.setChipMaterial(chrome.chipMaterial)
             coordinator.setPalette(palette)
         }
     }
@@ -561,7 +615,7 @@ final class AppCore {
         if let preset = TerminalPalette.preset(named: themeName) {
             return preset
         }
-        return .warpDark
+        return .swiftTermMono
     }
 
     func setThemeName(_ name: String) {
@@ -612,7 +666,7 @@ final class AppCore {
     }
 
     func resetThemeToDefault() {
-        themeName = "Warp Dark"
+        themeName = "SwiftTerm Mono"
         activeCustomPalette = nil
         persist()
         applyTheme()
@@ -769,8 +823,10 @@ final class AppCore {
         // palette than the one beside it.
         coordinator.setAppearanceMode(chrome.appearanceMode)
         coordinator.setTerminalOpacity(chrome.terminalOpacity)
+        coordinator.setChipMaterial(chrome.chipMaterial)
         coordinator.setPalette(currentPalette)
         coordinator.setKeymap(keymap)
+        coordinator.savedCommands = savedCommands
         coordinator.setFontSize(chrome.fontSize)
         coordinator.setLineHeightRatio(chrome.lineHeightRatio)
         // `⌘+` and `⌘−` go up to the app, not into the surface: the size is a setting, and a coordinator that
