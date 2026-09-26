@@ -32,9 +32,10 @@ struct WorkspaceSidebar: View {
     /// leading side. The row exists so the tab list starts *below* them — the window has no titlebar
     /// band of its own, which is what puts them over the sidebar in the first place.
     private var header: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: Theme.Spacing.md) {
             Spacer(minLength: Theme.Size.trafficLightInset)
             Spacer(minLength: 0)
+            NewTabButton(workspace: workspace)
             SettingsButton(workspace: workspace)
         }
         .padding(.horizontal, Theme.Spacing.md)
@@ -296,12 +297,34 @@ struct SettingsButton: View {
             workspace.openSettings()
         } label: {
             Image(systemName: "slider.horizontal.3")
-                .font(.system(size: 13))
+                .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(Color(nsColor: .secondaryLabelColor))
-                .frame(width: 22, height: 22)
+                .frame(width: 28, height: 28)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help("Settings")
+        .glassEffect(.regular.interactive(), in: Circle())
+        .help("Settings (⌘,)")
     }
 }
+
+/// Creates a new terminal tab from the sidebar.
+struct NewTabButton: View {
+    let workspace: AppCore
+
+    var body: some View {
+        Button {
+            workspace.newTab()
+        } label: {
+            Image(systemName: "plus")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Color(nsColor: .secondaryLabelColor))
+                .frame(width: 28, height: 28)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: Circle())
+        .help("New Tab (⌘T)")
+    }
+}
+

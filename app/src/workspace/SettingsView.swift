@@ -102,40 +102,37 @@ struct SettingsPage<Content: View>: View {
     }
 }
 
-/// The bar at the top of a settings page: the name of the page, centred, and the way back on the leading side.
-///
-/// The title is **centred rather than led**, and that is the point of it: it says which page you are inside.
-/// A title in the corner is a caption on the content below it rather than the name of the page.
+// Centred page title with the back button aligned to the sidebar toggle.
 private struct SettingsTopBar: View {
     let title: String
     let showsBackButton: Bool
 
     var body: some View {
-        ZStack {
+        ZStack(alignment: .top) {
             Text(title)
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(Theme.Colors.titlebarInk)
+                .frame(height: 28)
+                .frame(maxWidth: .infinity, alignment: .center)
 
             HStack(spacing: 0) {
-                // The room the floating sidebar button takes at the panel's top-leading corner. A back button
-                // beside it would be two controls in the same place, so the bar steps past it — one token,
-                // shared with the button itself, rather than two numbers that have to agree.
+                // Steps past the floating sidebar toggle to align alongside it.
                 Color.clear
-                    .frame(width: Theme.Size.paneToggleFootprint, height: 0)
-                if showsBackButton { SettingsBackButton() }
+                    .frame(width: Theme.Size.paneToggleFootprint, height: 28)
+                if showsBackButton {
+                    SettingsBackButton()
+                }
                 Spacer(minLength: 0)
             }
+            .frame(height: 28)
         }
-        .frame(height: Theme.Size.settingsTopBarHeight)
-        .padding(.horizontal, Theme.Spacing.xxl)
+        .padding(.top, Theme.Spacing.lg)
+        .padding(.trailing, Theme.Spacing.xxl)
+        .frame(height: Theme.Size.settingsTopBarHeight, alignment: .top)
     }
 }
 
-/// The way back, placed inside the page rather than left to the window's toolbar.
-///
-/// `@Environment(\.dismiss)` is a property wrapper rather than a macro, so unlike `@State` it costs nothing
-/// to the whole-app typecheck — and it is not state this view owns, which is the rule the rest of the chrome
-/// follows.
+// Navigates back in the settings stack using a glass circular button.
 struct SettingsBackButton: View {
     @Environment(\.dismiss) private var dismiss
 
@@ -144,13 +141,13 @@ struct SettingsBackButton: View {
             dismiss()
         } label: {
             Image(systemName: "chevron.backward")
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(Color(nsColor: .secondaryLabelColor))
                 .frame(width: 28, height: 28)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .background(Material.ultraThin, in: .circle)
+        .glassEffect(.regular.interactive(), in: Circle())
         .help("Back to settings")
     }
 }
