@@ -5,9 +5,13 @@ The app draws its mark from `app/assets/swiftTerm.icon/Assets/SVG Image.svg`: tw
 stroked, round caps. This rasterises those same two polylines and emits them as `▀` cells with
 24-bit colour, because the terminal has no image protocol to hand an actual PNG to.
 
-    ./Scripts/banner.py                # the mark, centred, 64 columns
-    ./Scripts/banner.py --width 88     # bigger
-    ./Scripts/banner.py --plain        # no colour, for a log or a diff
+By default the mark is sized to fill the window it is run in and wears the icon's crimson
+gradient. `--color ffffff` flattens it to one colour.
+
+    ./Scripts/banner.py                    # fills the window, brand gradient
+    ./Scripts/banner.py --color ffffff     # fills the window, white
+    ./Scripts/banner.py --width 64         # an explicit size instead of filling
+    ./Scripts/banner.py --plain            # no colour, for a log or a diff
 
 Stdlib only, so it runs anywhere the project's `python3` does.
 """
@@ -25,13 +29,16 @@ BOX = (100.0, 80.0)
 
 # The icon's own gradient: deep crimson at the tail, pale rose at the tip.
 RAMP = ((0x7A, 0x00, 0x24), (0xD4, 0x11, 0x4A), (0xFF, 0xB3, 0xC6))
+WHITE = (0xFF, 0xFF, 0xFF)
 
 UPPER, LOWER = "▀", "▄"
 RESET = "\x1b[0m"
 
 
-def ramp(t):
-    """Sample the three-stop gradient at t in 0..1."""
+def ramp(t, flat=None):
+    """Sample the three-stop gradient at t in 0..1, or return `flat` if one was asked for."""
+    if flat:
+        return flat
     t = min(max(t, 0.0), 1.0) * (len(RAMP) - 1)
     i = min(int(t), len(RAMP) - 2)
     f = t - i
@@ -78,7 +85,7 @@ def raster(width, height, stroke, feather):
     return grid
 
 
-def render(width, height, stroke, plain, feather):
+def render(width, height, stroke, plain, feather, flat=None):
     grid = raster(width, height, stroke, feather)
     lines = []
     for row in range(height):
@@ -94,7 +101,7 @@ def render(width, height, stroke, plain, feather):
                 # a space under it paints a solid block.
                 out.append(RESET + " ")
                 continue
-            ft, fb = ramp(tt), ramp(tb)
+            ft, fb = ramp(tt, flat), ramp(tb, flat)
             if ct and cb:
                 out.append(f"\x1b[38;2;{ft[0]};{ft[1]};{ft[2]}m\x1b[48;2;{fb[0]};{fb[1]};{fb[2]}m{UPPER}")
             elif ct:
@@ -105,21 +112,34 @@ def render(width, height, stroke, plain, feather):
     return lines
 
 
+def fit(cols, rows, fill):
+    """The largest `(width, height)` in cells whose mark fits inside `cols` x `rows`."""
+    # A cell holds two subpixels, so the logo's 100x80 box wants height = width * 0.4 for square
+    # subpixels — hence a width ceiling of `rows / 0.4` as well as the obvious one.
+    width = max(8, min(int(cols * fill), int(rows * fill * 2 * BOX[0] / BOX[1])))
+    return width, max(1, round(width / BOX[0] * BOX[1] / 2))
+
+
 def main():
     ap = argparse.ArgumentParser(description="swiftTerm logo, as terminal art.")
-    ap.add_argument("--width", type=int, default=64, help="columns (default 64)")
+    ap.add_argument("--width", type=int, default=None, help="columns (default: fill the window)")
     ap.add_argument("--height", type=int, default=None, help="rows (default: from the aspect)")
     ap.add_argument("--stroke", type=float, default=9.0, help="stroke width in SVG units")
     ap.add_argument("--feather", type=float, default=0.0, help="subpixels of edge bias")
     ap.add_argument("--plain", action="store_true", help="no colour")
+    ap.add_argument("--color", default=None, help="one flat colour, e.g. ffffff")
     ap.add_argument("--pad", type=int, default=None, help="left margin (default: centre it)")
+    ap.add_argument("--fill", type=float, default=1.0, help="fraction of the window to fill")
     a = ap.parse_args()
 
-    height = a.height or max(1, round(a.width / BOX[0] * BOX[1] / 2))
-    # Centred on the window it is being screenshotted in, not on some assumed width.
-    pad = " " * (a.pad if a.pad is not None
-                 else max(0, (shutil.get_terminal_size((100, 40)).columns - a.width) // 2))
-    for line in render(a.width, height, a.stroke, a.plain, a.feather):
+    cols, rows = shutil.get_terminal_size((100, 40))
+    width, height = fit(cols, rows, a.fill)
+    width, height = a.width or width, a.height or height
+    flat = tuple(int(a.color[i:i + 2], 16) for i in (0, 2, 4)) if a.color else None
+
+    pad = " " * (a.pad if a.pad is not None else max(0, (cols - width) // 2))
+    sys.stdout.write("\n" * max(0, (rows - height - 1) // 2))
+    for line in render(width, height, a.stroke, a.plain, a.feather, flat):
         sys.stdout.write(pad + line + "\n")
     sys.stdout.write(RESET)
 
