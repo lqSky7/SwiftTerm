@@ -34,6 +34,15 @@ final class AppCore {
     /// area a value came from would be a view that knows how settings are stored.
     private(set) var layout: ChromeLayoutSettings
 
+    // MARK: - Themes & Keymaps
+
+    private(set) var themeName: String
+    private(set) var activeCustomPalette: TerminalPalette?
+    private(set) var customPalettes: [String: TerminalPalette]
+    private(set) var customKeymap: [String: KeyEquivalent]
+    private(set) var recordingKeymapAction: KeymapAction?
+    @ObservationIgnored private var keyEventMonitor: Any?
+
     /// Where the settings came from and where they go back to. Every command that changes one writes it: there
     /// are few enough that a debounce would be more machinery than the writes are worth, and `UserDefaults`
     /// coalesces its own. The two drags are the exception and say so where they are.
@@ -59,6 +68,10 @@ final class AppCore {
         let document = store.load()
         chrome = document.synced.chrome
         layout = document.device.chrome
+        themeName = document.synced.themeName
+        activeCustomPalette = document.synced.activeCustomPalette
+        customPalettes = document.synced.customPalettes
+        customKeymap = document.synced.customKeymap
         self.persistsSession = persistsSession
     }
 
@@ -75,6 +88,10 @@ final class AppCore {
         var document = store.load()
         document.synced.chrome = chrome
         document.device.chrome = layout
+        document.synced.themeName = themeName
+        document.synced.activeCustomPalette = activeCustomPalette
+        document.synced.customPalettes = customPalettes
+        document.synced.customKeymap = customKeymap
         document.revision += 1
         store.save(document)
     }
@@ -137,6 +154,7 @@ final class AppCore {
     /// Safe to call more than once: closing this window's last tab already empties `coordinators` and
     /// `tabs` through `closeIfEmpty()`, and the window closing itself calls this again on its way out.
     func terminate() {
+        cancelRecordingKeymap()
         // **Written first**, because it is a description of a window that is about to stop existing — and because
         // `tabs` is cleared two lines down, after which there is nothing left to describe.
         if persistsSession { saveSession() }
@@ -369,9 +387,11 @@ final class AppCore {
     private func applyAppearance() {
         guard let windowController else { return }
         windowController.setAppearance(chrome.appearanceMode)
+        let palette = currentPalette
         for coordinator in coordinators.values {
             coordinator.setAppearanceMode(chrome.appearanceMode)
             coordinator.setTerminalOpacity(chrome.terminalOpacity)
+            coordinator.setPalette(palette)
         }
     }
 
@@ -529,6 +549,172 @@ final class AppCore {
         focusActivePaneSoon()
     }
 
+    // MARK: - Themes & Palettes
+
+    var currentPalette: TerminalPalette {
+        if let custom = activeCustomPalette {
+            return custom
+        }
+        if let customSaved = customPalettes[themeName] {
+            return customSaved
+        }
+        if let preset = TerminalPalette.preset(named: themeName) {
+            return preset
+        }
+        return .warpDark
+    }
+
+    func setThemeName(_ name: String) {
+        themeName = name
+        activeCustomPalette = nil
+        persist()
+        applyTheme()
+    }
+
+    func updateActivePalette(_ palette: TerminalPalette) {
+        activeCustomPalette = palette
+        persist()
+        applyTheme()
+    }
+
+    func updateAnsiColor(at index: Int, to color: TerminalRGB) {
+        var palette = currentPalette
+        if index >= 0 && index < palette.ansi.count {
+            palette.ansi[index] = color
+        }
+        updateActivePalette(palette)
+    }
+
+    func updateForeground(to color: TerminalRGB) {
+        var palette = currentPalette
+        palette.foreground = color
+        updateActivePalette(palette)
+    }
+
+    func updateBackground(to color: TerminalRGB) {
+        var palette = currentPalette
+        palette.background = color
+        updateActivePalette(palette)
+    }
+
+    func updateCursor(to color: TerminalRGB) {
+        var palette = currentPalette
+        palette.cursor = color
+        updateActivePalette(palette)
+    }
+
+    func importPalette(named name: String, palette: TerminalPalette) {
+        customPalettes[name] = palette
+        themeName = name
+        activeCustomPalette = nil
+        persist()
+        applyTheme()
+    }
+
+    func resetThemeToDefault() {
+        themeName = "Warp Dark"
+        activeCustomPalette = nil
+        persist()
+        applyTheme()
+    }
+
+    func applyTheme() {
+        let palette = currentPalette
+        for coordinator in coordinators.values {
+            coordinator.setPalette(palette)
+        }
+    }
+
+    // MARK: - Keymap
+
+    var keymap: Keymap {
+        var overrides: [KeymapAction: KeyEquivalent] = [:]
+        for (raw, equiv) in customKeymap {
+            if let action = KeymapAction(rawValue: raw) {
+                overrides[action] = equiv
+            }
+        }
+        return Keymap(overrides: overrides)
+    }
+
+    func setShortcut(_ equivalent: KeyEquivalent, for action: KeymapAction) {
+        customKeymap[action.rawValue] = equivalent
+        persist()
+        syncKeymapToCoordinators()
+    }
+
+    func resetShortcut(for action: KeymapAction) {
+        customKeymap.removeValue(forKey: action.rawValue)
+        persist()
+        syncKeymapToCoordinators()
+    }
+
+    func resetAllKeymaps() {
+        customKeymap.removeAll()
+        persist()
+        syncKeymapToCoordinators()
+    }
+
+    private func syncKeymapToCoordinators() {
+        let map = keymap
+        for coordinator in coordinators.values {
+            coordinator.setKeymap(map)
+        }
+    }
+
+    func beginRecordingKeymap(for action: KeymapAction) {
+        cancelRecordingKeymap()
+        recordingKeymapAction = action
+        keyEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self, self.recordingKeymapAction != nil else { return event }
+            if event.keyCode == 53 { // Escape
+                self.cancelRecordingKeymap()
+                return nil
+            }
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            var modifiers: KeyModifiers = []
+            if flags.contains(.command) { modifiers.insert(.command) }
+            if flags.contains(.shift) { modifiers.insert(.shift) }
+            if flags.contains(.option) { modifiers.insert(.option) }
+            if flags.contains(.control) { modifiers.insert(.control) }
+
+            let key: String
+            if let special = event.specialKey {
+                switch special {
+                case .upArrow: key = "UpArrow"
+                case .downArrow: key = "DownArrow"
+                case .leftArrow: key = "LeftArrow"
+                case .rightArrow: key = "RightArrow"
+                case .tab: key = "\t"
+                case .carriageReturn, .enter, .newline: key = "\r"
+                default: key = event.charactersIgnoringModifiers ?? ""
+                }
+            } else {
+                key = event.charactersIgnoringModifiers?.lowercased() ?? ""
+            }
+
+            if !key.isEmpty && (!modifiers.isEmpty || key == "\t" || key == "UpArrow" || key == "DownArrow") {
+                self.recordKeymapChord(key: key, modifiers: modifiers)
+                return nil
+            }
+            return nil
+        }
+    }
+
+    func cancelRecordingKeymap() {
+        recordingKeymapAction = nil
+        if let monitor = keyEventMonitor {
+            NSEvent.removeMonitor(monitor)
+            keyEventMonitor = nil
+        }
+    }
+
+    private func recordKeymapChord(key: String, modifiers: KeyModifiers) {
+        guard let action = recordingKeymapAction else { return }
+        setShortcut(KeyEquivalent(key: key, modifiers: modifiers), for: action)
+        cancelRecordingKeymap()
+    }
+
     // MARK: - The one place a shell is built
 
     private func openTab() {
@@ -583,6 +769,8 @@ final class AppCore {
         // palette than the one beside it.
         coordinator.setAppearanceMode(chrome.appearanceMode)
         coordinator.setTerminalOpacity(chrome.terminalOpacity)
+        coordinator.setPalette(currentPalette)
+        coordinator.setKeymap(keymap)
         coordinator.setFontSize(chrome.fontSize)
         coordinator.setLineHeightRatio(chrome.lineHeightRatio)
         // `⌘+` and `⌘−` go up to the app, not into the surface: the size is a setting, and a coordinator that

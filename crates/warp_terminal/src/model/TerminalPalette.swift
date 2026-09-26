@@ -1,17 +1,37 @@
 import Foundation
 
 /// A colour scheme: the sixteen ANSI slots plus the surfaces a terminal paints around them.
-/// A value rather than a namespace because Phase 5 lets the user edit one and swap it live.
-struct TerminalPalette: Hashable, Sendable {
+/// Supports preset switching, in-memory customization, and JSON import/export.
+struct TerminalPalette: Hashable, Sendable, Codable {
     /// Slots 0–7 normal, 8–15 bright. Ordered so `indexed(n)` can index straight in.
     var ansi: [TerminalRGB]
     var foreground: TerminalRGB
     var background: TerminalRGB
     var cursor: TerminalRGB
 
-    /// Tomorrow Night, which is dark, low-glare, and has a distinct bright ramp — the three
-    /// things that make a terminal usable before the theme engine exists.
-    static let builtin = TerminalPalette(
+    init(
+        ansi: [TerminalRGB],
+        foreground: TerminalRGB,
+        background: TerminalRGB,
+        cursor: TerminalRGB
+    ) {
+        if ansi.count == 16 {
+            self.ansi = ansi
+        } else {
+            var padded = ansi
+            while padded.count < 16 {
+                padded.append(padded.last ?? TerminalRGB(hex: 0x000000))
+            }
+            self.ansi = Array(padded.prefix(16))
+        }
+        self.foreground = foreground
+        self.background = background
+        self.cursor = cursor
+    }
+
+    // MARK: - Built-in Presets
+
+    static let warpDark = TerminalPalette(
         ansi: [
             TerminalRGB(hex: 0x1D1F21), TerminalRGB(hex: 0xCC6666),
             TerminalRGB(hex: 0xB5BD68), TerminalRGB(hex: 0xF0C674),
@@ -26,13 +46,9 @@ struct TerminalPalette: Hashable, Sendable {
         background: TerminalRGB(hex: 0x1D1F21),
         cursor: TerminalRGB(hex: 0xC5C8C6))
 
-    /// Tomorrow, the light counterpart of `builtin` — same author, same sixteen hues, inverted surfaces.
-    ///
-    /// A *pair* rather than one palette and a filter over it: the light ANSI slots are not the dark ones
-    /// lightened, they are chosen to hold their contrast against white, and a program that prints in slot 1
-    /// has to be readable in both. Which one is drawn is `AppearanceMode`'s answer, and this file does not
-    /// know that setting exists.
-    static let light = TerminalPalette(
+    static let builtin = warpDark
+
+    static let warpLight = TerminalPalette(
         ansi: [
             TerminalRGB(hex: 0x000000), TerminalRGB(hex: 0xC82829),
             TerminalRGB(hex: 0x718C00), TerminalRGB(hex: 0xEAB700),
@@ -46,4 +62,192 @@ struct TerminalPalette: Hashable, Sendable {
         foreground: TerminalRGB(hex: 0x4D4D4C),
         background: TerminalRGB(hex: 0xFFFFFF),
         cursor: TerminalRGB(hex: 0x4D4D4C))
+
+    static let light = warpLight
+
+    static let dracula = TerminalPalette(
+        ansi: [
+            TerminalRGB(hex: 0x21222C), TerminalRGB(hex: 0xFF5555),
+            TerminalRGB(hex: 0x50FA7B), TerminalRGB(hex: 0xF1FA8C),
+            TerminalRGB(hex: 0xBD93F9), TerminalRGB(hex: 0xFF79C6),
+            TerminalRGB(hex: 0x8BE9FD), TerminalRGB(hex: 0xF8F8F2),
+            TerminalRGB(hex: 0x6272A4), TerminalRGB(hex: 0xFF6E6E),
+            TerminalRGB(hex: 0x69FF94), TerminalRGB(hex: 0xFFFFA5),
+            TerminalRGB(hex: 0xD6ACFF), TerminalRGB(hex: 0xFF92DF),
+            TerminalRGB(hex: 0xA4FFFF), TerminalRGB(hex: 0xFFFFFF),
+        ],
+        foreground: TerminalRGB(hex: 0xF8F8F2),
+        background: TerminalRGB(hex: 0x282A36),
+        cursor: TerminalRGB(hex: 0xF8F8F2))
+
+    static let solarizedDark = TerminalPalette(
+        ansi: [
+            TerminalRGB(hex: 0x073642), TerminalRGB(hex: 0xDC322F),
+            TerminalRGB(hex: 0x859900), TerminalRGB(hex: 0xB58900),
+            TerminalRGB(hex: 0x268BD2), TerminalRGB(hex: 0xD33682),
+            TerminalRGB(hex: 0x2AA198), TerminalRGB(hex: 0xEEE8D5),
+            TerminalRGB(hex: 0x002B36), TerminalRGB(hex: 0xCB4B16),
+            TerminalRGB(hex: 0x586E75), TerminalRGB(hex: 0x657B83),
+            TerminalRGB(hex: 0x839496), TerminalRGB(hex: 0x6C71C4),
+            TerminalRGB(hex: 0x93A1A1), TerminalRGB(hex: 0xFDF6E3),
+        ],
+        foreground: TerminalRGB(hex: 0x839496),
+        background: TerminalRGB(hex: 0x002B36),
+        cursor: TerminalRGB(hex: 0x839496))
+
+    static let solarizedLight = TerminalPalette(
+        ansi: [
+            TerminalRGB(hex: 0xEEE8D5), TerminalRGB(hex: 0xDC322F),
+            TerminalRGB(hex: 0x859900), TerminalRGB(hex: 0xB58900),
+            TerminalRGB(hex: 0x268BD2), TerminalRGB(hex: 0xD33682),
+            TerminalRGB(hex: 0x2AA198), TerminalRGB(hex: 0x073642),
+            TerminalRGB(hex: 0xFDF6E3), TerminalRGB(hex: 0xCB4B16),
+            TerminalRGB(hex: 0x93A1A1), TerminalRGB(hex: 0x839496),
+            TerminalRGB(hex: 0x657B83), TerminalRGB(hex: 0x6C71C4),
+            TerminalRGB(hex: 0x586E75), TerminalRGB(hex: 0x002B36),
+        ],
+        foreground: TerminalRGB(hex: 0x657B83),
+        background: TerminalRGB(hex: 0xFDF6E3),
+        cursor: TerminalRGB(hex: 0x657B83))
+
+    static let oneDark = TerminalPalette(
+        ansi: [
+            TerminalRGB(hex: 0x1E2127), TerminalRGB(hex: 0xE06C75),
+            TerminalRGB(hex: 0x98C379), TerminalRGB(hex: 0xD19A66),
+            TerminalRGB(hex: 0x61AFEF), TerminalRGB(hex: 0xC678DD),
+            TerminalRGB(hex: 0x56B6C2), TerminalRGB(hex: 0xABB2BF),
+            TerminalRGB(hex: 0x5C6370), TerminalRGB(hex: 0xE06C75),
+            TerminalRGB(hex: 0x98C379), TerminalRGB(hex: 0xE5C07B),
+            TerminalRGB(hex: 0x61AFEF), TerminalRGB(hex: 0xC678DD),
+            TerminalRGB(hex: 0x56B6C2), TerminalRGB(hex: 0xFFFFFF),
+        ],
+        foreground: TerminalRGB(hex: 0xABB2BF),
+        background: TerminalRGB(hex: 0x282C34),
+        cursor: TerminalRGB(hex: 0x528BFF))
+
+    static let monokai = TerminalPalette(
+        ansi: [
+            TerminalRGB(hex: 0x272822), TerminalRGB(hex: 0xF92672),
+            TerminalRGB(hex: 0xA6E22E), TerminalRGB(hex: 0xF4BF75),
+            TerminalRGB(hex: 0x66D9EF), TerminalRGB(hex: 0xAE81FF),
+            TerminalRGB(hex: 0xA1EFE4), TerminalRGB(hex: 0xF8F8F2),
+            TerminalRGB(hex: 0x75715E), TerminalRGB(hex: 0xF92672),
+            TerminalRGB(hex: 0xA6E22E), TerminalRGB(hex: 0xF4BF75),
+            TerminalRGB(hex: 0x66D9EF), TerminalRGB(hex: 0xAE81FF),
+            TerminalRGB(hex: 0xA1EFE4), TerminalRGB(hex: 0xF9F8F5),
+        ],
+        foreground: TerminalRGB(hex: 0xF8F8F2),
+        background: TerminalRGB(hex: 0x272822),
+        cursor: TerminalRGB(hex: 0xF8F8F0))
+
+    static let gruvboxDark = TerminalPalette(
+        ansi: [
+            TerminalRGB(hex: 0x282828), TerminalRGB(hex: 0xCC241D),
+            TerminalRGB(hex: 0x98971A), TerminalRGB(hex: 0xD79921),
+            TerminalRGB(hex: 0x458588), TerminalRGB(hex: 0xB16286),
+            TerminalRGB(hex: 0x689D6A), TerminalRGB(hex: 0xA89984),
+            TerminalRGB(hex: 0x928374), TerminalRGB(hex: 0xFB4934),
+            TerminalRGB(hex: 0xB8BB26), TerminalRGB(hex: 0xFABD2F),
+            TerminalRGB(hex: 0x83A598), TerminalRGB(hex: 0xD3869B),
+            TerminalRGB(hex: 0x8EC07C), TerminalRGB(hex: 0xEBDBB2),
+        ],
+        foreground: TerminalRGB(hex: 0xEBDBB2),
+        background: TerminalRGB(hex: 0x282828),
+        cursor: TerminalRGB(hex: 0xEBDBB2))
+
+    /// The list of standard presets presented in the theme selector.
+    static let presets: [(name: String, palette: TerminalPalette)] = [
+        ("Warp Dark", warpDark),
+        ("Warp Light", warpLight),
+        ("Dracula", dracula),
+        ("Solarized Dark", solarizedDark),
+        ("Solarized Light", solarizedLight),
+        ("One Dark", oneDark),
+        ("Monokai", monokai),
+        ("Gruvbox Dark", gruvboxDark),
+    ]
+
+    static func preset(named name: String) -> TerminalPalette? {
+        presets.first { $0.name.caseInsensitiveCompare(name) == .orderedSame }?.palette
+    }
+}
+
+/// Encoder/decoder for portable 16-color ANSI palettes.
+enum TerminalPaletteCoder {
+    /// Formats a palette as a clean JSON document.
+    static func encode(_ palette: TerminalPalette, name: String = "Custom") throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let doc = PaletteExportDocument(
+            name: name,
+            foreground: palette.foreground.hexString,
+            background: palette.background.hexString,
+            cursor: palette.cursor.hexString,
+            ansi: palette.ansi.map(\.hexString))
+        return try encoder.encode(doc)
+    }
+
+    /// Decodes a palette from standard JSON formats (flat array or keyed normal/bright).
+    static func decode(from data: Data) -> TerminalPalette? {
+        let decoder = JSONDecoder()
+        // Try flat export doc
+        if let doc = try? decoder.decode(PaletteExportDocument.self, from: data) {
+            let ansi = doc.ansi.compactMap(TerminalRGB.init(hexString:))
+            guard let fg = TerminalRGB(hexString: doc.foreground),
+                let bg = TerminalRGB(hexString: doc.background),
+                let cur = TerminalRGB(hexString: doc.cursor)
+            else { return nil }
+            return TerminalPalette(ansi: ansi, foreground: fg, background: bg, cursor: cur)
+        }
+        // Try direct Codable TerminalPalette
+        if let palette = try? decoder.decode(TerminalPalette.self, from: data) {
+            return palette
+        }
+        // Try nested normal/bright schema (Warp/iTerm style)
+        if let nested = try? decoder.decode(NestedPaletteDocument.self, from: data) {
+            let ansi = nested.orderedAnsi.compactMap(TerminalRGB.init(hexString:))
+            guard let fg = TerminalRGB(hexString: nested.foreground),
+                let bg = TerminalRGB(hexString: nested.background),
+                let cur = TerminalRGB(hexString: nested.cursor ?? nested.foreground)
+            else { return nil }
+            return TerminalPalette(ansi: ansi, foreground: fg, background: bg, cursor: cur)
+        }
+        return nil
+    }
+
+    private struct PaletteExportDocument: Codable {
+        var name: String
+        var foreground: String
+        var background: String
+        var cursor: String
+        var ansi: [String]
+    }
+
+    private struct NestedPaletteDocument: Codable {
+        var foreground: String
+        var background: String
+        var cursor: String?
+        var normal: AnsiGroup
+        var bright: AnsiGroup
+
+        var orderedAnsi: [String] {
+            [
+                normal.black, normal.red, normal.green, normal.yellow,
+                normal.blue, normal.magenta, normal.cyan, normal.white,
+                bright.black, bright.red, bright.green, bright.yellow,
+                bright.blue, bright.magenta, bright.cyan, bright.white,
+            ]
+        }
+    }
+
+    private struct AnsiGroup: Codable {
+        var black: String
+        var red: String
+        var green: String
+        var yellow: String
+        var blue: String
+        var magenta: String
+        var cyan: String
+        var white: String
+    }
 }

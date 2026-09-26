@@ -59,9 +59,9 @@ final class CommandEditorView: NSTextView {
     }
 
     private var terminalFont: TerminalFont
-    private let palette: TerminalPalette
+    private var palette: TerminalPalette
     private var paragraph: NSParagraphStyle
-    private let ink: NSColor
+    private var ink: NSColor
     /// Stored for Increment 3, the not-found squiggle. Nothing reads it yet, on purpose: this
     /// increment ships the frame, the focus and the reserved height, and nothing else.
     private var resolver: CommandResolver
@@ -184,6 +184,23 @@ final class CommandEditorView: NSTextView {
         self.paragraph = paragraph
         self.font = font.base
         typingAttributes = baseAttributes
+        needsDisplay = true
+    }
+
+    /// Pushes an updated theme palette into the editor.
+    func update(palette: TerminalPalette) {
+        self.palette = palette
+        self.ink = palette.foreground.nsColor
+        self.textColor = ink
+        self.insertionPointColor = palette.cursor.nsColor
+        self.selectedTextAttributes = [
+            .backgroundColor: palette.ansi[4].nsColor.withAlphaComponent(0.35),
+            .foregroundColor: palette.foreground.nsColor,
+        ]
+        self.typingAttributes = baseAttributes
+        if let storage = textStorage, storage.length > 0 {
+            storage.addAttributes(baseAttributes, range: NSRange(location: 0, length: storage.length))
+        }
         needsDisplay = true
     }
 

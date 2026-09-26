@@ -4,10 +4,11 @@
 | --- | --- |
 | `TerminalCoordinator.swift` | the feature's action surface; owns the session and the surface view, and whether it is the active pane |
 | `TerminalFont.swift` | the monospace cell metrics everything is laid out on |
-| `TerminalRenderer.swift` | paints the block document with CoreText, the selected block's border, and the alternate screen instead when a full-screen program is running |
-| `TerminalSurfaceView.swift` | focus, keyboard translation, document scrolling, block selection, resize — and the one `BlockLayout` the renderer is handed |
-| `CommandEditorView.swift` | the command line, as an `NSTextView`: what a Return means, which keys belong to the shell, and the ghost text |
-| `CompletionPopover.swift` | the completion candidates list, floating above the caret with glass blur and keyboard navigation |
+| `TerminalRenderer.swift` | paints the block document with CoreText, the selected block's border, context chips styled with the active palette, and the alternate screen for full-screen programs |
+| `TerminalSurfaceView.swift` | focus, keyboard translation, document scrolling, block selection, resize, hyperlink hover & ⌘-Click navigation, keymap shortcut handling, and the layout handed to the renderer |
+| `CommandEditorView.swift` | the command line, as an `NSTextView`: what a Return means, which keys belong to the shell, ghost text, and palette-driven text/cursor styling |
+| `CompletionPopover.swift` | the completion candidates list, floating above the caret with glass blur, keyboard navigation, and palette-driven badges |
+| `BlockMenuPopover.swift` | floating context menu for block actions (copy command/output, rerun) styled with the active palette |
 | `TerminalPane.swift` | one pane's content: the surface, or why the shell could not start |
 | `TerminalWindowController.swift` | the `NSWindow`, and the responder-chain landing point for the tab and pane commands |
 

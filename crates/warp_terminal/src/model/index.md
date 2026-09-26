@@ -14,13 +14,15 @@ code-review note.
 | `CellAttributes.swift` | bold/faint/italic/underline/reverse/…, and the reverse-video swap |
 | `TerminalColor.swift` | `.default` / `.indexed` / `.rgb`, and the xterm-256 expansion |
 | `TerminalRGB.swift` | an 8-bit-per-channel colour |
-| `TerminalPalette.swift` | a colour scheme: sixteen ANSI slots plus foreground, background, cursor |
-| `TerminalPen.swift` | the attributes and character set SGR has left in force |
+| `TerminalPalette.swift` | a colour scheme: sixteen ANSI slots plus foreground, background, cursor, presets and JSON import/export |
+| `Hyperlink.swift` | an OSC 8 explicit hyperlink (id and target URI) |
+| `LinkDetector.swift` | scanner for implicit links: URLs, file paths with line/col, and git commit hashes |
+| `TerminalPen.swift` | the attributes, character set, and active hyperlink SGR has left in force |
 | `TerminalModes.swift` | ANSI and DEC private modes |
 | `TerminalCursorStyle.swift` | what `DECSCUSR` selects |
 | `TerminalSize.swift` | the grid's dimensions and the pixel geometry that goes with them |
 | `VTStringDecoder.swift` | incremental UTF-8 that survives a read ending mid-codepoint |
-| `VTParser.swift` | the byte state machine and the CSI/OSC dispatch tables |
+| `VTParser.swift` | the byte state machine, CSI/OSC dispatch tables, and OSC 8 parser |
 | `TerminalEvent.swift` | what the parser reports upward that is not a screen change |
 | `ShellIntegrationEvent.swift` | the `OSC 133` prompt markers |
 

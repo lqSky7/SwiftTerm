@@ -28,6 +28,7 @@ SOURCES=(
     # Named individually rather than globbed, and deliberately: `Theme.swift` sits beside it and imports
     # AppKit, so adding the directory would let a UI framework into the harnesses by the back door.
     crates/warpui_core/src/ChromeSettings.swift
+    crates/warpui_core/src/Keymap.swift
     crates/warpui_core/src/SettingsStore.swift
 )
 

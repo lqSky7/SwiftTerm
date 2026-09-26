@@ -146,11 +146,11 @@ enum ChromeSettingsTest {
     /// The list a picker draws, and the two things about it that can be wrong without anybody noticing:
     /// two entries for the same material, and an entry with no label.
     private static func theMaterialList(_ harness: Harness) {
-        harness.equal(ChromeMaterial.allCases.count, 4, "four materials to choose from")
+        harness.equal(ChromeMaterial.allCases.count, 5, "five materials to choose from")
         harness.equal(
-            Set(ChromeMaterial.allCases.map(\.rawValue)).count, 4, "each with its own name")
+            Set(ChromeMaterial.allCases.map(\.rawValue)).count, 5, "each with its own name")
         let labels = ChromeMaterial.allCases.map(\.displayName)
-        harness.equal(Set(labels).count, 4, "and its own label")
+        harness.equal(Set(labels).count, 5, "and its own label")
         harness.expect(!labels.contains(where: \.isEmpty), "none of them unlabelled")
         // The two `Material` cases are ordered by weight, so moving down the picker moves one way.
         harness.expect(
@@ -161,6 +161,8 @@ enum ChromeSettingsTest {
         harness.equal(settings.sidebarMaterial, .glassRegular, "glass to start with")
         settings.setSidebarMaterial(.glassRegular)
         harness.equal(settings.sidebarMaterial, .glassRegular, "and a choice is kept")
+        settings.setSidebarMaterial(.none)
+        harness.equal(settings.sidebarMaterial, .none, "none can be selected")
         settings.setSidebarMaterial(.ultraThin)
         harness.equal(settings.sidebarMaterial, .ultraThin, "whichever it is")
     }

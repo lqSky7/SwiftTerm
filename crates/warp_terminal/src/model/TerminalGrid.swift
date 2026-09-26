@@ -272,11 +272,12 @@ final class TerminalGrid {
         if modes.insert { insertCharacters(width) }
 
         let attributes = pen.attributes
+        let hyperlink = pen.hyperlink
         setCell(row: cursorRow, column: cursorColumn, cell: TerminalCell(
-            text: translated(character), attributes: attributes, width: width))
+            text: translated(character), attributes: attributes, width: width, hyperlink: hyperlink))
         if width == 2 {
             setCell(row: cursorRow, column: cursorColumn + 1, cell: TerminalCell(
-                text: "", attributes: attributes, width: 0, isContinuation: true))
+                text: "", attributes: attributes, width: 0, isContinuation: true, hyperlink: hyperlink))
         }
         advanceCursor(by: width)
     }

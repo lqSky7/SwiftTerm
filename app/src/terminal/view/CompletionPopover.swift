@@ -70,6 +70,12 @@ final class CompletionPopover: NSGlassEffectView {
     func hide() {
         isHidden = true
     }
+
+    /// Pushes an updated theme palette into the popover.
+    func update(palette: TerminalPalette) {
+        list.palette = palette
+        list.needsDisplay = true
+    }
 }
 
 /// The rows themselves.
@@ -80,6 +86,7 @@ final class CompletionPopover: NSGlassEffectView {
 private final class CompletionRowsView: NSView {
     var rows: [CompletionCandidate] = []
     var selectedRow = 0
+    var palette: TerminalPalette = .builtin
 
     private let textFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
     private let detailFont = NSFont.systemFont(ofSize: 11)
@@ -120,22 +127,26 @@ private final class CompletionRowsView: NSView {
                 x: 0, y: top - rowHeight, width: bounds.width, height: rowHeight)
 
             if index == selectedRow {
-                NSColor.selectedContentBackgroundColor.withAlphaComponent(0.22).setFill()
-                NSBezierPath(roundedRect: rowRect.insetBy(dx: 3, dy: 1), xRadius: 5, yRadius: 5).fill()
+                palette.ansi[4].nsColor.withAlphaComponent(0.25).setFill()
+                let path = NSBezierPath(roundedRect: rowRect.insetBy(dx: 3, dy: 1), xRadius: 5, yRadius: 5)
+                path.fill()
+                palette.ansi[4].nsColor.withAlphaComponent(0.4).setStroke()
+                path.lineWidth = 1
+                path.stroke()
             }
 
             let baseline = rowRect.midY - textFont.capHeight / 2 + 0.5
             var x = CompletionPopover.horizontalPadding
-            draw(row.text, at: x, baseline: baseline, font: textFont, color: .labelColor)
+            draw(row.text, at: x, baseline: baseline, font: textFont, color: palette.foreground.nsColor)
             x += width(row.text, font: textFont) + 12
 
             // The kind, right after the text: it is the reason to trust the suggestion, and the text alone
             // does not say whether this is a subcommand or something that was run last week.
-            draw(row.kind.displayName, at: x, baseline: baseline, font: detailFont, color: .tertiaryLabelColor)
+            draw(row.kind.displayName, at: x, baseline: baseline, font: detailFont, color: palette.ansi[6].nsColor)
 
             guard let description = row.description else { continue }
             x += width(row.kind.displayName, font: detailFont) + 12
-            draw(description, at: x, baseline: baseline, font: detailFont, color: .secondaryLabelColor)
+            draw(description, at: x, baseline: baseline, font: detailFont, color: palette.foreground.nsColor.withAlphaComponent(0.6))
         }
     }
 

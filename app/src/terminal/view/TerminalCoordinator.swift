@@ -141,6 +141,12 @@ final class TerminalCoordinator {
     /// `effectiveAppearance` so that `system` keeps following the machine.
     func setAppearanceMode(_ mode: AppearanceMode) { surface?.setAppearanceMode(mode) }
 
+    /// Sets the active palette on the terminal surface.
+    func setPalette(_ palette: TerminalPalette) { surface?.setPalette(palette) }
+
+    /// Sets the active keymap configuration on the terminal surface.
+    func setKeymap(_ keymap: Keymap) { surface?.setKeymap(keymap) }
+
     // MARK: - Session events
 
     private func handle(_ event: TerminalEvent) {

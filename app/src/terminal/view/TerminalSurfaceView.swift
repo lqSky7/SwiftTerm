@@ -25,6 +25,8 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
     /// The block the pointer is over, so its hover control can be drawn. Nil when the pointer is outside the
     /// window or over no block — and one block at a time, because two sets of dots would say two things.
     private var hoveredBlock: BlockID?
+    /// The interactive link currently hovered by the mouse pointer, if any.
+    private var hoveredLink: HoveredLink?
     /// The text selected in the grid, or nil. A *click* leaves this empty rather than nil — see `mouseDown` — so
     /// "nothing is selected" and "there is a selection" are one thing rather than two.
     private var selection: TextSelection?
@@ -193,7 +195,9 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
         // 1003 tracks motion with nothing held. Before the hover control, because the program's mouse is the
         // program's.
         if session.activeGrid.modes.mouseTracking == .anyMotion, sendMouseEvent(event, .motion) { return }
-        let index = blockIndex(atViewPoint: convert(event.locationInWindow, from: nil))
+        let point = convert(event.locationInWindow, from: nil)
+        updateHoveredLink(at: point)
+        let index = blockIndex(atViewPoint: point)
         let identifier = index.flatMap { session.blocks.indices.contains($0) ? session.blocks[$0].id : nil }
         guard identifier != hoveredBlock else { return }
         hoveredBlock = identifier
@@ -201,6 +205,7 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
     }
 
     override func mouseExited(with event: NSEvent) {
+        clearHoveredLink()
         guard hoveredBlock != nil else { return }
         hoveredBlock = nil
         needsDisplay = true
@@ -255,9 +260,12 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
     /// The palette goes with it rather than being left alone: `TerminalRenderer.update` takes both, and passing
     /// `.builtin` here — which this used to do — silently reverted a light terminal to the dark palette the first
     /// time somebody pressed `⌘+`.
+    private var customPalette: TerminalPalette?
+
     private func applyFont() {
         let font = TerminalFont(pointSize: pointSize, lineHeightRatio: lineHeightRatio)
-        renderer.update(palette: appearanceMode.palette(for: effectiveAppearance), font: font)
+        let palette = customPalette ?? appearanceMode.palette(for: effectiveAppearance)
+        renderer.update(palette: palette, font: font)
         editor.update(font: font)
         updateGridForBounds()
     }
@@ -270,6 +278,19 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
     func setTerminalOpacity(_ opacity: Double) {
         renderer.backgroundOpacity = CGFloat(opacity)
         needsDisplay = true
+    }
+
+    /// Pushes a custom theme palette directly to the renderer.
+    func setPalette(_ palette: TerminalPalette) {
+        customPalette = palette
+        applyPalette()
+    }
+
+    private var keymap: Keymap? = .defaultKeymap
+
+    /// Sets the active keymap configuration.
+    func setKeymap(_ keymap: Keymap) {
+        self.keymap = keymap
     }
 
     /// Which appearance the terminal draws in — dark or light, following the setting.
@@ -285,7 +306,11 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
     /// A new palette invalidates every cached row, because the palette is baked into the `CTLine`s rather
     /// than applied when they are drawn. `TerminalRenderer.update` is the one place that knows that.
     private func applyPalette() {
-        renderer.update(palette: appearanceMode.palette(for: effectiveAppearance), font: renderer.font)
+        let palette = customPalette ?? appearanceMode.palette(for: effectiveAppearance)
+        renderer.update(palette: palette, font: renderer.font)
+        editor.update(palette: palette)
+        completionPopover.update(palette: palette)
+        blockMenuPopover.update(palette: palette)
         needsDisplay = true
     }
 
@@ -324,6 +349,7 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
             cursorBlinkOn: cursorBlinkOn,
             selectedBlockID: selectedBlockID,
             hoveredBlockID: hoveredBlock,
+            hoveredLink: hoveredLink,
             selection: selection,
             chips: visibleChips)
         positionEditor(from: currentLayout)
@@ -987,6 +1013,15 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
             return
         }
 
+        // ⌘-Click opens interactive links (OSC 8, URLs, file:line:col, git commits)
+        if event.modifierFlags.contains(.command) {
+            updateHoveredLink(at: point)
+            if let hovered = hoveredLink {
+                openLink(hovered.link, fromBlockIndex: hovered.blockIndex)
+                return
+            }
+        }
+
         // The hover control next, and before the block selection below it: it is a control *inside* a block, so
         // a click on it must not also be read as a click on the block underneath it.
         if let index, hoverControlRect(atBlockIndex: index)?.contains(point) == true {
@@ -1201,7 +1236,51 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
 
     // MARK: - Keyboard
 
+    private func handleKeymapAction(_ event: NSEvent) -> Bool {
+        guard let keymap = keymap else { return false }
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        var modifiers: KeyModifiers = []
+        if flags.contains(.command) { modifiers.insert(.command) }
+        if flags.contains(.shift) { modifiers.insert(.shift) }
+        if flags.contains(.option) { modifiers.insert(.option) }
+        if flags.contains(.control) { modifiers.insert(.control) }
+
+        let key: String
+        if let special = event.specialKey {
+            switch special {
+            case .upArrow: key = "UpArrow"
+            case .downArrow: key = "DownArrow"
+            case .leftArrow: key = "LeftArrow"
+            case .rightArrow: key = "RightArrow"
+            case .tab: key = "\t"
+            case .carriageReturn, .enter, .newline: key = "\r"
+            default: key = event.charactersIgnoringModifiers ?? ""
+            }
+        } else {
+            key = event.charactersIgnoringModifiers?.lowercased() ?? ""
+        }
+
+        guard let action = keymap.action(for: key, modifiers: modifiers) else { return false }
+        switch action {
+        case .jumpPreviousBlock:
+            scrollToAdjacentBlock(forward: false)
+            return true
+        case .jumpNextBlock:
+            scrollToAdjacentBlock(forward: true)
+            return true
+        case .clearBuffer:
+            clearScrollback(nil)
+            return true
+        case .openCompletion:
+            _ = openCompletion()
+            return true
+        default:
+            return false
+        }
+    }
+
     override func keyDown(with event: NSEvent) {
+        if handleKeymapAction(event) { return }
         guard !handleNavigationKey(event) else { return }
         // A keystroke that reaches the surface while a prompt is showing belongs in the editor —
         // it only lands here when focus drifted (a block was clicked, say), and writing it to the
@@ -1574,5 +1653,213 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
             y: bounds.maxY - CGFloat(session.activeGrid.cursorRow + 1) * font.cellHeight,
             width: font.cellWidth,
             height: font.cellHeight)
+    }
+
+    // MARK: - Interactive Link Hover & Dispatch
+
+    private func updateHoveredLink(at point: CGPoint) {
+        if session.isAlternateScreen {
+            let grid = session.activeGrid
+            let col = Int((point.x - bounds.minX - Theme.Size.terminalContentInset) / renderer.font.cellWidth)
+            let row = Int((bounds.maxY - point.y) / renderer.font.cellHeight)
+            guard row >= 0, row < grid.size.rows, col >= 0, col < grid.size.columns else {
+                clearHoveredLink()
+                return
+            }
+            let screenRow = grid.historyLineCount + row
+            guard let line = grid.line(at: screenRow) else {
+                clearHoveredLink()
+                return
+            }
+            if line.cells.indices.contains(col), let h = line.cells[col].hyperlink {
+                let range = linkSpan(for: h, in: line.cells, around: col)
+                let detected = DetectedLink(
+                    kind: .url(URL(string: h.uri) ?? URL(string: "about:blank")!), range: range, text: h.uri)
+                setHoveredLink(
+                    HoveredLink(
+                        blockIndex: nil, bodyLine: row, colRange: range, link: detected, isAlternateScreen: true))
+                return
+            }
+            let lineText = line.string()
+            if let detected = LinkDetector.link(at: col, in: lineText) {
+                setHoveredLink(
+                    HoveredLink(
+                        blockIndex: nil, bodyLine: row, colRange: detected.range, link: detected,
+                        isAlternateScreen: true))
+                return
+            }
+            clearHoveredLink()
+            return
+        }
+
+        guard let selPoint = selectionPoint(atViewPoint: point),
+            session.blocks.indices.contains(selPoint.blockIndex)
+        else {
+            clearHoveredLink()
+            return
+        }
+        let block = session.blocks[selPoint.blockIndex]
+        guard let lineText = block.bodyLineText(selPoint.bodyLine) else {
+            clearHoveredLink()
+            return
+        }
+
+        // 1. Explicit OSC 8 hyperlink on cell
+        if let cell = block.cell(atBodyLine: selPoint.bodyLine, column: selPoint.column),
+            let h = cell.hyperlink
+        {
+            let cells = block.cells(atBodyLine: selPoint.bodyLine) ?? []
+            let range = linkSpan(for: h, in: cells, around: selPoint.column)
+            let detected = DetectedLink(
+                kind: .url(URL(string: h.uri) ?? URL(string: "about:blank")!), range: range, text: h.uri)
+            setHoveredLink(
+                HoveredLink(
+                    blockIndex: selPoint.blockIndex, bodyLine: selPoint.bodyLine, colRange: range, link: detected,
+                    isAlternateScreen: false))
+            return
+        }
+
+        // 2. Implicit link detection (URL, file:line:col, git commit hash)
+        if let detected = LinkDetector.link(at: selPoint.column, in: lineText) {
+            setHoveredLink(
+                HoveredLink(
+                    blockIndex: selPoint.blockIndex, bodyLine: selPoint.bodyLine, colRange: detected.range,
+                    link: detected, isAlternateScreen: false))
+            return
+        }
+
+        clearHoveredLink()
+    }
+
+    private func setHoveredLink(_ newLink: HoveredLink) {
+        guard hoveredLink != newLink else { return }
+        hoveredLink = newLink
+        NSCursor.pointingHand.set()
+        needsDisplay = true
+    }
+
+    private func clearHoveredLink() {
+        guard hoveredLink != nil else { return }
+        hoveredLink = nil
+        NSCursor.arrow.set()
+        needsDisplay = true
+    }
+
+    private func linkSpan(for hyperlink: Hyperlink, in cells: [TerminalCell], around index: Int) -> Range<Int> {
+        var start = index
+        while start > 0 && cells[start - 1].hyperlink == hyperlink {
+            start -= 1
+        }
+        var end = index + 1
+        while end < cells.count && cells[end].hyperlink == hyperlink {
+            end += 1
+        }
+        return start..<end
+    }
+
+    private func openLink(_ link: DetectedLink, fromBlockIndex blockIndex: Int?) {
+        switch link.kind {
+        case .url(let url):
+            NSWorkspace.shared.open(url)
+        case .filePath(let path, let line, let column):
+            openFilePath(path, line: line, column: column, relativeToBlockIndex: blockIndex)
+        case .gitCommit(let hash):
+            openGitCommit(hash, relativeToBlockIndex: blockIndex)
+        }
+    }
+
+    private func openFilePath(
+        _ path: String, line: Int?, column: Int?, relativeToBlockIndex blockIndex: Int?
+    ) {
+        let basePath: String = {
+            if let blockIndex, session.blocks.indices.contains(blockIndex),
+                let dir = session.blocks[blockIndex].workingDirectory
+            {
+                return dir
+            }
+            return session.workingDirectory ?? FileManager.default.currentDirectoryPath
+        }()
+
+        let resolvedPath: String
+        if path.hasPrefix("/") {
+            resolvedPath = path
+        } else if path.hasPrefix("~") {
+            resolvedPath = (path as NSString).expandingTildeInPath
+        } else {
+            resolvedPath = (basePath as NSString).appendingPathComponent(path)
+        }
+
+        var isDir: ObjCBool = false
+        if FileManager.default.fileExists(atPath: resolvedPath, isDirectory: &isDir) {
+            if isDir.boolValue {
+                NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: resolvedPath)
+                return
+            }
+        }
+
+        if let line {
+            if let vscodeUrl = URL(string: "vscode://file/\(resolvedPath):\(line):\(column ?? 1)"),
+                NSWorkspace.shared.urlForApplication(toOpen: vscodeUrl) != nil
+            {
+                NSWorkspace.shared.open(vscodeUrl)
+                return
+            }
+            if let cursorUrl = URL(string: "cursor://file/\(resolvedPath):\(line):\(column ?? 1)"),
+                NSWorkspace.shared.urlForApplication(toOpen: cursorUrl) != nil
+            {
+                NSWorkspace.shared.open(cursorUrl)
+                return
+            }
+            if FileManager.default.isExecutableFile(atPath: "/usr/bin/xed") {
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: "/usr/bin/xed")
+                process.arguments = ["-l", "\(line)", resolvedPath]
+                try? process.run()
+                return
+            }
+        }
+
+        NSWorkspace.shared.open(URL(fileURLWithPath: resolvedPath))
+    }
+
+    private func openGitCommit(_ hash: String, relativeToBlockIndex blockIndex: Int?) {
+        let repoDir: String = {
+            if let blockIndex, session.blocks.indices.contains(blockIndex),
+                let dir = session.blocks[blockIndex].workingDirectory
+            {
+                return dir
+            }
+            return session.workingDirectory ?? FileManager.default.currentDirectoryPath
+        }()
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.arguments = ["-C", repoDir, "config", "--get", "remote.origin.url"]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        try? process.run()
+        process.waitUntilExit()
+
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        if let rawOutput = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+            !rawOutput.isEmpty
+        {
+            var webUrlString = rawOutput
+            if webUrlString.hasPrefix("git@github.com:") {
+                webUrlString = webUrlString.replacingOccurrences(
+                    of: "git@github.com:", with: "https://github.com/")
+            }
+            if webUrlString.hasSuffix(".git") {
+                webUrlString = String(webUrlString.dropLast(4))
+            }
+            if let commitUrl = URL(string: "\(webUrlString)/commit/\(hash)") {
+                NSWorkspace.shared.open(commitUrl)
+                return
+            }
+        }
+
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(hash, forType: .string)
     }
 }

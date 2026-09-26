@@ -12,6 +12,15 @@ import CoreText
 /// sealed block's rows are built once and never revisited. The key carries whether the row is a
 /// screen row or a history row because the two are stamped from different sources and must not share
 /// a slot — the bug in `learnings.md` was a cache whose key was not actually unique to its contents.
+/// An active hovered link span for interactive underline and ⌘-click dispatch.
+struct HoveredLink: Equatable, Sendable {
+    var blockIndex: Int?
+    var bodyLine: Int
+    var colRange: Range<Int>
+    var link: DetectedLink
+    var isAlternateScreen: Bool = false
+}
+
 @MainActor
 final class TerminalRenderer {
     /// A stretch of one row that shares attributes and can be drawn as a single `CTLine`.
@@ -113,6 +122,7 @@ final class TerminalRenderer {
         cursorBlinkOn: Bool,
         selectedBlockID: BlockID?,
         hoveredBlockID: BlockID?,
+        hoveredLink: HoveredLink? = nil,
         selection: TextSelection?,
         chips: [ContextChip]
     ) {
@@ -120,14 +130,14 @@ final class TerminalRenderer {
         context.fill(bounds)
 
         guard !session.isAlternateScreen else {
-            drawAlternateScreen(in: context, bounds: bounds, grid: session.activeGrid)
+            drawAlternateScreen(in: context, bounds: bounds, grid: session.activeGrid, hoveredLink: hoveredLink)
             return
         }
         drawBlocks(
             in: context, bounds: bounds, session: session, layout: layout,
             scrollPosition: scrollPosition, showsCursor: showsCursor, markedText: markedText,
             cursorBlinkOn: cursorBlinkOn, selectedBlockID: selectedBlockID,
-            hoveredBlockID: hoveredBlockID, selection: selection, chips: chips)
+            hoveredBlockID: hoveredBlockID, hoveredLink: hoveredLink, selection: selection, chips: chips)
     }
 
     /// A subtle tint over the whole selected block — header and output together, and no border.
@@ -216,30 +226,45 @@ final class TerminalRenderer {
             // Off the end of the window: better to show three chips than to show three and a sliver.
             guard x + width <= bounds.maxX - contentInset else { return }
 
-            let chip = CGRect(x: x, y: originY, width: width, height: chipHeight)
-            context.setFillColor(chipBackground.cgColor)
-            context.addPath(
-                CGPath(
-                    roundedRect: chip, cornerWidth: Theme.Radius.control,
-                    cornerHeight: Theme.Radius.control, transform: nil))
+            let chipRect = CGRect(x: x, y: originY, width: width, height: chipHeight)
+            let (bg, stroke, text) = chipColors(for: chip)
+
+            context.setFillColor(bg.cgColor)
+            let path = CGPath(
+                roundedRect: chipRect, cornerWidth: Theme.Radius.control,
+                cornerHeight: Theme.Radius.control, transform: nil)
+            context.addPath(path)
             context.fillPath()
+
+            context.setStrokeColor(stroke.cgColor)
+            context.setLineWidth(1)
+            context.addPath(path)
+            context.strokePath()
 
             draw(
                 label,
                 at: CGPoint(
-                    x: chip.minX + padding,
+                    x: chipRect.minX + padding,
                     y: originY + (chipHeight - font.cellHeight) / 2 + font.cellHeight
                         - font.baselineFromTop),
-                font: font.base, color: dimInk, in: context)
-            x = chip.maxX + Theme.Spacing.sm
+                font: font.base, color: text, in: context)
+            x = chipRect.maxX + Theme.Spacing.sm
         }
     }
 
-    /// The terminal's own ink, barely lifted — no colour enters the palette that was not in it. A chip is a label,
-    /// not a status, so it is drawn in the terminal's own ink rather than in a colour that would have to mean
-    /// something.
-    private var chipBackground: NSColor {
-        palette.foreground.nsColor.withAlphaComponent(0.08)
+    /// Colors for contextual prompt chips derived from the active theme palette.
+    private func chipColors(for chip: ContextChip) -> (background: NSColor, stroke: NSColor, text: NSColor) {
+        switch chip.kind {
+        case .directory:
+            let accent = palette.ansi[4].nsColor
+            return (accent.withAlphaComponent(0.12), accent.withAlphaComponent(0.35), palette.foreground.nsColor)
+        case .branch:
+            let accent = palette.ansi[5].nsColor
+            return (accent.withAlphaComponent(0.14), accent.withAlphaComponent(0.40), accent)
+        case .environment:
+            let accent = palette.ansi[2].nsColor
+            return (accent.withAlphaComponent(0.14), accent.withAlphaComponent(0.40), accent)
+        }
     }
 
     /// A chip is a label, not a path display: a very deep directory truncates rather than pushing the
@@ -262,6 +287,7 @@ final class TerminalRenderer {
         cursorBlinkOn: Bool,
         selectedBlockID: BlockID?,
         hoveredBlockID: BlockID?,
+        hoveredLink: HoveredLink?,
         selection: TextSelection?,
         chips: [ContextChip]
     ) {
@@ -304,7 +330,7 @@ final class TerminalRenderer {
             drawEntry(
                 entry, block: block, viewportTop: scrollableTop,
                 isSelected: block.id == selectedBlockID, selection: selection,
-                hoveredBlockID: hoveredBlockID, chips: chips, bounds: bounds, in: context)
+                hoveredBlockID: hoveredBlockID, hoveredLink: hoveredLink, chips: chips, bounds: bounds, in: context)
         }
         context.restoreGState()
 
@@ -313,7 +339,7 @@ final class TerminalRenderer {
             let block = blocks[pinned.blockIndex]
             drawEntry(
                 pinned, block: block, viewportTop: pinnedTop, isSelected: block.id == selectedBlockID,
-                selection: selection, hoveredBlockID: hoveredBlockID, chips: chips, bounds: bounds,
+                selection: selection, hoveredBlockID: hoveredBlockID, hoveredLink: hoveredLink, chips: chips, bounds: bounds,
                 in: context)
         }
 
@@ -370,8 +396,8 @@ final class TerminalRenderer {
     /// clipped to the scrolling region and the second outside it. See `drawBlocks` for why that matters.
     private func drawEntry(
         _ entry: BlockLayout.Entry, block: Block, viewportTop: CGFloat, isSelected: Bool,
-        selection: TextSelection?, hoveredBlockID: BlockID?, chips: [ContextChip], bounds: CGRect,
-        in context: CGContext
+        selection: TextSelection?, hoveredBlockID: BlockID?, hoveredLink: HoveredLink?,
+        chips: [ContextChip], bounds: CGRect, in context: CGContext
     ) {
 
             let viewportBottom = viewportTop + bounds.height
@@ -435,42 +461,72 @@ final class TerminalRenderer {
             // A collapsed block draws only its first few lines — and the *layout* was built from the same count,
             // so the blocks below it have already moved up.
             var rowOrigin = entry.contentTop
+            var bodyLineCounter = 0
             for (gridIndex, visibleGrid) in block.visibleGrids.enumerated() {
                 let contentGrid = visibleGrid.contentGrid
                 for row in 0..<visibleGrid.lines {
+                    let currentBodyLine = bodyLineCounter
+                    bodyLineCounter += 1
                     let documentY = rowOrigin + CGFloat(row) * font.cellHeight
                     guard documentY + font.cellHeight > viewportTop, documentY < viewportBottom
                     else { continue }
                     guard let line = contentGrid.line(at: row) else { continue }
+                    let originX = bounds.minX + contentInset
+                    let originY = screenY(
+                        documentY + font.cellHeight, viewportTop: viewportTop, bounds: bounds)
                     drawRow(
                         row: row, line: line, grid: contentGrid.grid,
                         isFinished: contentGrid.isFinished,
                         // The first grid is what was typed; the rest is what came back.
                         isCommand: gridIndex == 0,
-                        originX: bounds.minX + contentInset,
-                        originY: screenY(
-                            documentY + font.cellHeight, viewportTop: viewportTop, bounds: bounds),
+                        originX: originX,
+                        originY: originY,
                         in: context)
+                    if let hoveredLink, !hoveredLink.isAlternateScreen,
+                        hoveredLink.blockIndex == entry.blockIndex,
+                        hoveredLink.bodyLine == currentBodyLine {
+                        draw(linkUnderline: hoveredLink.colRange, originX: originX, originY: originY, in: context)
+                    }
                 }
                 rowOrigin += CGFloat(visibleGrid.lines) * font.cellHeight
             }
     }
     /// A full-screen program owns the screen: no blocks, no headers, no scrollback.
-    private func drawAlternateScreen(in context: CGContext, bounds: CGRect, grid: TerminalGrid) {
+    private func drawAlternateScreen(
+        in context: CGContext, bounds: CGRect, grid: TerminalGrid, hoveredLink: HoveredLink? = nil
+    ) {
         for screenRow in 0..<grid.size.rows {
             let row = grid.historyLineCount + screenRow
             guard let line = grid.line(at: row) else { continue }
+            let originX = bounds.minX + contentInset
+            let originY = bounds.maxY - CGFloat(screenRow + 1) * font.cellHeight
             drawRow(
                 row: row, line: line, grid: grid, isFinished: false,
-                originX: bounds.minX + contentInset,
-                originY: bounds.maxY - CGFloat(screenRow + 1) * font.cellHeight,
+                originX: originX,
+                originY: originY,
                 in: context)
+            if let hoveredLink, hoveredLink.isAlternateScreen, hoveredLink.bodyLine == screenRow {
+                draw(linkUnderline: hoveredLink.colRange, originX: originX, originY: originY, in: context)
+            }
         }
         drawCursor(
             in: context, grid: grid,
             originX: bounds.minX + contentInset + CGFloat(grid.cursorColumn) * font.cellWidth,
             originY: bounds.maxY - CGFloat(grid.cursorRow + 1) * font.cellHeight,
             markedText: nil, blinkOn: true)
+    }
+
+    private func draw(linkUnderline range: Range<Int>, originX: CGFloat, originY: CGFloat, in context: CGContext) {
+        let x = originX + CGFloat(range.lowerBound) * font.cellWidth
+        let width = CGFloat(range.count) * font.cellWidth
+        let baseline = originY + font.cellHeight - font.baselineFromTop
+        let (color, _) = CellAttributes().resolvedColors(using: palette)
+        context.setStrokeColor(color.nsColor.cgColor)
+        context.setLineWidth(1)
+        context.setLineDash(phase: 0, lengths: [])
+        context.move(to: CGPoint(x: x, y: baseline - 1))
+        context.addLine(to: CGPoint(x: x + width, y: baseline - 1))
+        context.strokePath()
     }
 
     /// Document coordinates are measured down from the top; the view is y-up, so this is the one

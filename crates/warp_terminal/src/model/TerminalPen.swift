@@ -11,6 +11,7 @@ struct TerminalPen: Hashable, Sendable {
     }
 
     var attributes = CellAttributes()
+    var hyperlink: Hyperlink?
     var g0: Charset = .ascii
     var g1: Charset = .ascii
     var usesG1 = false                  // SO selects G1, SI selects G0

@@ -3,15 +3,16 @@
 One harness per guarded decision. Each compiles the shipped sources directly with `swiftc`, so a
 harness that stops compiling means a decision leaked out of a pure layer. There is no XCTest target.
 
-18 harnesses, 897 checks. The count is not a goal — it is what the decisions cost to hold down.
+29 harnesses. The count is not a goal — it is what the decisions cost to hold down.
 
 ## The emulator
 
 | Harness | Guards |
 | --- | --- |
 | `terminal-grid-test.swift` | wrapping, scrolling, the scrollback, wide glyphs, editing, resize and reflow, the alternate screen, line identity |
-| `vt-parser-test.swift` | the escape-sequence dispatch tables, the string states, SGR's two spellings of an extended colour, UTF-8 buffering |
+| `vt-parser-test.swift` | the escape-sequence dispatch tables, the string states, SGR's two spellings of an extended colour, UTF-8 buffering, OSC 8 |
 | `shell-integration-test.swift` | the `OSC 133` prompt cycle that blocks are built on, in the order a real shell emits it |
+| `text-selection-test.swift` | cell and block text selection boundaries and clipboard extraction |
 
 ## The blocks
 
@@ -28,7 +29,7 @@ harness that stops compiling means a decision leaked out of a pure layer. There 
 | --- | --- |
 | `context-chips-test.swift` | the repository walk, the branch out of `.git/HEAD`, the project kind, the chips and the colour table — against real temporary directories |
 
-## The command line (Phase 3 — built, parked)
+## The command line
 
 | Harness | Guards |
 | --- | --- |
@@ -38,17 +39,29 @@ harness that stops compiling means a decision leaked out of a pure layer. There 
 | `completion-test.swift` | what the popover and the ghost text offer, from 50+ signatures, cd/dotfile paths, and history |
 | `completion-menu-test.swift` | popover windowing, pagination, cursor selection, and insertion replacement range |
 | `editor-submit-test.swift` | the three bytes of protocol a submitted command becomes: `" "` Ctrl-K Ctrl-U |
+| `command-history-test.swift` | deduplication, prefix search, and MRU command ordering |
+| `history-navigation-test.swift` | up/down arrow history recall, prefix filtering, and editor draft preservation |
+| `shell-history-file-test.swift` | zsh, bash, and fish history file parsing and line extraction |
 
-## The window (Phase 4b)
+## The window & Settings
 
 | Harness | Guards |
 | --- | --- |
 | `pane-tree-test.swift` | where a split puts a pane, the sibling insert on a matching axis, the collapse when a branch is left with one child, and where the focus goes when the focused pane closes |
 | `pane-layout-test.swift` | the tree as rectangles: that the gaps come out of the space before it is divided, that a nested split uses its parent's slot, and that a window too small for its panes gets zero widths rather than negative ones |
 | `tab-list-test.swift` | the tab list: opening, closing, which tab shows, focusing a pane inside a tab, renaming, pinning, dragging to reorder, the settings tab and that every pane operation refuses it, and the two rules that keep it consistent — a terminal tab never holds no panes, and no two panes in a window share an identity |
-| `chrome-settings-test.swift` | the chrome's numbers: that each has a range, that the default is inside its own range, the list of materials a picker draws, and where the content panel lands — including that hiding the sidebar gives the panel the whole window |
+| `chrome-settings-test.swift` | the chrome's numbers: that each has a range, that the default is inside its own range, the 5 materials picker (including `.none`), and where the content panel lands |
+| `settings-store-test.swift` | the settings document: round-trip, backwards compatibility, missing fields, unknown fields, material fallback, and invalid blobs |
+| `session-snapshot-test.swift` | workspace state serialization, window tabs, and layout reconstruction |
 
-| `settings-store-test.swift` | the settings document: the round trip, and every way a file from another build can arrive — a missing field, an unknown field, an unrecognised material name, a value outside its range, and a blob that is not a document at all |
+## Phase 5: Hyperlinks, Themes, and Keymaps
+
+| Harness | Guards |
+| --- | --- |
+| `hyperlink-test.swift` | OSC 8 parse, cell stamping, URI preservation, and OSC 8 end-anchor reset |
+| `link-detector-test.swift` | scanning for HTTP/HTTPS URLs, file paths with line/column numbers, trailing punctuation stripping, and git commit SHAs |
+| `theme-palette-test.swift` | 8 preset themes, contrast checks, 16-color ANSI palettes, and JSON import/export schemas |
+| `keymap-test.swift` | KeyEquivalent, modifier matching, override mapping, collision avoidance, and settings round-trip |
 
 ## End to end
 

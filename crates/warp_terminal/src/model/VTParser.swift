@@ -514,6 +514,8 @@ final class VTParser {
         case "7":
             guard let url = URL(string: body), url.isFileURL else { return }
             onEvent?(.workingDirectoryChanged(url.path))
+        case "8":
+            grid.pen.hyperlink = Hyperlink.parse(body: body)
         case "9", "777":
             handleNotification(command: command, body: body)
         case "133":

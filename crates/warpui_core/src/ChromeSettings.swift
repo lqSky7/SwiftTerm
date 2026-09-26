@@ -41,43 +41,33 @@ enum AppearanceMode: String, CaseIterable, Equatable, Codable {
 /// Every case is something the system draws. There is no case here that means "paint it ourselves",
 /// which is the point of the whole list.
 enum ChromeMaterial: String, CaseIterable, Equatable, Codable {
+    /// No material or blur under the surface — saves GPU/compositor compute.
+    case none
     /// SwiftUI's lightest `Material`, on the behind-window blur it needs to be a material at all.
     case ultraThin
     /// One weight up from `ultraThin`, and the reason both are offered: at a glance on a dark desktop the
     /// two read as "barely there" and "a surface", which is a choice worth being able to make.
     case thin
-    /// `NSGlassEffectView`'s regular style, in SwiftUI: `glassEffect(.regular)`.
+    /// `NSGlassEffectView` / SwiftUI: `glassEffect(.regular)`.
     case glassRegular
-    /// `NSGlassEffectView`'s clear style, in SwiftUI: `glassEffect(.clear)`.
+    /// `NSGlassEffectView` / SwiftUI: `glassEffect(.clear)`.
     case glassClear
 
     /// What a picker calls it.
-    ///
-    /// Four, and the pair at the top is deliberate. `thin` was removed once, on the grounds that it and
-    /// `ultraThin` are the same kind of surface differing by a weight nobody was choosing between — which is
-    /// true of a *window* material, where both sit over the same desktop. It stopped being true once the
-    /// terminal got a material of its own: over text, the weight is the whole question, and the difference
-    /// between the two is legibility rather than taste. `titlebar` is still gone, and stays gone — it was kept
-    /// only for having been on screen before the titlebar was removed, which is not a reason to offer it.
     var displayName: String {
         switch self {
-        case .ultraThin: "Ultra thin"
-        case .thin: "Thin"
-        case .glassRegular: "Glass"
-        case .glassClear: "Clear glass"
+        case .none: "None"
+        case .glassRegular: "Glass (.regular)"
+        case .glassClear: "Glass (.clear)"
+        case .ultraThin: "Material (Ultra thin)"
+        case .thin: "Material (Thin)"
         }
     }
 
     /// The window opacity this material wants.
-    ///
-    /// The glass numbers are vicinae's: its `TRANSLUCENT_OPACITY` is 0.6 for the glass material and its
-    /// `BLUR_OPACITY` is 0.55 for the blur one. A material that arrives at an opacity which hides it is a
-    /// material nobody can see they picked, which is why picking one sets this.
-    ///
-    /// The two materials are ordered by weight — `ultraThin` at 0.55, `thin` at 0.62 — so moving down the
-    /// picker moves in one direction rather than jumping about.
     var defaultOpacity: Double {
         switch self {
+        case .none: 0.0
         case .ultraThin: 0.55
         case .thin: 0.62
         case .glassRegular, .glassClear: 0.6

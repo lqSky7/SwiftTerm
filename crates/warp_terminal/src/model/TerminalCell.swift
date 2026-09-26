@@ -8,11 +8,12 @@ struct TerminalCell: Hashable, Sendable {
     var width: Int = 1
     /// The right-hand half of a double-width glyph. It owns no text; its left neighbour does.
     var isContinuation: Bool = false
+    var hyperlink: Hyperlink?
 
     static let blank = TerminalCell()
 
     var isBlank: Bool {
-        (text.isEmpty || text == " ") && !isContinuation && attributes == CellAttributes()
+        (text.isEmpty || text == " ") && !isContinuation && attributes == CellAttributes() && hyperlink == nil
     }
 }
 

@@ -6,7 +6,7 @@ The window as a whole: the sidebar, and the terminal floating on it.
 | --- | --- |
 | `WorkspaceScreen.swift` | the window's content — the backdrop, the sidebar's glass, the sidebar column, and the content panel with its panes |
 | `WorkspaceSidebar.swift` | the sidebar's column: the traffic lights' row, a row to open a tab, the tabs, and the settings popover |
-| `SettingsView.swift` | the settings tab: a centred, searchable column of categories in a `NavigationStack`, the Appearance and Sidebar pages, our own back button, and the material-to-surface switch |
+| `SettingsView.swift` | the settings tab: a centred, searchable column of categories in a `NavigationStack`, Appearance (with "None" and explicit glass options), Themes & Colors (presets, ANSI palette customization, import/export), Keyboard Shortcuts (granular keybinding recorder), and Sidebar pages |
 | `TabRenameField.swift` | the `NSTextField` a tab is renamed in |
 
 **The sidebar is the window, and the terminal is a panel on it.** The sidebar's surface is full-bleed; the

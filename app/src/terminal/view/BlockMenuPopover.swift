@@ -64,6 +64,12 @@ final class BlockMenuPopover: NSGlassEffectView {
         isHidden = true
     }
 
+    /// Pushes an updated theme palette into the popover.
+    func update(palette: TerminalPalette) {
+        rows.palette = palette
+        rows.needsDisplay = true
+    }
+
     private func layout(at anchor: CGRect, within bounds: CGRect) {
         let width = max(
             Self.minimumWidth,
@@ -97,6 +103,7 @@ private final class BlockMenuRowsView: NSView {
         didSet { if hoveredRow != oldValue { needsDisplay = true } }
     }
     var onSelect: ((Int) -> Void)?
+    var palette: TerminalPalette = .builtin
 
     private let font = NSFont.systemFont(ofSize: 13)
 
@@ -141,15 +148,19 @@ private final class BlockMenuRowsView: NSView {
                 height: BlockMenuPopover.rowHeight)
 
             if index == hoveredRow {
-                NSColor.selectedContentBackgroundColor.withAlphaComponent(0.22).setFill()
-                NSBezierPath(roundedRect: rowRect.insetBy(dx: 4, dy: 1), xRadius: 5, yRadius: 5).fill()
+                palette.ansi[4].nsColor.withAlphaComponent(0.25).setFill()
+                let path = NSBezierPath(roundedRect: rowRect.insetBy(dx: 4, dy: 1), xRadius: 5, yRadius: 5)
+                path.fill()
+                palette.ansi[4].nsColor.withAlphaComponent(0.4).setStroke()
+                path.lineWidth = 1
+                path.stroke()
             }
 
             NSAttributedString(
                 string: title,
                 attributes: [
                     .font: font,
-                    .foregroundColor: NSColor.labelColor,
+                    .foregroundColor: palette.foreground.nsColor,
                 ]
             )
             .draw(at: NSPoint(x: BlockMenuPopover.horizontalPadding, y: rowRect.midY - font.capHeight / 2))

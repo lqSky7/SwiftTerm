@@ -155,4 +155,18 @@ extension Block {
         else { return nil }
         return gridLine.string()
     }
+
+    /// The cells of one body line.
+    func cells(atBodyLine line: Int) -> [TerminalCell]? {
+        guard let (contentGrid, row) = gridLine(forBodyLine: line),
+            let gridLine = contentGrid.line(at: row)
+        else { return nil }
+        return gridLine.cells
+    }
+
+    /// The single cell at a specific body line and column.
+    func cell(atBodyLine line: Int, column: Int) -> TerminalCell? {
+        guard let cells = cells(atBodyLine: line), cells.indices.contains(column) else { return nil }
+        return cells[column]
+    }
 }

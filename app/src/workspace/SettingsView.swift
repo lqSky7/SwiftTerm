@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// What a surface is made of, chosen by name.
 ///
@@ -25,6 +26,8 @@ struct MaterialBackground: View {
 
     var body: some View {
         switch material {
+        case .none:
+            Color.clear
         case .ultraThin, .thin:
             // The two `Material` cases, and the one place this flag matters: over a transparent window with
             // nothing behind it inside the window, a `Material` alone is a flat tint, so the window's own
@@ -303,6 +306,8 @@ struct SettingsView: View {
     private func destination(for category: SettingsCategory) -> some View {
         switch category {
         case .appearance: AppearanceSettingsView(workspace: workspace)
+        case .themes: ThemeSettingsView(workspace: workspace)
+        case .keymaps: KeymapSettingsView(workspace: workspace)
         case .sidebar: SidebarSettingsView(workspace: workspace)
         }
     }
@@ -311,6 +316,8 @@ struct SettingsView: View {
 /// One thing a person can go and change.
 private enum SettingsCategory: String, CaseIterable, Identifiable {
     case appearance
+    case themes
+    case keymaps
     case sidebar
 
     var id: String { rawValue }
@@ -318,6 +325,8 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .appearance: "Appearance"
+        case .themes: "Themes & Colors"
+        case .keymaps: "Keyboard Shortcuts"
         case .sidebar: "Sidebar"
         }
     }
@@ -326,7 +335,9 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
     /// page somebody can read without clicking anything.
     var icon: String {
         switch self {
-        case .appearance: "paintpalette.fill"
+        case .appearance: "macwindow"
+        case .themes: "paintpalette.fill"
+        case .keymaps: "keyboard"
         case .sidebar: "sidebar.left"
         }
     }
@@ -335,6 +346,10 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
         switch self {
         case .appearance:
             "What the window is made of, and how opaque each of its surfaces is."
+        case .themes:
+            "Theme presets, ANSI color palettes, and color customization."
+        case .keymaps:
+            "Configurable keyboard shortcuts and navigation mappings."
         case .sidebar:
             "Whether the sidebar shows, and how it is sized and hidden."
         }
@@ -621,3 +636,238 @@ struct SidebarSettingsView: View {
             set: { _ in workspace.toggleSidebar() })
     }
 }
+
+// MARK: - Themes & Colors
+
+struct ThemeSettingsView: View {
+    let workspace: AppCore
+
+    var body: some View {
+        SettingsPage(title: "Themes & Colors", showsBackButton: true) {
+            SettingsGroup(label: "Theme Preset") {
+                SettingsRow(title: "Active Theme") {
+                    presetPicker
+                }
+                SettingsRowDivider()
+                SettingsRow(title: "Manage Theme") {
+                    HStack(spacing: Theme.Spacing.md) {
+                        Button("Import…") { importPalette() }
+                            .controlSize(.small)
+                        Button("Export…") { exportPalette() }
+                            .controlSize(.small)
+                        Button("Reset to Default") { workspace.resetThemeToDefault() }
+                            .controlSize(.small)
+                    }
+                }
+            }
+
+            SettingsGroup(label: "Terminal Surfaces") {
+                colorRow(title: "Foreground", rgb: workspace.currentPalette.foreground) {
+                    workspace.updateForeground(to: $0)
+                }
+                SettingsRowDivider()
+                colorRow(title: "Background", rgb: workspace.currentPalette.background) {
+                    workspace.updateBackground(to: $0)
+                }
+                SettingsRowDivider()
+                colorRow(title: "Cursor", rgb: workspace.currentPalette.cursor) {
+                    workspace.updateCursor(to: $0)
+                }
+            }
+
+            SettingsGroup(label: "Standard ANSI Colors (Normal & Bright)") {
+                ansiColorRow(title: "Black", normalIndex: 0, brightIndex: 8)
+                SettingsRowDivider()
+                ansiColorRow(title: "Red", normalIndex: 1, brightIndex: 9)
+                SettingsRowDivider()
+                ansiColorRow(title: "Green", normalIndex: 2, brightIndex: 10)
+                SettingsRowDivider()
+                ansiColorRow(title: "Yellow", normalIndex: 3, brightIndex: 11)
+                SettingsRowDivider()
+                ansiColorRow(title: "Blue", normalIndex: 4, brightIndex: 12)
+                SettingsRowDivider()
+                ansiColorRow(title: "Magenta", normalIndex: 5, brightIndex: 13)
+                SettingsRowDivider()
+                ansiColorRow(title: "Cyan", normalIndex: 6, brightIndex: 14)
+                SettingsRowDivider()
+                ansiColorRow(title: "White", normalIndex: 7, brightIndex: 15)
+            }
+        }
+    }
+
+    private var presetPicker: some View {
+        Picker("Theme", selection: themeSelection) {
+            ForEach(allThemeNames, id: \.self) { name in
+                Text(name).tag(name)
+            }
+        }
+        .pickerStyle(.menu)
+        .labelsHidden()
+        .fixedSize()
+    }
+
+    private var allThemeNames: [String] {
+        var names = TerminalPalette.presets.map(\.name)
+        for customName in workspace.customPalettes.keys.sorted() {
+            if !names.contains(customName) {
+                names.append(customName)
+            }
+        }
+        return names
+    }
+
+    private var themeSelection: Binding<String> {
+        Binding(
+            get: { workspace.themeName },
+            set: { workspace.setThemeName($0) })
+    }
+
+    private func colorRow(title: String, rgb: TerminalRGB, onChange: @escaping (TerminalRGB) -> Void) -> some View {
+        SettingsRow(title: title) {
+            HStack(spacing: Theme.Spacing.md) {
+                Text(rgb.hexString)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                ColorPicker("", selection: colorBinding(for: rgb, onChange: onChange))
+                    .labelsHidden()
+            }
+        }
+    }
+
+    private func ansiColorRow(title: String, normalIndex: Int, brightIndex: Int) -> some View {
+        let palette = workspace.currentPalette
+        let normalRGB = normalIndex < palette.ansi.count ? palette.ansi[normalIndex] : TerminalRGB(hex: 0)
+        let brightRGB = brightIndex < palette.ansi.count ? palette.ansi[brightIndex] : TerminalRGB(hex: 0)
+
+        return SettingsRow(title: title) {
+            HStack(spacing: Theme.Spacing.lg) {
+                HStack(spacing: Theme.Spacing.xs) {
+                    Text("Normal")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                    ColorPicker("", selection: colorBinding(for: normalRGB) { workspace.updateAnsiColor(at: normalIndex, to: $0) })
+                        .labelsHidden()
+                }
+                HStack(spacing: Theme.Spacing.xs) {
+                    Text("Bright")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                    ColorPicker("", selection: colorBinding(for: brightRGB) { workspace.updateAnsiColor(at: brightIndex, to: $0) })
+                        .labelsHidden()
+                }
+            }
+        }
+    }
+
+    private func colorBinding(for rgb: TerminalRGB, onChange: @escaping (TerminalRGB) -> Void) -> Binding<Color> {
+        Binding<Color>(
+            get: {
+                Color(red: Double(rgb.red) / 255.0, green: Double(rgb.green) / 255.0, blue: Double(rgb.blue) / 255.0)
+            },
+            set: { newColor in
+                let nsColor = NSColor(newColor).usingColorSpace(.sRGB) ?? NSColor(newColor)
+                let r = UInt8(clamping: Int((nsColor.redComponent * 255).rounded()))
+                let g = UInt8(clamping: Int((nsColor.greenComponent * 255).rounded()))
+                let b = UInt8(clamping: Int((nsColor.blueComponent * 255).rounded()))
+                onChange(TerminalRGB(red: r, green: g, blue: b))
+            }
+        )
+    }
+
+    private func importPalette() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [.json]
+        if panel.runModal() == .OK, let url = panel.url,
+            let data = try? Data(contentsOf: url),
+            let palette = TerminalPaletteCoder.decode(from: data)
+        {
+            let name = url.deletingPathExtension().lastPathComponent
+            workspace.importPalette(named: name, palette: palette)
+        }
+    }
+
+    private func exportPalette() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.json]
+        panel.nameFieldStringValue = "\(workspace.themeName).json"
+        if panel.runModal() == .OK, let url = panel.url {
+            let palette = workspace.currentPalette
+            if let data = try? TerminalPaletteCoder.encode(palette, name: workspace.themeName) {
+                try? data.write(to: url)
+            }
+        }
+    }
+}
+
+// MARK: - Keyboard Shortcuts
+
+struct KeymapSettingsView: View {
+    let workspace: AppCore
+
+    var body: some View {
+        SettingsPage(title: "Keyboard Shortcuts", showsBackButton: true) {
+            SettingsGroup {
+                SettingsRow(title: "Reset All Shortcuts") {
+                    Button("Reset to Defaults") {
+                        workspace.resetAllKeymaps()
+                    }
+                    .controlSize(.small)
+                }
+            }
+
+            ForEach(KeymapAction.Category.allCases, id: \.self) { category in
+                SettingsGroup(label: category.rawValue) {
+                    let actions = KeymapAction.allCases.filter { $0.category == category }
+                    ForEach(Array(actions.enumerated()), id: \.element.id) { index, action in
+                        if index > 0 { SettingsRowDivider() }
+                        keymapRow(for: action)
+                    }
+                }
+            }
+        }
+    }
+
+    private func keymapRow(for action: KeymapAction) -> some View {
+        let isRecording = workspace.recordingKeymapAction == action
+        let currentShortcut = workspace.keymap.shortcut(for: action)
+        let isCustomized = workspace.customKeymap[action.rawValue] != nil
+
+        return SettingsRow(title: action.title) {
+            HStack(spacing: Theme.Spacing.md) {
+                if isRecording {
+                    Text("Press shortcut keys… (Esc to cancel)")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.tint)
+                    Button("Cancel") {
+                        workspace.cancelRecordingKeymap()
+                    }
+                    .controlSize(.small)
+                } else {
+                    Text(currentShortcut.displayString)
+                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(
+                            Theme.Colors.ramp(dark: 0.15, light: 0.1),
+                            in: .rect(cornerRadius: 4))
+
+                    Button("Record") {
+                        workspace.beginRecordingKeymap(for: action)
+                    }
+                    .controlSize(.small)
+
+                    if isCustomized {
+                        Button("Reset") {
+                            workspace.resetShortcut(for: action)
+                        }
+                        .controlSize(.small)
+                    }
+                }
+            }
+        }
+    }
+}
+
