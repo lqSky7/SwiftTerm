@@ -5,6 +5,7 @@ The window as a whole: the sidebar, and the terminal floating on it.
 | File | Holds |
 | --- | --- |
 | `WorkspaceScreen.swift` | the window's content — the backdrop, the sidebar's glass, the sidebar column, and the content panel with its panes |
+| `ChromaBloomView.swift` | the colour bloom that plays over the window when a tab opens: the one Metal surface in the app, its shader, and the pass that fades it off |
 | `WorkspaceSidebar.swift` | the sidebar's column: the traffic lights' row, whose window this is, the tabs — and `SidebarRowHighlight`, the lit row the selection draws |
 | `IdentityMark.swift` | the app's identity — the icon's own two strokes as a `Shape`, and the view that draws it at a row's size |
 | `ProfileAvatar.swift` | the user's picture at whatever size it is needed: the one view the sidebar's row and the profile page share |

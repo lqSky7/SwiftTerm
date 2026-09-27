@@ -220,11 +220,34 @@ final class AppCore {
 
     // MARK: - Tabs
 
+    /// When the colour bloom that plays over the window on a new tab started, or `nil` when none is
+    /// playing — which is the state the window is in for all but the two seconds after `⌘T`.
+    ///
+    /// **A moment rather than a flag, because a second tab can arrive during the first bloom.** Two
+    /// `true`s are one bloom; two moments are two, and the view takes the moment as the identity of
+    /// the surface it draws on, so the second one restarts the colour instead of inheriting a pass
+    /// that is already fading. On the model rather than in the view for the usual reason: a view that
+    /// kept its own copy of "is a bloom playing" would be a second answer to a question `AppCore`
+    /// already has.
+    private(set) var newTabBloomStartedAt: Date?
+
     /// A new tab holding one shell, shown — which is what a new tab does.
+    ///
+    /// **The one place a bloom is asked for.** It is not on `openTab()`, because that is also how a
+    /// restored session opens its tabs: a window coming back with six of them would bloom six times
+    /// on launch, which is the opposite of a thing that happens only when you ask for something new.
     func newTab() {
         openTab()
+        newTabBloomStartedAt = Date()
         afterStructuralChange()
     }
+
+    /// The bloom has played out. Called by the surface when its pass is over.
+    ///
+    /// The view owns the clock — it is the only thing that knows a frame was drawn — and the model
+    /// owns whether there is anything to play. This is where the two meet, and clearing the trigger
+    /// is what takes the surface back out of the hierarchy.
+    func finishNewTabBloom() { newTabBloomStartedAt = nil }
 
     func selectTab(_ tab: TabID) {
         leaveProfile()

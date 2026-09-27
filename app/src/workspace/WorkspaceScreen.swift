@@ -44,6 +44,7 @@ struct WorkspaceScreen: View {
 
             sidebarColumn
             contentPanel
+            newTabBloom
         }
         .ignoresSafeArea()
         // One animation for both, scoped to the one value that decides them. Animating them separately
@@ -122,6 +123,32 @@ struct WorkspaceScreen: View {
                 .overlay(alignment: .topLeading) { dividerHandles(in: bounds) }
                 .overlay(alignment: .topLeading) { sidebarToggle }
                 .offset(x: frame.minX, y: frame.minY)
+        }
+    }
+
+    /// The colour bloom that plays when a tab opens.
+    ///
+    /// **Over the whole window, and only for as long as a pass lasts.** Over the whole window because
+    /// that is what the reference does — the colour arrives behind the chrome and the content alike,
+    /// and a bloom that stopped at the panel's edge would read as a highlight on the terminal rather
+    /// than as the window doing something. Only for as long as a pass lasts because the alternative is
+    /// a decoration competing with the terminal's own output: the trigger is `nil` for all but the two
+    /// seconds after a new tab, and when it is `nil` nothing is in the hierarchy and nothing draws.
+    ///
+    /// **The start moment is the identity of the view.** A second tab opened while the first bloom is
+    /// still fading is a second bloom, and a surface that kept its identity would carry on with a pass
+    /// that is already half over — so `.id` is the moment, and a new moment is a new surface.
+    @ViewBuilder
+    private var newTabBloom: some View {
+        if let started = workspace.newTabBloomStartedAt {
+            ChromaBloomView(
+                duration: Theme.Motion.chromaBloom,
+                onFinished: workspace.finishNewTabBloom
+            )
+            .id(started)
+            // The bloom is light on the window, not a control on it: every click belongs to whatever
+            // is underneath, including the traffic lights it is drawn over.
+            .allowsHitTesting(false)
         }
     }
 

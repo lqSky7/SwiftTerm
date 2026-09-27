@@ -252,5 +252,15 @@ enum Theme {
     enum Motion {
         /// Long enough to read as a fade, short enough that a keystroke never waits on it.
         static let chromeFade: TimeInterval = 0.18
+
+        /// The colour bloom that plays over the window when a tab opens — one pass of the loop the
+        /// reference's hero background runs, and then nothing.
+        ///
+        /// It is not `chromeFade`: that one is a transition between two states and is over before it is
+        /// noticed, while this one is the whole of what happens on a new tab and has to be seen arriving
+        /// and leaving. The reference's loop is 3.77 seconds, which is one full rise; this is that rise
+        /// with the fade off the end of it, and it is the length at which the colour has crossed the
+        /// window by the time the prompt is drawn.
+        static let chromaBloom: TimeInterval = 2.6
     }
 }
