@@ -151,12 +151,33 @@ Gate result after audit: the Foundation-only harness passes 301 checks and the T
 94, over 3 goldens and 54 shared invalid cases. `Scripts/run-tests.sh` runs both halves. The
 spellings and rules C0 had to freeze are recorded in wire-contract.md under "Frozen by C0".
 
+## B1A — identity and database foundation (database half done)
+
+- [x] Migration 000: four least-privilege roles, memberships, database `CREATE` grants, and
+      assertions that none holds SUPERUSER/CREATEDB/CREATEROLE/BYPASSRLS.
+- [x] Migration 001: eight tables derived from schema.sql, forced row-level security, policies.
+- [x] Column-level grants: the API cannot read `token_sha256`, `csrf_sha256`, `registration_sha256`
+      or `auth_issuer`; no DDL; snapshots have no `UPDATE`.
+- [x] Fixed-search-path `SECURITY DEFINER` credential resolvers, owned by a role that cannot log in.
+- [x] Transaction-local owner context on one checked-out pg client; no `pool.query` in a transaction.
+- [x] `node:test` real-role suite: 17 checks passing against live PostgreSQL 17.
+- [x] Idempotency proven by applying migration 001 twice.
+- [ ] OIDC authorization-code/PKCE with `jose` and a fixed trusted JWKS.
+- [ ] Browser session cookie, CSRF companion cookie, logout revocation.
+- [ ] `GET /me`, `POST`/`DELETE /devices`, login/callback/logout/session/CSRF endpoints.
+- [ ] Device registration concurrency and changed-payload 409.
+- [ ] Resolver privilege/`search_path` abuse tests and log-redaction tests.
+- [ ] Rollback policy and backup/restore drill.
+
+Applied to Supabase project `upmarjiewuwvaljnnboq` (PostgreSQL 17.11, ap-south-1) via the pooler:
+the direct `db.<ref>.supabase.co` host is IPv6-only and unreachable from this network.
+
 ## B1 — account/API/website foundation
 
 - [ ] Select hosting/domain/OIDC provider and pin runtime/dependencies.
 - [ ] Implement system-browser PKCE sign-in and Keychain storage.
 - [ ] Map verified issuer/subject to accounts; bind native device credentials.
-- [ ] Turn SQL draft into numbered migration and exact production role grants.
+- [x] Turn SQL draft into numbered migration and exact production role grants.
 - [ ] Test RLS as non-owner roles, cross-tenant FKs and pooled context isolation.
 - [ ] Implement input byte limits, auth/CSRF/Origin checks and idempotency.
 - [ ] Build website sign-in/download pages using same API/session.

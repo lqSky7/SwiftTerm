@@ -18,7 +18,7 @@ let package = Package(
             // Everything that is not the binary: documentation, scripts, harnesses, and the source
             // Info.plist, which Scripts/build-app.sh copies into the bundle itself.
             exclude: [
-                "Tests", "docs", "Scripts", "dist", "contracts", "backend",
+                "Tests", "docs", "Scripts", "dist", "contracts", "backend", "backend",
                 "app/Info.plist", "app/SwiftTerm.entitlements", "app/assets",
                 "README.md", "READ_ME.md", "EDITOR.md", "index.md",
                 "AGENTS.md", "tinycast_architecture_and_rules.md", "warp_features.md",
