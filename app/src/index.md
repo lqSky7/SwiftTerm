@@ -16,3 +16,5 @@ knows that a sidebar exists.
 TUI compatibility is owned by `terminal/`; no new application feature or cross-feature import.
 
 Raw-program paste uses `TerminalInput.paste`; prompt pastes retain native editor handling.
+
+Resource optimization is confined to terminal rendering, decoding and cache/task lifetimes.

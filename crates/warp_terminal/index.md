@@ -13,3 +13,5 @@ harness with no window server, which is what makes the escape-sequence behaviour
 TUI regressions are covered by `Tests/tui-compatibility-test.swift` and offscreen renderer checks.
 
 `TerminalInput.paste` protects nano from Ctrl-J; bootstrap prompt hooks emit one startup prompt.
+
+ASCII paths avoid temporary decoding arrays and Unicode segmentation; Unicode behavior is retained.

@@ -305,6 +305,7 @@ final class TerminalGrid {
         guard column >= 0 else { return false }
         var cell = screen[cursorRow].cells[column]
         guard !cell.text.isEmpty else { return false }
+        if let ascii = character.asciiValue, ascii >= 0x20, cell.text.utf8.count == 1 { return false }
         let combined = cell.text + String(character)
         guard combined.count == 1, let grapheme = combined.first else { return false }
         let width = TerminalCell.displayWidth(of: grapheme)
@@ -512,7 +513,7 @@ final class TerminalGrid {
     }
 
     func horizontalTab() {
-        guard let next = tabStops.filter({ $0 > cursorColumn }).min() else {
+        guard let next = tabStops.lazy.filter({ $0 > self.cursorColumn }).min() else {
             setCursorColumn(size.columns - 1)
             return
         }
@@ -520,7 +521,7 @@ final class TerminalGrid {
     }
 
     func horizontalTabBack() {
-        guard let previous = tabStops.filter({ $0 < cursorColumn }).max() else {
+        guard let previous = tabStops.lazy.filter({ $0 < self.cursorColumn }).max() else {
             setCursorColumn(0)
             return
         }

@@ -140,7 +140,6 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
             NotificationCenter.default.addObserver(
                 self, selector: #selector(windowFocusDidChange(_:)), name: name, object: nil)
         }
-        startBlinking()
     }
 
     @available(*, unavailable)
@@ -174,6 +173,7 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
         updateGridForBounds()
         claimFocusIfActive()
         syncFirstResponder()
+        updateBlinking()
         // A hover control needs to know where the pointer is, and AppKit does not send `mouseMoved` unless the
         // window has asked for it.
         window?.acceptsMouseMovedEvents = true
@@ -360,12 +360,14 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
 
     override func becomeFirstResponder() -> Bool {
         cursorBlinkOn = true
+        updateBlinking(isFirstResponder: true)
         sendFocusReport(focused: window?.isKeyWindow == true)
         needsDisplay = true
         return true
     }
 
     override func resignFirstResponder() -> Bool {
+        updateBlinking(isFirstResponder: false)
         sendFocusReport(focused: false)
         needsDisplay = true
         return true
@@ -374,6 +376,7 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
     @objc private func windowFocusDidChange(_ notification: Notification) {
         guard notification.object as? NSWindow === window else { return }
         reportFocus()
+        updateBlinking()
         needsDisplay = true
     }
 
@@ -443,7 +446,7 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
         // the region's bottom edge.
         // The editor is on the *pinned* block by definition — it is the block being typed into — so it is placed
         // against that viewport rather than the scrolling one.
-        let originY = bounds.maxY - (top + height - pinnedViewportTop)
+        let originY = bounds.maxY - (top + height - layout.pinnedViewportTop(viewportHeight: bounds.height))
         let width = max(font.cellWidth, bounds.width - x - Theme.Size.terminalContentInset)
         editor.frame = NSRect(x: x, y: originY, width: width, height: height)
         editor.isHidden = false
@@ -476,6 +479,7 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
         needsDisplay = true
         syncFirstResponder()
         reportFocus()
+        updateBlinking()
     }
 
     /// The one place that decides who has the keyboard.
@@ -524,15 +528,21 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
             directory: directory, metadata: RepoMetadata.inspect(directory: directory))
     }
 
-    /// The cursor is the only thing that repaints on a blink, so the invalidation is the cursor's
-    /// rect rather than the view.
-    private func startBlinking() {
-        blinkTask?.cancel()
+    // Unfocused panes and hidden or steady cursors have nothing to animate.
+    private func updateBlinking(isFirstResponder: Bool? = nil) {
+        let grid = session.activeGrid
+        let focused = isFirstResponder ?? (window?.firstResponder === self)
+        guard focused, window?.isKeyWindow == true, session.showsShellCursor,
+            grid.modes.cursorVisible, grid.cursorStyle.blinks else {
+            blinkTask?.cancel()
+            blinkTask = nil
+            return
+        }
+        guard blinkTask == nil else { return }
         blinkTask = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(530))
+                do { try await Task.sleep(for: .milliseconds(530)) } catch { return }
                 guard let self else { return }
-                guard session.activeGrid.cursorStyle.blinks, window?.firstResponder === self else { continue }
                 cursorBlinkOn.toggle()
                 needsDisplay = true
             }
@@ -813,6 +823,7 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
         if let cached = directoryCache[path], now.timeIntervalSince(cached.timestamp) < 2.0 {
             return cached.entries
         }
+        directoryCache = directoryCache.filter { now.timeIntervalSince($0.value.timestamp) < 2.0 }
         let url = URL(fileURLWithPath: path)
         let entries =
             (try? FileManager.default.contentsOfDirectory(

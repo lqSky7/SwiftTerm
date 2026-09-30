@@ -31,3 +31,10 @@ only real prompt boundaries, and zsh prompt padding no longer creates a `%` bloc
 
 Current follow-up build: 0.1.0 (102), installed without launching. All 31 harnesses pass;
 checklist: `docs/phase-paste-startup-todo.md`.
+
+Resource optimization: duplicated glyph objects and unused span text removed; ASCII parsing
+and idle cursor work reduced. Three paired optimized standalone benchmark runs preserve identical
+pixel/output digests: renderer median 0.916 → 0.422 seconds, peak RSS 152.7 → 45.0 MiB;
+ASCII parser median 0.708 → 0.342 seconds (RSS unchanged). These are workload measurements,
+not a whole-app resource claim. Build 103 installed unopened; 31 harnesses pass.
+Checklist and methodology: `docs/phase-resource-optimization-todo.md`.

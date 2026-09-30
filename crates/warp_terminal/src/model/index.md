@@ -158,3 +158,7 @@ used by other commands. Local paths outrank history-only lines; shell escaping i
 
 `TerminalInput.paste` normalizes LF/CRLF to CR and optionally wraps bracketed paste, preserving
 code, indentation, blank lines and trailing newlines. Shell command encoding remains separate.
+
+Resource optimization: ASCII decoding bypasses buffering only when no UTF-8 bytes are pending.
+ASCII width and ASCII-pair boundaries avoid Unicode scans; Unicode prepend/combining behavior
+remains intact. Tab lookup uses lazy filtering without temporary collections.

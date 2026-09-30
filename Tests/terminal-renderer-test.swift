@@ -45,7 +45,42 @@ enum TerminalRendererTest {
         cursor.setCursorStyle(TerminalCursorStyle(shape: .block, blinks: false))
         let steady = render(renderer, grid: cursor, font: font, blinkOn: false)
         harness.equal(steady.tiffRepresentation, visible.tiffRepresentation, "steady cursor ignores the blink phase")
+        cacheInvalidation(harness)
         harness.finish()
+    }
+
+    private static func cacheInvalidation(_ harness: Harness) {
+        let font = TerminalFont(pointSize: 14)
+        let renderer = TerminalRenderer(palette: .builtin, font: font)
+        let grid = TerminalGrid(size: TerminalSize(columns: 80, rows: 2))
+        let vt = VTParser(grid: grid)
+        vt.feed("\u{1B}[?1049h")
+        // More distinct glyph/color pairs than the cache holds exercises wholesale eviction.
+        for batch in 0..<54 {
+            vt.feed("\u{1B}[H")
+            for column in 0..<80 {
+                let color = batch * 80 + column
+                vt.feed("\u{1B}[38;2;\(color / 256);\(color % 256);100mM")
+            }
+            let cached = render(renderer, grid: grid, font: font, showsCursor: false)
+            let fresh = render(TerminalRenderer(palette: .builtin, font: font),
+                               grid: grid, font: font, showsCursor: false)
+            harness.equal(cached.tiffRepresentation, fresh.tiffRepresentation,
+                          "cached/evicted RGB glyphs match fresh rendering in batch \(batch)")
+        }
+        vt.feed("\u{1B}[0m\u{1B}[2J\u{1B}[H" + "M界👩🏽‍💻é "
+                + "\u{1B}[1mM\u{1B}[3mM\u{1B}[0;2mM\u{1B}[7mM\u{1B}[8mM\u{1B}[0;4mM")
+        for palette in [TerminalPalette.builtin, .dracula, .solarizedDark, .builtin] {
+            for size in [CGFloat(14), 18, 14] {
+                let updatedFont = TerminalFont(pointSize: size)
+                renderer.update(palette: palette, font: updatedFont)
+                let cached = render(renderer, grid: grid, font: updatedFont, showsCursor: false)
+                let fresh = render(TerminalRenderer(palette: palette, font: updatedFont),
+                                   grid: grid, font: updatedFont, showsCursor: false)
+                harness.equal(cached.tiffRepresentation, fresh.tiffRepresentation,
+                              "font/palette swaps preserve styled and Unicode glyph pixels")
+            }
+        }
     }
 
     private static func render(

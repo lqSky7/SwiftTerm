@@ -207,6 +207,12 @@ final class VTParser {
     }
 
     private func print(_ byte: UInt8) {
+        if byte < 0x80, !decoder.hasPendingBytes {
+            let character = Character(Unicode.Scalar(byte))
+            lastPrinted = character
+            grid.put(character)
+            return
+        }
         decoder.feed([byte]) { character in
             lastPrinted = character
             grid.put(character)

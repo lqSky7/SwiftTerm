@@ -15,3 +15,5 @@ Nothing here may import another feature. That is the whole point of the folder.
 TUI repair stays in `warp_terminal`: grapheme cells, VT movement, fixed-coordinate fullscreen resize.
 
 Paste/startup follow-up is shared terminal input encoding plus shell bootstrap hooks.
+
+Resource optimization stays in existing Swift models; no new dependencies or subsystems.

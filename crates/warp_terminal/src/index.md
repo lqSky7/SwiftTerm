@@ -13,3 +13,5 @@ The split is Warp's: `model` is the emulator proper, `local_tty` is the operatin
 `model/TerminalInput.swift` encodes xterm cursor/function/navigation sequences and modifiers.
 
 Paste payload encoding lives in `model/TerminalInput.swift`; first-prompt setup in `bootstrap/`.
+
+Resource optimization only touches model decoding, cell width, grapheme joining and tab lookup.

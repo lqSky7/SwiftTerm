@@ -19,3 +19,5 @@ shipped beside it, so the protocol and the parser that reads it can never disagr
 The TUI repair uses the existing native terminal surface; build/install leaves the app unopened.
 
 Paste/startup follow-up uses the existing terminal surface and shell bootstrap.
+
+Resource optimization build 103 keeps the native presentation and existing features unchanged.

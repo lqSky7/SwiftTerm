@@ -28,7 +28,6 @@ final class TerminalRenderer {
         var column: Int
         var columns: Int
         var attributes: CellAttributes
-        var string: String
     }
 
     private struct CachedRow {
@@ -49,6 +48,15 @@ final class TerminalRenderer {
     }
 
     private var rowCache: [RowKey: CachedRow] = [:]
+    private struct GlyphKey: Hashable {
+        let text: String
+        let attributes: CellAttributes
+        let isCommand: Bool
+    }
+
+    // Identical cells share immutable Core Text lines while retaining their exact cell origins.
+    private var glyphCache: [GlyphKey: CTLine] = [:]
+    private static let maximumCachedGlyphs = 4_096
     /// How many rows may be remembered before the cache is emptied rather than grown.
     private static let maximumCachedRows = 4_000
     /// The grids the cache was built for. When the block list changes — a new block, an evicted one —
@@ -83,7 +91,10 @@ final class TerminalRenderer {
 
         self.palette = palette
         self.font = font
-        if changed { rowCache.removeAll() }
+        if changed {
+            rowCache.removeAll()
+            glyphCache.removeAll()
+        }
     }
 
     /// How much of the view's width the content stays clear of, on both sides.
@@ -653,9 +664,12 @@ final class TerminalRenderer {
         let runs = Self.runs(for: line)
         let glyphs = line.cells.enumerated().compactMap { column, cell -> (column: Int, line: CTLine)? in
             guard !cell.isContinuation, !cell.text.isEmpty, cell.text != " " else { return nil }
-            let run = Run(
-                column: column, columns: cell.width, attributes: cell.attributes, string: cell.text)
-            return (column, CTLineCreateWithAttributedString(attributedString(for: run, isCommand: isCommand)))
+            let key = GlyphKey(text: cell.text, attributes: cell.attributes, isCommand: isCommand)
+            if let hit = glyphCache[key] { return (column, hit) }
+            if glyphCache.count >= Self.maximumCachedGlyphs { glyphCache.removeAll() }
+            let glyph = CTLineCreateWithAttributedString(attributedString(for: cell, isCommand: isCommand))
+            glyphCache[key] = glyph
+            return (column, glyph)
         }
         return CachedRow(generation: 0, glyphs: glyphs, runs: runs)
     }
@@ -668,20 +682,18 @@ final class TerminalRenderer {
         while index < cells.count {
             let start = index
             let attributes = cells[index].attributes
-            var text = ""
             while index < cells.count, cells[index].attributes == attributes {
                 let cell = cells[index]
-                if !cell.isContinuation { text += cell.text.isEmpty ? " " : cell.text }
                 index += 1
                 if cell.width != 1 { break }
             }
             runs.append(
-                Run(column: start, columns: index - start, attributes: attributes, string: text))
+                Run(column: start, columns: index - start, attributes: attributes))
         }
         return runs
     }
 
-    /// One run as an attributed string.
+    /// One cell as an attributed string.
     ///
     /// `isCommand` is the block's **first** grid — what was typed — and it is drawn bold. Warp does not do this:
     /// it applies one `appearance.monospace_font_weight()` to the whole grid
@@ -689,18 +701,18 @@ final class TerminalRenderer {
     /// command and the output weigh the same. This is a deliberate divergence, asked for directly and twice, and
     /// the honest statement of it is that it separates what you asked for from what came back. Flip this one
     /// flag to match Warp exactly.
-    private func attributedString(for run: Run, isCommand: Bool = false) -> NSAttributedString {
-        let (foreground, _) = run.attributes.resolvedColors(using: palette)
+    private func attributedString(for cell: TerminalCell, isCommand: Bool = false) -> NSAttributedString {
+        let (foreground, _) = cell.attributes.resolvedColors(using: palette)
         var color = foreground.nsColor
-        if run.attributes.flags.contains(.hidden) {
+        if cell.attributes.flags.contains(.hidden) {
             color = .clear
-        } else if run.attributes.flags.contains(.faint) {
+        } else if cell.attributes.flags.contains(.faint) {
             // Faint has no lighter weight in a monospace face, so it is drawn as ink instead.
             color = color.withAlphaComponent(0.6)
         }
-        let runFont = font.font(for: run.attributes.flags)
+        let runFont = font.font(for: cell.attributes.flags)
         return NSAttributedString(
-            string: run.string,
+            string: cell.text,
             attributes: [
                 .font: isCommand
                     ? NSFontManager.shared.convert(runFont, toHaveTrait: .boldFontMask) : runFont,

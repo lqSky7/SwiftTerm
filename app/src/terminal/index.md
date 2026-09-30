@@ -13,3 +13,5 @@ Fullscreen state is read from the active grid, including shells without integrat
 PTY resize settling uses an owned cancellable Swift task.
 
 Shell bootstrap emits prompt boundaries from hooks only, preventing an extra startup block.
+
+Resource optimization shares glyphs and avoids unused cursor work; no session protocol changes.

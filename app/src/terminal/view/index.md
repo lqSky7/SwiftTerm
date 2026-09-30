@@ -47,3 +47,8 @@ checked in UTF-16 before the pure engine receives a Character count.
 
 Raw-program paste uses CR line breaks and preserves all trailing lines; it never applies shell
 continuation escaping to nano or another running program.
+
+Resource optimization: identical styled graphemes share immutable CTLines in a bounded cache,
+cleared with row caches on font/palette changes. Attribute spans retain only geometry and styling.
+Cursor tasks exist only for a focused, visible blinking grid cursor. Directory listings expire
+on cache misses with the same two-second TTL. Editor positioning reuses the current draw layout.

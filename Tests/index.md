@@ -3,7 +3,7 @@
 One harness per guarded decision. Each compiles the shipped sources directly with `swiftc`, so a
 harness that stops compiling means a decision leaked out of a pure layer. There is no XCTest target.
 
-29 harnesses. The count is not a goal — it is what the decisions cost to hold down.
+31 harnesses. The count is not a goal — it is what the decisions cost to hold down.
 
 ## The emulator
 
@@ -84,3 +84,7 @@ priority across different commands, current-directory changes, and history-only 
 Paste regressions cover raw/bracketed CR/LF/CRLF payloads, Unicode, indentation and trailing blank
 lines. The real scratch-zsh session checks one initial block, no `%`, then exactly two blocks after
 one completed command. Shell-script probes call the real prompt hook explicitly.
+
+Resource regressions: offscreen renderer checks exceed the glyph cache bound and compare warm
+versus fresh pixels after font/palette changes. Parser checks malformed UTF-8 followed by ASCII
+and Unicode combining/prepend boundaries. All 31 standalone harnesses pass.

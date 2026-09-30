@@ -291,6 +291,19 @@ enum VTParserTest {
         twoByte.feed([0xA9])
         harness.equal(twoByte.grid.rowText(0), "é", "a two-byte codepoint splits too")
 
+        let malformed = makeParser()
+        malformed.feed([0xE2, 0x41])
+        harness.equal(malformed.grid.rowText(0), "", "ASCII waits for an incomplete UTF-8 sequence")
+        malformed.feed([0x42])
+        harness.equal(malformed.grid.rowText(0), "AB", "invalid UTF-8 retains the following ASCII bytes")
+        malformed.feed([0x80, 0x43])
+        harness.equal(malformed.grid.rowText(0), "ABC", "a stray continuation does not swallow ASCII")
+
+        let extended = makeParser()
+        extended.feed("a\u{0301}b\u{0600}c")
+        harness.equal(extended.grid.screen[0].cells[0].text, "á", "ASCII still accepts combining marks")
+        harness.equal(extended.grid.screen[0].cells[2].text, "\u{0600}c", "Unicode prepend still joins ASCII")
+
         let abandoned = makeParser()
         abandoned.feed([0xE6])
         abandoned.feed("\u{1B}[1m")
