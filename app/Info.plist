@@ -21,7 +21,7 @@
 	<key>CFBundleShortVersionString</key>
 	<string>0.1.0</string>
 	<key>CFBundleVersion</key>
-	<string>122</string>
+	<string>123</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.developer-tools</string>
 	<key>LSMinimumSystemVersion</key>
@@ -32,5 +32,32 @@
 	<string>swiftTerm</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<!--
+	  The sign-in callback. A custom scheme rather than a loopback listener: a listener is a port
+	  that anything on the machine can also reach, and the code that lands on it is a session
+	  credential. Registering the scheme means only this app is handed the URL.
+	-->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.swiftterm.app.auth</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>swiftterm</string>
+			</array>
+		</dict>
+	</array>
+	<!--
+	  Both are optional. When present they override the deployed pair, which is how a debug build
+	  is pointed at a local backend without editing code. `CloudConfiguration.fromBundle` falls back
+	  to the deployed values when either is missing or unparseable.
+	-->
+	<key>SwiftTermAPIBaseURL</key>
+	<string>https://swiftterm.shares.zrok.io</string>
+	<key>SwiftTermAPIOrigin</key>
+	<string>https://swiftterm.catinice.workers.dev</string>
 </dict>
 </plist>

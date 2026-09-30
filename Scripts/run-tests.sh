@@ -69,6 +69,15 @@ if [ "${1:-}" = "--exec" ]; then
     if [ "$name" = "git-review-test" ]; then
         SOURCES+=(crates/git/src/*.swift app/src/code_review/CodeReviewCoordinator.swift)
     fi
+    if [ "$name" = "cloud-objects-test" ]; then
+        # The cloud client builds on the wire DTOs, so it needs both — and it needs them *without*
+        # the view layer, which is the property being guarded: a client that reached for AppKit
+        # would stop compiling here.
+        SOURCES+=(
+            crates/shared_session/src/*.swift
+            crates/cloud_objects/src/*.swift
+        )
+    fi
     : > "$BIN/$name.running"
     trap 'rm -f "$BIN/$name.running"' EXIT
     fail() {

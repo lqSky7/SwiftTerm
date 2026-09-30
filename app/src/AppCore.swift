@@ -13,6 +13,15 @@ final class AppCore {
     /// The tabs of the window, and which one is showing.
     private(set) var tabs = TabList()
     let codeReview = CodeReviewCoordinator()
+
+    /// The signed-in account, if there is one.
+    ///
+    /// Created eagerly and **inert**. It holds no timer, opens no socket and performs no request
+    /// until someone calls `signIn` — which is what makes "an offline terminal with zero cloud work"
+    /// a property of the structure rather than of a flag somebody has to remember to check. Nothing
+    /// here can reach a pane: cloud state and terminal state are separate by construction, so
+    /// signing out cannot lose a shell.
+    let account = AccountController()
     @ObservationIgnored private var reviewPane: PaneID?
     @ObservationIgnored private var reviewDirectory: String?
 
