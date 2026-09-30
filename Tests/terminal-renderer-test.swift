@@ -31,8 +31,10 @@ enum TerminalRendererTest {
             }
             let start = Int(CGFloat(column) * font.cellWidth)
             harness.expect(!redColumns.isEmpty, "the marker renders after \(prefix)")
-            harness.expect(redColumns.allSatisfy { $0 >= start && $0 <= start + Int(font.cellWidth) },
-                           "marker pixels stay in column \(column) after \(prefix)")
+            let end = Int(ceil(CGFloat(column + 1) * font.cellWidth)) - 1
+            harness.expect(redColumns.allSatisfy { $0 >= start && $0 <= end },
+                           "marker pixels stay in column \(column) after \(prefix): "
+                            + "\(redColumns.min() ?? -1)...\(redColumns.max() ?? -1)")
         }
         let cursor = TerminalGrid(size: TerminalSize(columns: 80, rows: 2))
         cursor.setAlternateScreen(true)

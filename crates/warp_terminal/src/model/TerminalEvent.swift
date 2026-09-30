@@ -10,6 +10,9 @@ enum TerminalEvent: Hashable, Sendable {
     /// A separate event from the working directory rather than a bundle: the two are reported by the same hook but
     /// mean different things, and a session that could not tell them apart could not be tested for either.
     case searchPathChanged(String)
+    case sshBootstrapAvailable(Bool)
+    case remoteHostChanged(String?)
+    case remoteCompletionChanged(String)
     case bell
     case notification(title: String, body: String)
     case clipboardWrite(String)

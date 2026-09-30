@@ -22,6 +22,26 @@ final class TerminalSession {
     /// The shell exited, with the status a shell would report.
     var onExit: ((Int32) -> Void)?
 
+    private(set) var remoteHost: String?
+    private(set) var remoteCompletion = RemoteCompletion(encoded: "")
+    private var localDirectoryBeforeSSH: String?
+    private var localTitleBeforeSSH: String?
+    var restorationDirectory: String? { remoteHost == nil ? workingDirectory : localDirectoryBeforeSSH }
+    private var hasRemotePrompt = false
+    private var submittedCommand: String?
+    private var canBootstrapSSH = false
+    private var sshLauncher: String?
+    var localWorkingDirectory: String? { remoteHost == nil ? workingDirectory : nil }
+
+    func submission(for buffer: String) -> [UInt8] {
+        guard remoteHost == nil, canBootstrapSSH || buffer.hasPrefix("/usr/bin/ssh "), let sshLauncher,
+            let transformed = RemoteShellBootstrap.submission(buffer, launcher: sshLauncher) else {
+            return CommandSubmission.bytes(for: buffer)
+        }
+        submittedCommand = buffer
+        return CommandSubmission.bytes(for: transformed)
+    }
+
     private(set) var workingDirectory: String?
     private(set) var title: String?
     private(set) var blockList: BlockList
@@ -67,7 +87,7 @@ final class TerminalSession {
     ///   output is noise. This is the block cursor that used to flash over `Building for production.` for as long as a
     ///   build took.
     var showsShellCursor: Bool {
-        if isAlternateScreen { return true }
+        if isAlternateScreen || (remoteHost != nil && !hasRemotePrompt) { return true }
         if isRunningCommand { return false }
         return !blocks.contains { $0.headerGrid.promptEnd != nil }
     }
@@ -131,6 +151,7 @@ final class TerminalSession {
 
         self.terminal = terminal
         self.shellType = ShellType(executablePath: bootstrap.executable)
+        sshLauncher = bootstrap.environment["SWIFTTERM_SSH_BOOTSTRAP"]
         self.workingDirectory = homeDirectory
         self.homeDirectory = homeDirectory
         // A shell with no integration reports no boundaries, so it gets one block that never closes
@@ -343,6 +364,24 @@ final class TerminalSession {
 
     private func handle(_ event: TerminalEvent) {
         switch event {
+        case .sshBootstrapAvailable(let available):
+            canBootstrapSSH = available
+        case .remoteHostChanged(let host):
+            if remoteHost == nil, host != nil {
+                localDirectoryBeforeSSH = workingDirectory
+                localTitleBeforeSSH = title
+                activeBlock?.remoteHost = host
+            }
+            if remoteHost != host {
+                searchPath = nil
+                title = host.map { "ssh " + $0 } ?? localTitleBeforeSSH
+                if host == nil { workingDirectory = localDirectoryBeforeSSH }
+            }
+            remoteHost = host
+            hasRemotePrompt = false
+            remoteCompletion = RemoteCompletion(encoded: "")
+        case .remoteCompletionChanged(let encoded):
+            remoteCompletion = RemoteCompletion(encoded: encoded)
         case .titleChanged(let title):
             self.title = title
         case .workingDirectoryChanged(let path):
@@ -361,7 +400,8 @@ final class TerminalSession {
             // having to watch for it.
             searchPath = path
         case .commandSubmitted(let command):
-            reportedCommand = command
+            reportedCommand = submittedCommand ?? command
+            submittedCommand = nil
         case .shellIntegration(let marker):
             apply(marker)
         default:
@@ -378,7 +418,9 @@ final class TerminalSession {
     private func apply(_ marker: ShellIntegrationEvent) {
         switch marker {
         case .promptStart:
+            if remoteHost != nil { hasRemotePrompt = true }
             blockList.beginPrompt(at: Date(), workingDirectory: workingDirectory)
+            activeBlock?.remoteHost = remoteHost
             routeToActiveGrid()
         case .commandStart:
             blockList.markPromptEnd(line: activeGrid.cursorLine, column: activeGrid.cursorColumn)

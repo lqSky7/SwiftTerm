@@ -64,3 +64,10 @@ for crash diagnosis and installed-build verification.
 Current build 108 fixes the startup recursion; app reopened with user authorization and user
 confirmed it works. All 33 harnesses pass (59 native editor/text-policy checks). Catalogue audit:
 `docs/backend/feature-status.md` — 5 substantially built, 12 partial, 16 not implemented.
+
+Native R1: Git diff chip/right review, bounded unified diff and file staging, conservative SSH
+bootstrap and remote completion. Both sidebar drag targets are 16 points; review width and file/diff
+split are adjustable. Curved terminal outline and Glass circle actions share existing appearance.
+Build 115 installed without launching; 35 native harnesses pass (37 checks including delegated C0).
+Read `docs/backend/native-review-ssh.md` for limits and `docs/backend/implementation-handoff.md`
+for the saved backend/website packages; headless remains an implementation handoff.

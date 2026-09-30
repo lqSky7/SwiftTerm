@@ -14,3 +14,5 @@ guessing where the user's prompt ends.
 
 Startup markers come only from real prompt hooks, avoiding duplicate native blocks. zsh PROMPT_SP
 is disabled because native input/chips own prompt layout and do not use its `%` partial-line marker.
+
+RemoteShellBootstrap.swift detects supported literal interactive SSH, preserves bypass/auth/TTY behavior, and writes session-private remote hooks and completion reporter. Local hooks report executable-vs-alias availability with OSC 9285.

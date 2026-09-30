@@ -145,7 +145,7 @@ enum Theme {
         /// that has to know how wide three circles and their margins are.
         static let trafficLightInset: CGFloat = 76
         /// How close to the sidebar's trailing edge a drag resizes it.
-        static let sidebarResizeHandle: CGFloat = 6
+        static let sidebarResizeHandle: CGFloat = 16
         /// The gap between two panes — which is the divider. The panes do not touch, and what shows
         /// between them is the window's own backdrop, so there is no rule to draw and no second piece
         /// of geometry to keep in step with the layout's.

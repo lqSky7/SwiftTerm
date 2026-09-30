@@ -35,6 +35,7 @@ final class TerminalCoordinator {
     }
 
     /// Set by the window controller, which is the only thing that owns a window.
+    @ObservationIgnored var onPromptReady: (() -> Void)?
     @ObservationIgnored var onTitleChange: ((String) -> Void)?
 
     /// `startingDirectory` is where the shell is started, which is a restored pane's recorded directory. Nil is the
@@ -157,6 +158,11 @@ final class TerminalCoordinator {
         switch event {
         case .titleChanged(let title) where !title.isEmpty:
             self.title = title
+        case .shellIntegration(.commandStart):
+            onPromptReady?()
+        case .remoteHostChanged:
+            if let title = session?.title { self.title = title }
+            else { updateTitleFromWorkingDirectory() }
         case .workingDirectoryChanged:
             if session?.title?.isEmpty ?? true { updateTitleFromWorkingDirectory() }
         default:

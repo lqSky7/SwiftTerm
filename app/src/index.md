@@ -25,3 +25,5 @@ Edit menu now routes Cmd-Z/Shift-Cmd-Z through native Undo/Redo responders to th
 Backend/web terminal work is planning-only in `../../docs/backend/`.
 
 Every application window applies the shared text-input policy to native/SwiftUI field editors.
+
+`code_review/` owns the native right sidebar; AppCore wires pinned diff chips, prompt refresh and shared panel geometry.

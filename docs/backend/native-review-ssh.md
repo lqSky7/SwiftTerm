@@ -12,6 +12,12 @@ no second scrim/material or new appearance preference. A one-physical-pixel outl
 continuous corners, including trailing corners when review is open, without changing grid geometry.
 Toolbar actions are native interactive Liquid Glass circles. Terminal width changes once; the review
 sidebar alone animates. The pane used for review follows the active pane and working directory.
+Both sidebar edges have 16-point drag targets. Left width keeps its existing persisted 160–420
+point bounds; review width is 240–900 points subject to retaining 180 points for the terminal.
+A 14-point horizontal drag target separates the changed-files list from the diff and reserves
+160 points for the diff. Review width/split are per-window transient state, retained when closing
+and reopening review. Fixed origins/global gesture coordinates avoid accumulating translations.
+Resizing changes geometry only, without fetching Git data or decoding/reloading diff rows.
 
 Review includes staged, unstaged and untracked files, old/new line numbers, unified text and
 file-level Stage/Unstage. Counts sum index and worktree differences separately, so a partially
@@ -82,6 +88,8 @@ saves the original local directory. No remote agent or extra background SSH conn
 - [x] Reuse repo-root detection, shared layout and drawing geometry for the chip click.
 - [x] Add right sidebar using shared opacity/background, stable PTY width transition.
 - [x] Add requested one-pixel terminal borders against both visible sidebars.
+- [x] Widen both resize targets, resize right review width and changed-files/diff split.
+- [x] Fix cumulative sidebar drag drift and use global coordinates for moving handles.
 - [x] Lazy file list, recycled native rows, bounded byte-indexed patches and large preview collapse.
 - [x] Summary counts for index/worktree/untracked, binary labels and unusual literal paths.
 - [x] Cancellable off-main reads with timeout, per-file stage/unstage including unborn HEAD.
@@ -92,12 +100,18 @@ saves the original local directory. No remote agent or extra background SSH conn
 - [x] Keep remote paths away from local Git/completion/validation/restoration.
 - [x] Cleanup/reset on exit and local prompt recovery after interrupted SSH.
 - [x] Scratch Git fixture and local SSH transport fixture (no live SSH server).
+- [x] Prevent fullscreen row cache reuse when a previous grid is deallocated/replaced.
 - [x] Headless implementation handoff first, no headless runtime.
 - [x] Backend/website ownership packages, contracts, schema/auth and release gates.
-- [ ] Final full harness run, warning-free Debug/release, lint and SQL syntax check.
-- [ ] Signed commit and build/install, without app launch.
+- [x] Final full harness run, warning-free Debug/release, lint and SQL syntax check.
+- [x] Signed commit and build/install, without app launch.
 - [ ] User verifies chip/pane switching/sidebar resize, large diffs and actual remote hosts/TUIs.
 
 Actual SSH authentication/network reconnect/signal propagation and zsh/fish remote UX require
 human/live-host testing; a transport fixture cannot establish those claims. Hunk staging/GitHub
 reviews and remaining SSH parity have separate checklists in implementation-handoff.md.
+
+Verification: build 115 installed at `/Applications/swiftTerm.app` without launching. All 35 native
+harnesses pass; the current working tree also passes the delegated Swift contract harness and Node
+fixture gate (37 total checks). Debug/release have no compiler warnings. Lint succeeds with existing
+and separately owned contract warnings; SQL draft syntax was validated previously (49 statements).

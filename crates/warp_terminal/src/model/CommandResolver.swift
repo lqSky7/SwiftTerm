@@ -33,12 +33,14 @@ struct CommandResolver {
         "whence", "where", "while", "zmodload",
     ]
 
+    private let remoteCommands: Set<String>?
     private let directories: [String]
     private let fileManager: FileManager
 
     /// Built from a `PATH` string. There is no internal cache: constructing this is splitting a
     /// string, and the caller holds one for as long as the environment it came from is current.
-    init(path: String?, fileManager: FileManager = .default) {
+    init(path: String?, fileManager: FileManager = .default, remoteCommands: Set<String>? = nil) {
+        self.remoteCommands = remoteCommands
         self.directories = (path ?? "").split(separator: ":").map(String.init).filter { !$0.isEmpty }
         self.fileManager = fileManager
     }
@@ -77,6 +79,9 @@ struct CommandResolver {
         // and this has no business guessing where that is.
         if command.hasPrefix("~"), !command.hasPrefix("~/") { return .indeterminate }
 
+        if let remoteCommands {
+            return remoteCommands.contains(command) ? .found(path: nil) : .indeterminate
+        }
         if command.contains("/") {
             // A path is its own answer: either it is there and executable, or it is not.
             let path = expanded(command)

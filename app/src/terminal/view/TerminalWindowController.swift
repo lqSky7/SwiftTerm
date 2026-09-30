@@ -21,6 +21,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         window?.contentLayoutRect.size ?? Theme.Size.defaultWindow
     }
 
+    func windowDidBecomeKey(_ notification: Notification) { workspace?.refreshCodeReview() }
+
     /// Where the last cascaded window landed, so the next one steps further down and to the right
     /// instead of landing squarely on top of it — which is what `center()` would do for every one of
     /// them alike.

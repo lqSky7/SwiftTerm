@@ -12,6 +12,9 @@ import Observation
 final class AppCore {
     /// The tabs of the window, and which one is showing.
     private(set) var tabs = TabList()
+    let codeReview = CodeReviewCoordinator()
+    @ObservationIgnored private var reviewPane: PaneID?
+    @ObservationIgnored private var reviewDirectory: String?
 
     /// The shell behind every pane. The tree names panes; this is what turns a name into a session,
     /// and it is the whole reason the model holds identities rather than sessions.
@@ -75,6 +78,9 @@ final class AppCore {
         customKeymap = document.synced.customKeymap
         savedCommands = document.synced.savedCommands
         self.persistsSession = persistsSession
+        codeReview.onSummary = { [weak self] summary in
+            self?.activeCoordinator?.surface?.gitChangesLabel = summary?.label
+        }
     }
 
     /// Write the settings back, keeping whatever else the document holds.
@@ -194,6 +200,7 @@ final class AppCore {
     /// Safe to call more than once: closing this window's last tab already empties `coordinators` and
     /// `tabs` through `closeIfEmpty()`, and the window closing itself calls this again on its way out.
     func terminate() {
+        codeReview.stop()
         if persistTask != nil {
             persistTask?.cancel()
             persistTask = nil
@@ -513,13 +520,10 @@ final class AppCore {
     /// layer has.
     @ObservationIgnored private var sidebarWidthAtDragStart: CGFloat?
 
-    func beginSidebarDrag() {
-        sidebarWidthAtDragStart = layout.sidebarWidth
-    }
-
     /// During a drag the width is set *without* saving — a write per frame is a write per frame — and the save
     /// happens once, when the gesture ends.
     func dragSidebar(by translation: CGFloat) {
+        if sidebarWidthAtDragStart == nil { sidebarWidthAtDragStart = layout.sidebarWidth }
         layout.setSidebarWidth((sidebarWidthAtDragStart ?? layout.sidebarWidth) + translation)
     }
 
@@ -832,7 +836,7 @@ final class AppCore {
     private func saveSession() {
         sessionStore.save(
             SessionSnapshot(tabs: tabs) { [weak self] pane in
-                self?.coordinators[pane]?.session?.workingDirectory
+                self?.coordinators[pane]?.session?.restorationDirectory
             })
     }
 
@@ -860,6 +864,19 @@ final class AppCore {
         }
         // The window is named after the tab that is showing, not after whichever shell spoke last.
         coordinator.onTitleChange = { [weak self] _ in self?.syncActivePane() }
+        coordinator.onPromptReady = { [weak self, weak coordinator] in
+            guard let self, let coordinator, activeCoordinator === coordinator else { return }
+            refreshCodeReview()
+        }
+        coordinator.surface?.onOpenCodeReview = { [weak self, weak coordinator] in
+            guard let self, let coordinator else { return }
+            for (pane, candidate) in coordinators where candidate === coordinator {
+                if let tab = tabs.activeTab { _ = tabs.focus(pane, in: tab.id) }
+            }
+            syncActivePane()
+            codeReview.isPresented = true
+            codeReview.refresh(directory: coordinator.session?.localWorkingDirectory)
+        }
         return coordinator
     }
 
@@ -870,7 +887,20 @@ final class AppCore {
     /// told cannot disagree. The first layout pass is what makes it exact; this only has to be close
     /// enough that the shell draws its prompt once instead of redrawing it.
     private func paneContentSize(for contentSize: CGSize) -> CGSize {
-        layout.contentPanelFrame(in: contentSize).size
+        contentPanelFrame(in: contentSize).size
+    }
+
+    func refreshCodeReview() { codeReview.refresh(directory: activeCoordinator?.session?.localWorkingDirectory) }
+
+    func reviewWidth(in size: CGSize) -> CGFloat {
+        guard codeReview.isPresented else { return 0 }
+        return codeReview.width(available: layout.contentPanelFrame(in: size).width - 180)
+    }
+
+    func contentPanelFrame(in size: CGSize) -> CGRect {
+        var frame = layout.contentPanelFrame(in: size)
+        frame.size.width -= reviewWidth(in: size)
+        return frame
     }
 
     // MARK: - Keeping the window in step
@@ -907,6 +937,12 @@ final class AppCore {
             coordinator.isActive = (pane == active)
         }
         windowController?.updateTitle(windowTitle)
+        let directory = activeCoordinator?.session?.localWorkingDirectory
+        if reviewPane != active || reviewDirectory != directory {
+            reviewPane = active
+            reviewDirectory = directory
+            codeReview.refresh(directory: directory)
+        }
     }
 
     /// The window's own title, for the Window menu and Mission Control.

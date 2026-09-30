@@ -35,3 +35,5 @@ field editor, with no extra editor allocation. Optional protocol selectors retai
 Startup crash repair: window field-editor lookup never mutates NSTextField, because its content-type
 setter re-enters the lookup. Regression fields are attached to a window; user authorized app launch
 for crash diagnosis and installed-build verification.
+
+Theme sidebar resize targets are 16 points wide; terminal outlines remain one physical pixel.

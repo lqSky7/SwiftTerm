@@ -76,3 +76,7 @@ canvas and under three quarters of a point on a row.
 
 Settings search/command entry and Profile name opt out of Apple completion, AutoFill content hints
 and Writing Tools; all native field editors also receive the shared window policy.
+
+WorkspaceScreen narrows the terminal once for native review, animates only the right sidebar, and strokes its continuous outline at one physical pixel.
+
+Both sidebar resize edges have 16-point hit areas. Global-coordinate drags use a fixed starting width.

@@ -5,6 +5,7 @@ struct ContextChip: Equatable {
     enum Kind: Equatable {
         case directory
         case branch
+        case changes
         /// A virtualenv, a conda environment — anything only the shell knows it is inside.
         case environment
     }

@@ -42,21 +42,21 @@ struct LinkDetector: Sendable {
     ]
 
     // Precompiled regular expressions for high throughput.
-    private static let urlRegex: NSRegularExpression = {
+    private static let urlRegex: NSRegularExpression? = {
         let pattern = #"(https?://[^\s<>"'{}|\\^`]+)"#
-        return try! NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
+        return try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
     }()
 
-    private static let filePathRegex: NSRegularExpression = {
+    private static let filePathRegex: NSRegularExpression? = {
         // Matches paths like /foo/bar, ~/foo/bar, ./foo/bar, ../foo/bar, foo/bar.swift:42:10, file.swift:10
         let pattern = #"(?:(?:/|~/|\./|\.\./|[a-zA-Z0-9_\-\.]+/)?[a-zA-Z0-9_\-\.]+(?:/[a-zA-Z0-9_\-\.]+)+|(?:[a-zA-Z0-9_\-]+\.[a-zA-Z0-9_\-]+))(?::\d+(?::\d+)?)?"#
-        return try! NSRegularExpression(pattern: pattern, options: [])
+        return try? NSRegularExpression(pattern: pattern, options: [])
     }()
 
-    private static let gitHashRegex: NSRegularExpression = {
+    private static let gitHashRegex: NSRegularExpression? = {
         // Hex commit hashes between 7 and 40 characters bounded by word boundaries or punctuation
         let pattern = #"\b([0-9a-fA-F]{7,40})\b"#
-        return try! NSRegularExpression(pattern: pattern, options: [])
+        return try? NSRegularExpression(pattern: pattern, options: [])
     }()
 
     /// Scans a full line of text and returns all detected links in column order.
@@ -76,7 +76,7 @@ struct LinkDetector: Sendable {
         let nsString = line as NSString
         let fullRange = NSRange(location: 0, length: nsString.length)
 
-        urlRegex.enumerateMatches(in: line, options: [], range: fullRange) { match, _, _ in
+        urlRegex?.enumerateMatches(in: line, options: [], range: fullRange) { match, _, _ in
             guard let matchRange = match?.range, let swiftRange = Range(matchRange, in: line) else { return }
             var candidate = String(line[swiftRange])
             var candidateLength = candidate.count
@@ -101,7 +101,7 @@ struct LinkDetector: Sendable {
         }
 
         // 2. Scan for file paths with optional line:col
-        filePathRegex.enumerateMatches(in: line, options: [], range: fullRange) { match, _, _ in
+        filePathRegex?.enumerateMatches(in: line, options: [], range: fullRange) { match, _, _ in
             guard let matchRange = match?.range, let swiftRange = Range(matchRange, in: line) else { return }
             var candidate = String(line[swiftRange])
             var candidateLength = candidate.count
@@ -151,7 +151,7 @@ struct LinkDetector: Sendable {
         }
 
         // 3. Scan for Git commit hashes
-        gitHashRegex.enumerateMatches(in: line, options: [], range: fullRange) { match, _, _ in
+        gitHashRegex?.enumerateMatches(in: line, options: [], range: fullRange) { match, _, _ in
             guard let matchRange = match?.range, let swiftRange = Range(matchRange, in: line) else { return }
             let hashString = String(line[swiftRange])
             let startIndex = line.distance(from: line.startIndex, to: swiftRange.lowerBound)

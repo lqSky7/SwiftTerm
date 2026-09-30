@@ -62,6 +62,7 @@ final class TerminalRenderer {
     /// The grids the cache was built for. When the block list changes — a new block, an evicted one —
     /// every entry is dropped, which is the one moment the cache can be wrong wholesale.
     private var cachedGrids: [ObjectIdentifier] = []
+    private weak var fullscreenGrid: TerminalGrid?
 
     private var palette: TerminalPalette
     private(set) var font: TerminalFont
@@ -234,37 +235,38 @@ final class TerminalRenderer {
         let bottom = screenY(entry.chipTop + entry.chipHeight, viewportTop: viewportTop, bounds: bounds)
         guard bottom < bounds.maxY, top > bounds.minY else { return }
 
-        // Original chip pill size, with no borders and increased distance from top block
+        for (chip, chipRect, label) in chipFrames(chips, entry: entry, viewportTop: viewportTop, bounds: bounds) {
+            let (bg, _, text) = chipColors(for: chip)
+            context.setFillColor(bg.cgColor)
+            context.addPath(CGPath(roundedRect: chipRect, cornerWidth: Theme.Radius.control,
+                                  cornerHeight: Theme.Radius.control, transform: nil))
+            context.fillPath()
+            draw(label, at: CGPoint(x: chipRect.minX + Theme.Spacing.lg,
+                y: chipRect.minY + (chipRect.height - font.cellHeight) / 2 + font.cellHeight - font.baselineFromTop),
+                font: font.base, color: text, in: context)
+        }
+    }
+
+    func chipFrames(_ chips: [ContextChip], entry: BlockLayout.Entry, viewportTop: CGFloat,
+                    bounds: CGRect) -> [(ContextChip, CGRect, String)] {
+        let bottom = screenY(entry.chipTop + entry.chipHeight, viewportTop: viewportTop, bounds: bounds)
         let padding = Theme.Spacing.lg
         let chipHeight: CGFloat = 22
         let originY = bottom + Theme.Spacing.xs
         var x = bounds.minX + contentInset
+        var frames: [(ContextChip, CGRect, String)] = []
 
         for chip in chips {
             let label = truncated(chip.text, fitting: maximumChipLabelWidth)
             let width = measure(label, font: font.base) + padding * 2
             // Off the end of the window: better to show three chips than to show three and a sliver.
-            guard x + width <= bounds.maxX - contentInset else { return }
+            guard x + width <= bounds.maxX - contentInset else { break }
 
             let chipRect = CGRect(x: x, y: originY, width: width, height: chipHeight)
-            let (bg, _, text) = chipColors(for: chip)
-
-            context.setFillColor(bg.cgColor)
-            let path = CGPath(
-                roundedRect: chipRect, cornerWidth: Theme.Radius.control,
-                cornerHeight: Theme.Radius.control, transform: nil)
-            context.addPath(path)
-            context.fillPath()
-
-            draw(
-                label,
-                at: CGPoint(
-                    x: chipRect.minX + padding,
-                    y: originY + (chipHeight - font.cellHeight) / 2 + font.cellHeight
-                        - font.baselineFromTop),
-                font: font.base, color: text, in: context)
+            frames.append((chip, chipRect, label))
             x = chipRect.maxX + Theme.Spacing.sm
         }
+        return frames
     }
 
     /// Colors for contextual prompt chips derived from the active theme palette and chip material.
@@ -279,7 +281,7 @@ final class TerminalRenderer {
             let accent = palette.ansi[5].nsColor
             let bgAlpha = isGlass ? 0.24 : 0.14
             return (accent.withAlphaComponent(bgAlpha), .clear, accent)
-        case .environment:
+        case .environment, .changes:
             let accent = palette.ansi[2].nsColor
             let bgAlpha = isGlass ? 0.24 : 0.14
             return (accent.withAlphaComponent(bgAlpha), .clear, accent)
@@ -515,6 +517,10 @@ final class TerminalRenderer {
         in context: CGContext, bounds: CGRect, grid: TerminalGrid, showsCursor: Bool = true,
         markedText: String? = nil, blinkOn: Bool = true, hoveredLink: HoveredLink? = nil
     ) {
+        if fullscreenGrid !== grid {
+            rowCache.removeAll()
+            fullscreenGrid = grid
+        }
         for screenRow in 0..<grid.size.rows {
             let row = grid.historyLineCount + screenRow
             guard let line = grid.line(at: row) else { continue }

@@ -27,6 +27,9 @@ let package = Package(
                 "app/index.md",
                 "app/src/index.md",
                 "app/src/workspace/index.md",
+                "app/src/code_review/index.md",
+                "crates/git/index.md",
+                "crates/git/src/index.md",
                 "app/src/terminal/index.md",
                 "app/src/terminal/model/index.md",
                 "app/src/terminal/view/index.md",
@@ -44,6 +47,7 @@ let package = Package(
                 "app/src",
                 "crates/warp_terminal/src",
                 "crates/warpui_core/src",
+                "crates/git/src",
             ]
         )
     ],

@@ -69,3 +69,5 @@ shared disabled text-assistance policy and routes manual completion to the app e
 Startup crash repair: window field-editor lookup never mutates NSTextField, because its content-type
 setter re-enters the lookup. Regression fields are attached to a window; user authorized app launch
 for crash diagnosis and installed-build verification.
+
+Diff-chip hits reuse renderer geometry and open review via a composition-root callback. Remote file/Git links never resolve against local files, including sealed blocks. Window activation refreshes review.

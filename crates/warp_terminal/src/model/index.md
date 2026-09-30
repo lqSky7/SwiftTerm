@@ -166,3 +166,5 @@ remains intact. Tab lookup uses lazy filtering without temporary collections.
 BlockLayout.scrollPosition(keepingHeaderOfBlock:from:scrollPosition:viewportHeight:) preserves
 the changed block header position when bounds allow it, clamps short documents immediately,
 and retains bottom anchoring for the pinned block.
+
+RemoteCompletion.swift decodes bounded UTF-8 NUL file/command manifests. Block retains remote origin after exit; TerminalEvent/VTParser add OSC 9283/9284/9285 context and bootstrap availability. Link regex initialization is failable.

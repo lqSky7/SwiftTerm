@@ -23,3 +23,5 @@ Active command editor undo/redo is native and isolated per pane; submission/canc
 Future web-terminal capture/control is specified in `../../../docs/backend/`, with no runtime networking yet.
 
 Apple text assistance is disabled through shared UI policy; native editor and IME stay intact.
+
+Session routes conservative SSH submissions through shared bootstrap, keeps per-block remote origins and local restoration context. Native coordinator reports prompt-ready independently of title changes.

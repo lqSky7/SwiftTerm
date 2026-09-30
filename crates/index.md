@@ -21,3 +21,5 @@ Resource optimization stays in existing Swift models; no new dependencies or sub
 Block collapse scroll anchoring/clamping is pure geometry in the existing terminal model.
 
 Unused Apple text assistance is disabled centrally in warpui_core; app recommendations stay local.
+
+`git/` holds shared Foundation-only diff/summary models and cancellable local Git operations.

@@ -540,6 +540,12 @@ final class VTParser {
             handleNotification(command: command, body: body)
         case "133":
             handleShellIntegration(body)
+        case "9285":
+            onEvent?(.sshBootstrapAvailable(body == "1"))
+        case "9283":
+            onEvent?(.remoteHostChanged(body.isEmpty ? nil : body))
+        case "9284":
+            onEvent?(.remoteCompletionChanged(body))
         case Self.searchPathMarker:
             onEvent?(.searchPathChanged(body))
         case Self.commandMarker:

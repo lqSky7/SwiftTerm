@@ -57,6 +57,16 @@ import AppKit
         let body = CGPoint(x: 100, y: surface.bounds.maxY - Theme.Size.blockHeaderHeight - font.cellHeight / 2)
         surface.mouseDown(with: event(.leftMouseDown, at: body, in: surface, count: 2))
         harness.expect(!block.isCollapsed, "double-clicking body text does not collapse the block")
+        surface.gitChangesLabel = "(+234 -12)"
+        var openedReview = false
+        surface.onOpenCodeReview = { openedReview = true }
+        let renderer = TerminalRenderer(palette: .builtin, font: font)
+        let chip = renderer.chipFrames([ContextChip(kind: .changes, text: "(+234 -12)")],
+            entry: layout.entries.last!,
+            viewportTop: layout.pinnedViewportTop(viewportHeight: surface.bounds.height), bounds: surface.bounds)[0].1
+        surface.mouseDown(with: event(.leftMouseDown,
+            at: CGPoint(x: chip.midX, y: chip.midY), in: surface))
+        harness.expect(openedReview, "diff chip uses drawing geometry for nested-view click routing")
         try await fullscreenGeometry(harness, surface: surface, session: session, font: font)
         harness.finish()
     }

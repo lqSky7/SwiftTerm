@@ -20,3 +20,5 @@ and history file; no app launch or window presentation. Other model harnesses re
 
 `command-editor-undo-test` uses the same undisplayed native source set as block-collapse tests;
 all other harnesses retain the pure compilation boundary.
+
+Git review harness adds shared Git sources + Foundation-only review coordinator. SwiftLint now scans actual app/src and crates paths rather than the removed SwiftTerm folder.

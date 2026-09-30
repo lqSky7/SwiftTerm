@@ -17,3 +17,5 @@ TUI regressions are covered by `Tests/tui-compatibility-test.swift` and offscree
 ASCII paths avoid temporary decoding arrays and Unicode segmentation; Unicode behavior is retained.
 
 BlockLayout preserves a folding header viewport offset and immediately clamps the shorter document.
+
+Remote shell bootstrap reuses existing hooks and transports bounded completion data over private OSC markers; no remote binary or background connection.

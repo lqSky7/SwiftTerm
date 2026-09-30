@@ -37,7 +37,10 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
     private var lastSearchPath: String?
 
     /// The resolver, against the shell's `PATH`.
-    private var commandResolver: CommandResolver { CommandResolver(path: resolvedSearchPath) }
+    private var commandResolver: CommandResolver {
+        CommandResolver(path: resolvedSearchPath,
+            remoteCommands: session.remoteHost == nil ? nil : Set(session.remoteCompletion.commands))
+    }
     /// Precise scroll deltas, accumulated until they are worth a wheel notch. See `sendMouseWheel`.
     private var accumulatedWheel: CGFloat = 0
     /// Which appearance the terminal draws in. Pushed in by the coordinator; the palette is resolved from it
@@ -52,6 +55,8 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
     /// changed — so a `cd` and a `git switch` both show up on the next prompt, and neither costs
     /// anything per frame. A new prompt is a new block, which is the signal this keys on.
     private var chips: [ContextChip] = []
+    var gitChangesLabel: String? { didSet { needsDisplay = true } }
+    var onOpenCodeReview: (() -> Void)?
     private var chipsDirectory: String?
     private var chipsBlock: BlockID?
 
@@ -468,7 +473,7 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
         selection = nil
         // The shell can report a new `PATH` at any prompt, and both the resolver and the completion list are built
         // from it. Checked rather than rebuilt every time: `executableNames()` is a few thousand `stat` calls.
-        if session.searchPath != lastSearchPath {
+        if session.searchPath != lastSearchPath || session.remoteHost != nil {
             lastSearchPath = session.searchPath
             cachedCommandNames = nil
             editor.update(resolver: commandResolver)
@@ -517,6 +522,7 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
         guard !session.isAlternateScreen, let block = session.activeBlock, !block.isSubmitted else {
             return []
         }
+        if let gitChangesLabel { return [ContextChip(kind: .changes, text: gitChangesLabel)] + chips }
         return chips
     }
 
@@ -527,7 +533,9 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
         chipsDirectory = directory
         chipsBlock = block
         chips = ContextChips.forPrompt(
-            directory: directory, metadata: RepoMetadata.inspect(directory: directory))
+            directory: directory,
+            metadata: session.remoteHost == nil ? RepoMetadata.inspect(directory: directory) : .empty,
+            environment: session.remoteHost.map { "ssh " + $0 })
     }
 
     // Unfocused panes and hidden or steady cursors have nothing to animate.
@@ -783,11 +791,17 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
     /// The engine, built for one Tab.
     private var completionEngine: CompletionEngine {
         let combinedCommands = Array(Set(commandNames + savedCommands)).sorted()
+        let remote = session.remoteHost != nil
+        let directory = session.workingDirectory ?? NSHomeDirectory()
+        let files = session.remoteCompletion.files
         return CompletionEngine(
             history: commandHistory.reversed(),
             commands: combinedCommands,
-            workingDirectory: session.workingDirectory ?? NSHomeDirectory(),
-            listDirectory: Self.listDirectory)
+            workingDirectory: directory,
+            listDirectory: { path in
+                if remote { return (path as NSString).standardizingPath == (directory as NSString).standardizingPath ? files : [] }
+                return Self.listDirectory(path)
+            })
     }
 
     /// The `PATH` to resolve and complete against: **the shell's**, or the app's before one has been reported.
@@ -805,6 +819,7 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
     /// than built once, because the shell can change its `PATH` between prompts and a cache built at startup would
     /// go on answering for the environment the app was launched with.
     private var commandNames: [String] {
+        if session.remoteHost != nil { return Array(CommandResolver.builtins) + session.remoteCompletion.commands }
         let path = resolvedSearchPath
         if let cached = cachedCommandNames, cached.path == path { return cached.entries }
         let entries = CommandResolver(path: path).executableNames()
@@ -1077,6 +1092,14 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
     // MARK: - Selection
 
     override func mouseDown(with event: NSEvent) {
+        let chipPoint = convert(event.locationInWindow, from: nil)
+        if let entry = layout.entries.last, entry.chipHeight > 0,
+            renderer.chipFrames(visibleChips, entry: entry,
+                viewportTop: layout.pinnedViewportTop(viewportHeight: bounds.height), bounds: bounds)
+                .contains(where: { $0.0.kind == .changes && $0.1.contains(chipPoint) }) {
+            onOpenCodeReview?()
+            return
+        }
         // **The program's mouse comes first** — before selection, before the block menu, before anything. A TUI
         // that turned on mouse reporting is drawing its own interface and handling its own clicks; a terminal that
         // also selected a block underneath it would be doing two things with one click, which is what made
@@ -1386,7 +1409,7 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
 
     /// Send the buffer to the shell and put the editor back to empty, ready for the next prompt.
     private func submit(_ buffer: String) {
-        send(CommandSubmission.bytes(for: buffer))
+        send(session.submission(for: buffer))
         editor.reset()
     }
 
@@ -1957,6 +1980,7 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
     }
 
     private func setHoveredLink(_ newLink: HoveredLink) {
+        guard canOpenLink(newLink.link, blockIndex: newLink.blockIndex) else { clearHoveredLink(); return }
         guard hoveredLink != newLink else { return }
         hoveredLink = newLink
         NSCursor.pointingHand.set()
@@ -1982,7 +2006,16 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
         return start..<end
     }
 
+    private func canOpenLink(_ link: DetectedLink, blockIndex: Int?) -> Bool {
+        let host = blockIndex.flatMap { session.blocks.indices.contains($0) ? session.blocks[$0].remoteHost : nil }
+            ?? (blockIndex == nil ? session.remoteHost : nil)
+        guard host != nil else { return true }
+        guard case .url(let url) = link.kind else { return false }
+        return ["http", "https", "mailto"].contains(url.scheme?.lowercased() ?? "")
+    }
+
     private func openLink(_ link: DetectedLink, fromBlockIndex blockIndex: Int?) {
+        guard canOpenLink(link, blockIndex: blockIndex) else { return }
         switch link.kind {
         case .url(let url):
             NSWorkspace.shared.open(url)

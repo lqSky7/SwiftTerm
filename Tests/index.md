@@ -3,7 +3,7 @@
 One harness per guarded decision. Each compiles the shipped sources directly with `swiftc`, so a
 harness that stops compiling means a decision leaked out of a pure layer. There is no XCTest target.
 
-33 harnesses. The count is not a goal — it is what the decisions cost to hold down.
+35 harnesses. The count is not a goal — it is what the decisions cost to hold down.
 
 ## The emulator
 
@@ -101,3 +101,7 @@ plus an isolated scratch-shell prompt/fullscreen transition. No app launch or sh
 
 The native editor harness also validates all supported text-assistance traits, reused system
 field-editor password/email hint clearing and manual completion dispatch to the app engine.
+
+Git review harness uses temporary real repositories and the production coordinator to test scope/totals/preview invalidation after add/commit. SSH harness uses a local transport fixture for hooks, manifests, exit cleanup and alias bypass. Chip click is tested in an undisplayed surface.
+
+Git review resize checks cover cumulative drag updates, narrow windows and reserved diff space.

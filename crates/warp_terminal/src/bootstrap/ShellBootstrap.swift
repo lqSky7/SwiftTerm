@@ -82,6 +82,9 @@ struct ShellBootstrap {
         environment["SWIFTTERM_INTEGRATION"] = directory.appending(path: integrationFileName(for: shell)).path
 
         try install(shell: shell, into: directory, fileManager: fileManager)
+        let sshLauncher = directory.appending(path: "ssh-bootstrap.sh")
+        try RemoteShellBootstrap.launcher.write(to: sshLauncher, atomically: true, encoding: .utf8)
+        environment["SWIFTTERM_SSH_BOOTSTRAP"] = sshLauncher.path
         if shell == .zsh { environment["ZDOTDIR"] = directory.path }
 
         return ShellBootstrap(
@@ -89,6 +92,32 @@ struct ShellBootstrap {
             arguments: launchArguments(for: shell, directory: directory),
             environment: environment,
             rcDirectory: directory)
+    }
+
+    static func integration(for shell: ShellType) -> String {
+        switch shell {
+        case .zsh: zshIntegration
+        case .bash: bashIntegration
+        case .fish: fishIntegration
+        case .other: ""
+        }
+    }
+
+    private static func localIntegration(for shell: ShellType) -> String {
+        let availability: String
+        switch shell {
+        case .zsh:
+            availability = #"if (( ${+aliases[ssh]} || ${+functions[ssh]} )); "#
+                + #"then printf '\e]9285;0\a'; else printf '\e]9285;1\a'; fi"#
+        case .bash:
+            availability = #"if [[ $(type -t ssh) == file ]]; then printf '\e]9285;1\a'; else printf '\e]9285;0\a'; fi"#
+        case .fish:
+            availability = #"if test (type -t ssh) = file; and not abbr --query ssh; "#
+                + #"printf '\e]9285;1\a'; else; printf '\e]9285;0\a'; end"#
+        case .other: availability = ""
+        }
+        return integration(for: shell).replacingOccurrences(of: "  printf '\\e]7;",
+            with: "  " + availability + "\n  printf '\\e]9283;\\a'\n  printf '\\e]7;")
     }
 
     // MARK: - Installation
@@ -129,11 +158,11 @@ struct ShellBootstrap {
                 if name == ".zshrc" { shim += "\n" + integrationSource }
                 try write(shim, to: name)
             }
-            try write(zshIntegration, to: "integration.zsh")
+            try write(localIntegration(for: .zsh), to: "integration.zsh")
         case .bash:
-            try write(bashIntegration, to: "integration.bash")
+            try write(localIntegration(for: .bash), to: "integration.bash")
         case .fish:
-            try write(fishIntegration, to: "integration.fish")
+            try write(localIntegration(for: .fish), to: "integration.fish")
         case .other:
             break
         }
@@ -141,7 +170,7 @@ struct ShellBootstrap {
 
     /// Reads the user's own copy of a dotfile, with `ZDOTDIR` pointed back at them while it runs so
     /// anything inside that resolves through `ZDOTDIR` still finds their files.
-    private static func chainedDotFileShim(named name: String) -> String {
+    static func chainedDotFileShim(named name: String) -> String {
         #"""
         if [[ -n "$SWIFTTERM_USER_ZDOTDIR" && -f "$SWIFTTERM_USER_ZDOTDIR/\#(name)" ]]; then
           ZDOTDIR="$SWIFTTERM_USER_ZDOTDIR"

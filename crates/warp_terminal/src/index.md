@@ -17,3 +17,5 @@ Paste payload encoding lives in `model/TerminalInput.swift`; first-prompt setup 
 Resource optimization only touches model decoding, cell width, grapheme joining and tab lookup.
 
 BlockLayout owns collapse/expand viewport reconciliation; no new model subsystem.
+
+Bootstrap owns local/remote shell launchers; models own remote completion records and block origins.

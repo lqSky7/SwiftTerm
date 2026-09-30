@@ -18,6 +18,7 @@ import SwiftUI
 /// all a view keeping its own copy of something the model already knew.
 struct WorkspaceScreen: View {
     let workspace: AppCore
+    @Environment(\.displayScale) private var displayScale
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -44,6 +45,7 @@ struct WorkspaceScreen: View {
 
             sidebarColumn
             contentPanel
+            reviewSidebar
             newTabBloom
         }
         .ignoresSafeArea()
@@ -71,10 +73,10 @@ struct WorkspaceScreen: View {
                 .frame(width: workspace.layout.sidebarWidth, alignment: .leading)
                 .frame(width: workspace.layout.occupiedWidth, alignment: .leading)
                 .clipped()
-                // An overlay, not a sibling: a handle with a width of its own would come out of the
-                // panel's area, and then the width the shell is told and the width it is drawn at would
-                // differ by six points.
-                .overlay(alignment: .trailing) { SidebarResizeHandle(workspace: workspace) }
+                // The hit area overlays the edge so it does not reduce the terminal grid.
+                .overlay(alignment: .trailing) {
+                    SidebarResizeHandle(onDrag: workspace.dragSidebar, onEnd: workspace.endSidebarDrag)
+                }
                 .allowsHitTesting(!workspace.layout.isSidebarCollapsed)
             Spacer(minLength: 0)
         }
@@ -86,8 +88,13 @@ struct WorkspaceScreen: View {
     /// to tell the shell — so the panel's geometry exists once rather than twice.
     private var contentPanel: some View {
         GeometryReader { proxy in
-            let frame = workspace.layout.contentPanelFrame(in: proxy.size)
+            let frame = workspace.contentPanelFrame(in: proxy.size)
             let bounds = CGRect(origin: .zero, size: frame.size)
+            let shape = UnevenRoundedRectangle(
+                topLeadingRadius: Theme.Radius.panel, bottomLeadingRadius: Theme.Radius.panel,
+                bottomTrailingRadius: workspace.reviewWidth(in: proxy.size) > 0 ? Theme.Radius.panel : 0,
+                topTrailingRadius: workspace.reviewWidth(in: proxy.size) > 0 ? Theme.Radius.panel : 0,
+                style: .continuous)
 
             panelContent(in: bounds)
                 // The terminal's *own* material, and a setting of its own — separate from the sidebar's
@@ -102,10 +109,6 @@ struct WorkspaceScreen: View {
                     MaterialBackground(material: workspace.chrome.terminalMaterial)
                         .allowsHitTesting(false))
                 .frame(width: frame.width, height: frame.height, alignment: .topLeading)
-                // Rounded on the leading side only. Those are the corners that meet the sidebar, and the
-                // curve into it is the whole of the effect; the other two sit at the window's own edges,
-                // which are already square.
-                //
                 // **No fill here, and that is deliberate.** There used to be a
                 // `windowBackgroundColor` at `terminalOpacity` inside this clip — which is the second
                 // opacity control, and the reason it appeared to do nothing: the terminal paints its own
@@ -114,16 +117,35 @@ struct WorkspaceScreen: View {
                 // `AppCore` pushes the setting into it. The two fills still stack in the order the
                 // documentation describes — the window's colour at `sidebarOpacity` under the terminal's
                 // own — they are just not both drawn here.
-                .clipShape(
-                    UnevenRoundedRectangle(
-                        topLeadingRadius: Theme.Radius.panel,
-                        bottomLeadingRadius: Theme.Radius.panel,
-                        bottomTrailingRadius: 0,
-                        topTrailingRadius: 0))
+                .clipShape(shape)
+                .overlay {
+                    if !workspace.layout.isSidebarCollapsed || workspace.reviewWidth(in: proxy.size) > 0 {
+                        shape.strokeBorder(Color.primary.opacity(0.14), lineWidth: 1 / displayScale)
+                            .allowsHitTesting(false)
+                    }
+                }
                 .overlay(alignment: .topLeading) { dividerHandles(in: bounds) }
                 .overlay(alignment: .topLeading) { sidebarToggle }
                 .offset(x: frame.minX, y: frame.minY)
         }
+    }
+
+    private var reviewSidebar: some View {
+        GeometryReader { proxy in
+            if workspace.codeReview.isPresented {
+                CodeReviewSidebar(coordinator: workspace.codeReview, onClose: workspace.codeReview.close)
+                    .frame(width: workspace.reviewWidth(in: proxy.size), height: proxy.size.height)
+                    .overlay(alignment: .leading) {
+                        SidebarResizeHandle(onDrag: { translation in
+                            workspace.codeReview.dragWidth(by: -translation,
+                                available: workspace.layout.contentPanelFrame(in: proxy.size).width - 180)
+                        }, onEnd: workspace.codeReview.endWidthDrag)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+            }
+        }
+        .animation(.easeInOut(duration: Theme.Motion.chromeFade), value: workspace.codeReview.isPresented)
     }
 
     /// The colour bloom that plays when a tab opens.
@@ -309,7 +331,8 @@ private struct DividerHandle: View {
 /// view remembered would be a second answer to how wide the sidebar is, and the panel's geometry is
 /// derived from that number.
 private struct SidebarResizeHandle: View {
-    let workspace: AppCore
+    let onDrag: (CGFloat) -> Void
+    let onEnd: () -> Void
 
     var body: some View {
         Rectangle()
@@ -320,12 +343,11 @@ private struct SidebarResizeHandle: View {
                 if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
             }
             .gesture(
-                DragGesture(minimumDistance: 1)
+                DragGesture(minimumDistance: 1, coordinateSpace: .global)
                     .onChanged { value in
-                        if value.translation == .zero { workspace.beginSidebarDrag() }
-                        workspace.dragSidebar(by: value.translation.width)
+                        onDrag(value.translation.width)
                     }
-                    .onEnded { _ in workspace.endSidebarDrag() }
+                    .onEnded { _ in onEnd() }
             )
     }
 }

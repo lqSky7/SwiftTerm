@@ -3,7 +3,8 @@
 # formatter would otherwise own. See docs/phases.md.
 
 included:
-  - SwiftTerm
+  - app/src
+  - crates
   - Tests
 
 # Noisy here, or actively wrong for this codebase.

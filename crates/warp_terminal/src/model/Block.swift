@@ -21,6 +21,7 @@ final class Block {
     /// The command text, as the shell reported it. Nil when the shell reported none.
     var command: String?
 
+    var remoteHost: String?
     var exitCode: Int?
     var workingDirectory: String?
 
