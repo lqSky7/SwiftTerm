@@ -42,6 +42,19 @@ const AUTH_TIMEOUT_MS = 5_000;
 const HEARTBEAT_INTERVAL_MS = 15_000;
 
 /**
+ * The one subprotocol the relay speaks.
+ *
+ * This is not decoration. A browser that requests a subprotocol and is not granted one **fails the
+ * handshake**, so a relay that ignored the header would work with the Mac app and with `ws` clients
+ * and be unreachable from every browser. Selecting it also means a client speaking a different
+ * version is refused at the upgrade rather than after it has sent frames.
+ *
+ * A client that requests no subprotocol at all is still accepted: `handleProtocols` is only called
+ * when the client asked for one, which is how the native publisher and the tests connect.
+ */
+const SUBPROTOCOL = "swiftterm.live.v1";
+
+/**
  * The frames a publisher may send that carry output.
  *
  * The set exists so an unknown frame is refused as an unknown frame. Checking the epoch first would
@@ -125,6 +138,7 @@ export function attachRelay(server: Server, dependencies: RelayDependencies): Re
     maxPayload: MAX_PAYLOAD_BYTES,
     // Compression costs memory and CPU per connection for frames that are already small.
     perMessageDeflate: false,
+    handleProtocols: (protocols) => (protocols.has(SUBPROTOCOL) ? SUBPROTOCOL : false),
   });
 
   const connections = new Map<WebSocket, Connection>();

@@ -201,11 +201,24 @@ the direct `db.<ref>.supabase.co` host is IPv6-only and unreachable from this ne
 - [ ] Encode dirty-row/block deltas and alternate/size snapshot barriers.
 - [ ] Keep capture/transport off PTY/parser path; allocate nothing while off.
 - [x] Implement publisher lease/epoch and relay ticket admission. *(B2A: the relay half. The native publisher is B2B.)*
-- [ ] Implement browser canvas + escaped block/editor rendering.
+- [x] Implement browser canvas + escaped block/editor rendering. *(B2C. The native publisher is B2B.)*
 - [ ] Verify snapshot/delta parity for nano/tmux/wide text/IME/draft/collapse.
 - [x] Test replay gaps, interrupted snapshots, slow viewers and host sleep. *(B2A: relay-side. Host sleep is B2B.)*
 - [ ] End streams and revoke leases on pane close, shell exit, account logout and app shutdown.
 - [ ] Measure native CPU/RSS/network with zero/one/multiple viewers.
+
+## B2C — website live viewer (implemented)
+
+- [x] State reducer accepts exactly one epoch and contiguous seq; bounded snapshot scratch verified
+      before the atomic swap.
+- [x] Canvas owns grid rendering; DOM text nodes own escaped block/header/error text.
+- [x] Palette indices and cell widths handled; no `innerHTML`, no OSC execution, no second VT parser.
+- [x] Golden-cell equivalence against the Swift-written fixture, replay gaps, malformed frames,
+      Unicode, XSS strings and a huge snapshot.
+- [x] Accessible connection status, keyboard navigation and local copy usable without input rights.
+- [ ] Screenshot equivalence for the canvas, a slow-consumer case and reconnect-under-load. These
+      need a browser, which the build environment does not have.
+- [ ] User acceptance against a real publisher — blocked on B2B.
 
 ## B3 — owner browser control
 

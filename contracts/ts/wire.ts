@@ -85,13 +85,23 @@ export class ContractError extends Error {
   }
 }
 
-const invalid = (path: string, reason: string): never => {
+/**
+ * Reject a frame.
+ *
+ * A **function declaration**, not an arrow assigned to a `const`, and that is load-bearing rather
+ * than stylistic: TypeScript only treats a call as terminating control flow when the callee is
+ * declared with a `function` statement. As a `const` every one of the ~40 guards below was invisible
+ * to the checker, so `if (!Array.isArray(value)) invalid(…); return value;` did not narrow `value`
+ * and the file only typechecked because nobody had ever run a checker over it — the runtime strips
+ * types without looking at them.
+ */
+function invalid(path: string, reason: string): never {
   throw new ContractError("invalid_frame", path, reason);
-};
+}
 
-const oversized = (path: string, limit: number, actual: number): never => {
+function oversized(path: string, limit: number, actual: number): never {
   throw new ContractError("invalid_frame", path, `${actual} exceeds ${limit}`);
-};
+}
 
 // MARK: - Types
 
@@ -279,7 +289,11 @@ const BASE64_LOOKUP = (() => {
 export function base64Encode(bytes: Uint8Array): string {
   let out = "";
   for (let index = 0; index < bytes.length; index += 3) {
+    // `noUncheckedIndexedAccess` reads an index as possibly absent, which is correct for a general
+    // array and impossible here: the loop condition already proves `index` is in range. The guard
+    // states that rather than casting it away.
     const b0 = bytes[index];
+    if (b0 === undefined) break;
     const b1 = index + 1 < bytes.length ? bytes[index + 1] : undefined;
     const b2 = index + 2 < bytes.length ? bytes[index + 2] : undefined;
     out += BASE64_ALPHABET[b0 >> 2];
@@ -303,8 +317,10 @@ export function base64Decode(text: string): Uint8Array | null {
   let written = 0;
   for (let index = 0; index < core.length; index += 1) {
     const code = core.charCodeAt(index);
+    // The lookup table holds -1 for every non-alphabet code point, so a miss is a rejection rather
+    // than an absence. `undefined` cannot happen and is folded into the same answer.
     const digit = code < 128 ? BASE64_LOOKUP[code] : -1;
-    if (digit < 0) return null;
+    if (digit === undefined || digit < 0) return null;
     value = (value << 6) | digit;
     bits += 6;
     if (bits >= 8) {
@@ -429,6 +445,7 @@ export function readUUID(value: unknown, path: string): string {
   if (text.length !== 36) invalid(path, `UUID is ${text.length} characters`);
   for (let index = 0; index < 36; index += 1) {
     const character = text[index];
+    if (character === undefined) invalid(path, "UUID is truncated");
     const isHyphenSlot = index === 8 || index === 13 || index === 18 || index === 23;
     if (isHyphenSlot) {
       if (character !== "-") invalid(path, "UUID hyphen misplaced");
@@ -525,7 +542,8 @@ export function validateRow(value: unknown, path: string, columns: number): Wire
     const cellPath = `${path}[${index}]`;
     if (cell.width === 0) {
       if (cell.text !== "") invalid(cellPath, "continuation cell carries text");
-      if (index === 0 || cells[index - 1].width !== 2) {
+      const previous = index === 0 ? undefined : cells[index - 1];
+      if (previous === undefined || previous.width !== 2) {
         invalid(cellPath, "isolated continuation cell");
       }
       return;
@@ -534,7 +552,10 @@ export function validateRow(value: unknown, path: string, columns: number): Wire
     readGrapheme(cell.text, cellPath);
     if (cell.width === 2) {
       if (index === columns - 1) invalid(cellPath, "wide cell in the last column");
-      if (cells[index + 1].width !== 0) invalid(cellPath, "wide cell without a continuation");
+      const following = cells[index + 1];
+      if (following === undefined || following.width !== 0) {
+        invalid(cellPath, "wide cell without a continuation");
+      }
     }
   });
   return cells;
@@ -812,7 +833,11 @@ const ALL_OP_FIELDS: readonly string[] = [
 export function validateDamageOp(value: unknown, path: string, columns: number): WireDamageOp {
   const probe = readObject(value, path, ALL_OP_FIELDS);
   const name = readEnum(probe.op, `${path}.op`, Object.keys(OP_FIELDS) as string[]);
-  const record = readObject(value, path, OP_FIELDS[name]);
+  // `name` was read from the keys of `OP_FIELDS`, so this is unreachable. Stating it keeps the
+  // index honest rather than casting the absence away.
+  const fields = OP_FIELDS[name];
+  if (fields === undefined) invalid(`${path}.op`, `unknown operation ${name}`);
+  const record = readObject(value, path, fields);
   const block_id = () => readUUID(required(record, "block_id", path), `${path}.block_id`);
   const grid = () =>
     readEnum(required(record, "grid", path), `${path}.grid`, ["header", "output"] as const);
