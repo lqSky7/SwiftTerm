@@ -1,9 +1,20 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // The website talks to the backend on a different origin during development, and same-origin in
-  // production. Credentials travel in cookies, so the API client always sets `credentials:
-  // "include"`; there is no proxy or rewrite that would hide a misconfigured base URL.
+  /*
+   * Exported as static assets for Cloudflare. Every route is already prerendered and all the
+   * authenticated work happens in the browser against the API, so there is nothing for a Next
+   * server to do at runtime — a server runtime here would be a second deployment surface with no
+   * behaviour behind it.
+   */
+  output: "export",
+
+  // The exporter cannot run the on-demand image optimiser, so images are served as-is.
+  images: { unoptimized: true },
+
+  // Emits `out/page/index.html` rather than `out/page.html`, which is what a static host expects.
+  trailingSlash: true,
+
   reactStrictMode: true,
   poweredByHeader: false,
 };

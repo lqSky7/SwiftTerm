@@ -1,0 +1,17 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "swiftterm",
+  "compatibility_date": "2025-09-30",
+
+  // The site is a static export. Cloudflare serves `out/` directly and there is no Worker script:
+  // every authenticated call goes from the browser to the API, so there is nothing to run at the
+  // edge. `404-page` serves our own 404 rather than Cloudflare's default.
+  "assets": {
+    "directory": "./out",
+    "not_found_handling": "404-page"
+  },
+
+  "observability": {
+    "enabled": true
+  }
+}
