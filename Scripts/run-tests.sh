@@ -36,14 +36,15 @@ if [ "${1:-}" = "--exec" ]; then
     shift
     name=$1
     shift
-    if [ "$name" = "terminal-renderer-test" ] || [ "$name" = "block-collapse-test" ]; then
+    if [ "$name" = "terminal-renderer-test" ] || [ "$name" = "block-collapse-test" ] \
+        || [ "$name" = "command-editor-undo-test" ]; then
         SOURCES+=(
             crates/warpui_core/src/Theme.swift
             app/src/terminal/view/TerminalFont.swift
             app/src/terminal/view/TerminalRenderer.swift
         )
     fi
-    if [ "$name" = "block-collapse-test" ]; then
+    if [ "$name" = "block-collapse-test" ] || [ "$name" = "command-editor-undo-test" ]; then
         SOURCES+=(
             crates/warpui_core/src/TextIntelligence.swift
             app/src/workspace/Appearance.swift

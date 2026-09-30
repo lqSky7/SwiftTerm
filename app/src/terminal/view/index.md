@@ -58,3 +58,7 @@ Gesture/menu paths share viewport anchoring, immediate clamping and stale select
 Fullscreen repair: alternate screens use zero content inset; edge backgrounds fill fractional
 viewport strips without stretching glyphs. Sizing, mouse/link coordinates and IME cursor anchors
 use the same full-width policy. Ordinary command blocks retain the 12-point inset.
+
+Active draft undo/redo uses a bounded native UndoManager per editor, standard responder actions,
+and undoable history/completion replacements. Submit/Ctrl-C clears old actions; raw programs
+do not expose editor undo. Surface forwarding handles focus drift and dismisses completion previews.

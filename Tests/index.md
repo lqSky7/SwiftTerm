@@ -3,7 +3,7 @@
 One harness per guarded decision. Each compiles the shipped sources directly with `swiftc`, so a
 harness that stops compiling means a decision leaked out of a pure layer. There is no XCTest target.
 
-32 harnesses. The count is not a goal — it is what the decisions cost to hold down.
+33 harnesses. The count is not a goal — it is what the decisions cost to hold down.
 
 ## The emulator
 
@@ -36,6 +36,7 @@ harness that stops compiling means a decision leaked out of a pure layer. There 
 
 | Harness | Guards |
 | --- | --- |
+| `command-editor-undo-test.swift` | undisplayed native undo/redo, selection/replacement, per-pane history, reset boundaries and prompt/fullscreen routing |
 | `shell-tokenizer-test.swift` | the spans a command line is coloured in, and that they stay ordered, non-overlapping and complete |
 | `command-resolver-test.swift` | the not-found check, including the *indeterminate* answer that keeps a working command from being underlined |
 | `fuzzy-matcher-test.swift` | subsequence fuzzy matching scoring, prefix/boundary/consecutive bonuses, and smart-case rules |
@@ -94,3 +95,6 @@ Block collapse regressions: `block-collapse-test.swift` tests real header click 
 actions and immediate geometry in an undisplayed nested surface. It also checks fullscreen entry/exit
 PTY sizes and captures real SGR mouse reports. Block-layout checks cover anchoring/clamping;
 renderer checks cover left/right/bottom backgrounds and fractional edge strips. 32 harnesses pass.
+
+Active-editor undo regressions use native NSTextView/UndoManager without showing a window,
+plus an isolated scratch-shell prompt/fullscreen transition. No app launch or shared pasteboard writes.

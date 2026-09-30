@@ -8,7 +8,7 @@ A native macOS terminal built on Apple's stack, taking its product ideas from Wa
 | `crates/` | the subsystems the app is built from (the emulator, the shared UI framework) |
 | `Tests/` | standalone harnesses, one Swift file each, no XCTest target |
 | `Scripts/` | every executable: test runner, lint, build, install |
-| `docs/` | the phase plan and the per-phase detail |
+| `docs/` | local phase notes; versioned backend plan starts at `docs/backend/index.md` |
 | `READ_ME.md` | the handoff for the project as a whole — read this one first |
 | `EDITOR.md` | the handoff for Phase 3, the command editor: the one phase already attempted and abandoned |
 
@@ -43,3 +43,12 @@ Current repair: header double-click collapse/expand and immediate viewport recon
 plus fullscreen TUI edge-to-edge drawing, PTY sizing and matching mouse/IME coordinates.
 Build 0.1.0 (105) installed unopened; 32 harnesses pass. Local checklists:
 `docs/phase-block-collapse-todo.md`, `docs/phase-fullscreen-edges-todo.md`.
+
+Current phase: active-editor undo/redo and backend planning. Cmd-Z/Shift-Cmd-Z use bounded native
+per-pane histories, including history/completion replacements; submit/cancel clears old actions.
+Web terminal means streaming native state to a browser with authorized browser input back to the Mac.
+No assistant/inference features. Read `docs/backend/index.md` for architecture, SQL and remaining phases.
+Historical docs stay ignored; only `docs/backend/` is versioned. Build/check results are recorded there.
+
+Current installed build: 0.1.0 (106), unopened. All 33 harnesses pass; PostgreSQL draft syntax
+validated without deploying a service. User tests the active editor shortcuts.

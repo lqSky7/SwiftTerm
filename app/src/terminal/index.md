@@ -18,3 +18,6 @@ Resource optimization shares glyphs and avoids unused cursor work; no session pr
 
 Collapse gestures/menu actions reconcile viewport geometry immediately. Fullscreen mode changes
 recompute PTY columns; ordinary blocks retain their existing padding and appearance.
+
+Active command editor undo/redo is native and isolated per pane; submission/cancel starts fresh.
+Future web-terminal capture/control is specified in `../../../docs/backend/`, with no runtime networking yet.

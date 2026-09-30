@@ -68,6 +68,10 @@ enum AppMenus {
 
     private static func editMenu() -> NSMenuItem {
         let menu = NSMenu(title: "Edit")
+        menu.addItem(item("Undo", #selector(CommandEditorView.undo(_:)), key: "z"))
+        menu.addItem(item("Redo", #selector(CommandEditorView.redo(_:)), key: "z",
+                          modifiers: [.command, .shift]))
+        menu.addItem(.separator())
         // **Cut and Select All are the editor's, and only the editor's.** They were absent here, on the
         // grounds that a block is the unit of selection — and the cost of that was that `⌘X` and `⌘A` did
         // *nothing at all*, because a key equivalent with no menu item behind it is never matched: it

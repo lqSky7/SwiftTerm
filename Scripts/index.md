@@ -17,3 +17,6 @@ harnesses preserve the pure-model compilation gate; no harness launches the app 
 The block-collapse harness additionally compiles the native terminal surface and its collaborators.
 It sends synthetic mouse events to an undisplayed nested view and uses an isolated scratch shell
 and history file; no app launch or window presentation. Other model harnesses remain UI-free.
+
+`command-editor-undo-test` uses the same undisplayed native source set as block-collapse tests;
+all other harnesses retain the pure compilation boundary.

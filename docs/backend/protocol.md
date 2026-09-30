@@ -1,0 +1,179 @@
+# Web terminal protocol v1
+
+Planning contract, not a running API. All HTTP endpoints are under `/v1`. UUID IDs and sequence
+counters are strings in JSON (avoid JavaScript integer precision loss). Errors are JSON
+`{ "code": "...", "request_id": "..." }`, never raw terminal text or stack traces.
+
+## HTTP control plane
+
+| Method/path | Contract |
+| --- | --- |
+| `GET /me` | verified account and registered devices |
+| `POST /devices` | register this native installation, return device UUID |
+| `DELETE /devices/:id` | revoke device, end streams and close its sockets |
+| `POST /live` | owner/device, stable pane UUID, request UUID and title; create paused session |
+| `GET /live` | owner's sessions, keyset page by `(created_at,id)`; default 50, max 100 |
+| `POST /live/:id/tickets` | role-specific one-use socket ticket; reject unauthorized users |
+| `POST /live/:id/grants` | owner grants viewer/controller to a known account, later phase |
+| `DELETE /live/:id/grants/:user` | revoke access and affected controller/socket |
+| `POST /live/:id/end` | idempotently stop and fence session; owner only |
+| `POST /shares` | publish reviewed redacted snapshot + metadata + recipient grants atomically |
+| `GET /shares` | owner's links, bounded keyset pagination |
+| `POST /shares/:id/revoke` | idempotent owner revoke |
+| `DELETE /shares/:id` | delete link; collect unreferenced snapshot |
+| `POST /shares/resolve` | locator + read secret; restricted link additionally needs signed-in recipient |
+
+Assign a stable stream UUID to a pane when sharing starts; current numeric PaneIDs are local
+identities and cannot be used as globally persistent pane IDs.
+
+Native tokens bind a verified registered device. A claimed device UUID alone is not authentication.
+Website session cookies require CSRF protection on writes. Content is excluded from logs.
+Never accept `owner_id` from request JSON. With verified account context:
+
+```sql
+BEGIN;
+SELECT set_config('swiftterm.user_id', $1, true);
+-- Parameterized ownership-scoped reads/writes here.
+COMMIT;
+```
+
+Create endpoints use `(owner_id,client_request_id)` with SHA-256 of canonical validated request.
+Same request returns the same session/share; different payload with reused ID returns 409.
+Lock account row for admission limits, and check idempotency before conflict checks. Insert new
+snapshot/link/grants in one transaction so duplicate retries do not leave orphan snapshots.
+Share secret is generated on the client once, sent on create, hashed by server and not persisted
+in cleartext. Response gives locator, not a new unrecoverable secret. Recipient resolution must
+not expose a public directory of emails/accounts.
+
+## WebSocket admission and fencing
+
+Connect `wss://<service>/live/<session_uuid>` using subprotocol `swiftterm.live.v1`.
+The exact same path key routes host and browsers to the same relay instance. HTTP mutations
+concerning that live session must use that routing key too. First small frame within 5 seconds:
+
+```json
+{"type":"auth","ticket":"one-use-opaque-ticket","client_id":"browser-uuid"}
+```
+
+Ticket issuance/exchange checks account/device status, session expiry, role and grant; a publisher
+must be the session's registered device. Ticket hashes expire after 30 seconds in relay memory.
+After relay failure, fetch a new ticket; do not reuse old tickets across instances. Reject extra
+frames before auth and reject cross-site Origin upgrades. Viewer is read-only by default.
+
+Publisher admission locks `live_sessions`. Refuse ended/expired/revoked sessions and any unexpired
+publisher lease. A controlled reconnect can release the old lease after closing its socket;
+otherwise wait for expiry. Atomically increment publisher epoch and install a random lease token,
+30-second expiry and `live` status. Every renewal compares epoch + token and verifies auth/device
+status. Renew every 10 seconds; relay fails closed before expiry if DB renewal is unavailable.
+Stale publisher generations cannot write or admit inputs. On disconnect clear lease to `paused`
+only if the token still matches. Ending/revoking clears lease, increments epoch, closes sockets
+and sets ended status/timestamp. Never resurrect ended sessions.
+
+A new publisher connection also starts a fresh local input epoch and revokes controller leases,
+regardless of whether the former relay is reachable. This is the host-side fence against stale input.
+
+## Output state and replay
+
+```json
+{"type":"hello","version":1,"session_id":"uuid","epoch":"4","mode":"blocks","columns":100,"rows":32}
+```
+
+Then send a snapshot with `snapshot.begin`, ordered `snapshot.chunk` frames and `snapshot.end`.
+Chunks are at most 64 KiB and total snapshot at most 4 MiB; include total bytes/count and SHA-256.
+Snapshot describes one consistent state through sequence S. Buffer deltas above S until snapshot
+finishes. Native captures immutable state + watermark together; output continues locally without
+waiting for transfer. Browser assembles and verifies in bounded scratch memory, swaps atomically,
+then applies consecutive deltas. Discard incomplete snapshots on reconnect.
+
+The DTO includes version, epoch/S, palette, viewport, primary/alternate mode, bounded visible/recent
+blocks, each block's stable export UUID/header/collapsed state/grid rows, cursor visibility/style,
+and the active editor text/UTF-16 selection. Cells hold grapheme, width (0 continuation/1/2), bounded
+style and color indices/RGB. The browser treats all text as data, never terminal commands or HTML.
+Omit active external links, local environment and full path history. Closed blocks outside the
+window are evicted with explicit IDs. Later archived output uses static sharing.
+
+```json
+{"type":"damage","epoch":"4","seq":"19","base_seq":"18","changes":[{"op":"replace_row","block_id":"uuid","row":2,"cells":[{"text":"x","width":1,"fg":7,"bg":0}]}]}
+```
+
+Operations: block insert/remove/header/collapse, row replacement, cursor change and editor replace.
+Size/alternate-screen transitions require a fresh snapshot barrier. Do not apply row coordinates
+across a geometry change. The stream begins with a snapshot even when the host already has output.
+
+Browser applies only consecutive sequences within one epoch and deduplicates already applied IDs.
+After reconnect, request `resume` with epoch and last applied sequence. Relay replays from its ring
+if retained, otherwise requests a snapshot. It serializes replay and new frames for that socket;
+no interleaving that skips output. A new epoch always resets state using a snapshot.
+Ring limit: 8 MiB or 30 seconds per session. Viewer sends applied-sequence acknowledgements; relay
+never treats network send as rendered. If a socket exceeds 1 MiB pending bytes, request resync or
+close it. Slow readers cannot block the publisher. Ping every 15 seconds; terminate unresponsive
+connections after 30 seconds. Exponential reconnect backoff with jitter capped at 30 seconds.
+
+## Browser input
+
+A browser requests control; native host approves and returns a random lease ID, bound to the
+current publisher epoch and that browser connection. Initial lease expires after 30 seconds,
+renewed only while host approval, grant and connection remain valid. One holder at a time.
+Every local user input revokes the remote lease first. Viewing remains allowed after lease loss.
+
+```json
+{"type":"input","epoch":"4","control_lease":"uuid","input_seq":"7","operation":{"kind":"key","key":"Enter","modifiers":[]}}
+```
+
+Allowed operations: `text`, logical `key`, explicit `paste`, and prompt-editor undo/redo.
+No arbitrary raw escape bytes, filesystem operations, API-driven command execution or browser
+PTY resize in v1. Mouse reporting can follow after coordinate mapping tests; initially web viewer
+selection is local and does not send mouse events. Frame/input payload maximum 64 KiB; paste cap
+64 KiB in v1 (reject oversize before allocation). Limit input rate and aggregate queued bytes.
+
+Host rechecks lease/epoch and serializes input on the same action path as local input. In a prompt,
+use NSTextView editing/submission semantics; in raw/TUI mode translate logical keys and paste
+through existing TerminalInput rules. IME sends committed text only. Control-C remains a terminal
+signal. Read-only viewers cannot acquire control by forging input frames.
+
+```json
+{"type":"input.ack","epoch":"4","control_lease":"uuid","input_seq":"7","status":"applied"}
+```
+
+Per lease, accept the next input sequence only; retain the last applied cursor to reject duplicates.
+An ack can be resent for a duplicate within that still-valid lease, without reapplying input.
+Sequence gaps are rejected. Ack records admission to editor/PTY write queue, not shell completion.
+Do not retry timed-out/unacknowledged input automatically; surface uncertainty and reconnect for a
+new lease. Relay restart, host reconnect or local keyboard takeover makes old input unusable.
+No durable input queue, no speculative exactly-once effects, no keyboard replay after host sleep.
+
+## Static sharing DTO
+
+```json
+{"client_request_id":"uuid","read_secret":"base64url-32-random-bytes","access_mode":"restricted","recipient_user_ids":["uuid"],"snapshot":{"schema_version":1,"blocks":[{"id":"uuid","command":"ls","directory":"~/project","exit_code":0,"duration_ms":12,"lines":[{"text":"file.txt","styles":[]}]}]}}
+```
+
+Only sanitized sealed blocks; 20 blocks / 2 MiB encoded JSON. Source IDs are globally allocated
+export UUIDs, not reused local numeric BlockIDs. JSON style spans must be bounded, ordered and
+within UTF-16 text length. Reject raw ESC/control strings and unsupported schema versions.
+Snapshot is immutable: API role gets no UPDATE privilege on `block_snapshots`; editing an export
+creates a new snapshot/link. Delete cascades links/grants; UI must identify affected links.
+Capability compare uses constant-time digest comparison. Restricted share owner may resolve
+through authenticated management routes without a capability; anonymous resolve always needs it.
+All resolve responses are private/no-store. Revoked/expired/denied/missing returns the same 404.
+
+## Database and protocol acceptance gates
+
+DDL guarantees cross-owner foreign keys, owner-scoped idempotency, one open stream per pane,
+basic lifecycle/lease consistency, bounded snapshot JSON and forced owner RLS. Service code
+must guarantee monotonic epochs, lease comparisons, permission checks, state transitions,
+request hash stability, canonical DTO validation, immutable exports and socket revocation.
+
+Before B1/B2/B3 release, run actual PostgreSQL integration tests as non-owner application roles:
+
+- Account A cannot read/update B's rows or attach its device/grants/exports to B's parents.
+- Missing auth context denies access; transaction pooling does not retain the previous account.
+- Concurrent publisher claims admit one lease; stale-token renew/release/input fail.
+- Same idempotency key/payload returns same result; different payload returns conflict.
+- Snapshot + link + grants publish atomically; caller cannot update existing snapshots.
+- Revoke/expiry/device deletion ends active input and denies future socket/share admission.
+- Lost frames/resume overflow/size changes reconstruct exactly the current bounded host state.
+- Lost input ack never causes duplicate command submission after reconnect.
+
+No actual DB server has been provisioned in B0. Syntax parsing is not proof that these runtime
+constraints, permissions and transaction invariants pass.

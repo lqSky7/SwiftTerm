@@ -113,6 +113,7 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
         editor.onHistory = { [weak self] in self?.commandHistory ?? [] }
         editor.onCompletionRequest = { [weak self] in self?.openCompletion() ?? false }
         editor.onCompletionKey = { [weak self] event in self?.handleCompletionKey(event) ?? false }
+        editor.onUndoRedo = { [weak self] in self?.closeCompletion() }
         editor.onCopyWithoutSelection = { [weak self] in self?.copySelectedText() ?? false }
         // Above the editor, because the list is drawn over the line being typed. Added after the editor so
         // the order is stated rather than inherited from the order of two `addSubview` calls.
@@ -1510,6 +1511,16 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
 
     // MARK: - Menu actions
 
+    @objc func undo(_ sender: Any?) {
+        guard editorIsVisible else { return }
+        editor.undo(sender)
+    }
+
+    @objc func redo(_ sender: Any?) {
+        guard editorIsVisible else { return }
+        editor.redo(sender)
+    }
+
     @objc func paste(_ sender: Any?) {
         // With a prompt showing, the buffer being pasted into is the editor's — even when the
         // surface happened to keep the keyboard (a block was clicked first, say). When the editor
@@ -1764,6 +1775,8 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
     /// from, and a live-looking Cut that does nothing is the defect this menu was built to avoid.
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         switch menuItem.action {
+        case #selector(undo(_:)), #selector(redo(_:)):
+            return editorIsVisible && editor.validateMenuItem(menuItem)
         case #selector(copy(_:)):
             // **A text selection counts too.** This asked only about the selected *block*, so with text selected and
             // no block selected the item was greyed out — and `⌘C` did nothing, which is the one case where it is

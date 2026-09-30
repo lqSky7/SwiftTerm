@@ -20,3 +20,6 @@ Raw-program paste uses `TerminalInput.paste`; prompt pastes retain native editor
 Resource optimization is confined to terminal rendering, decoding and cache/task lifetimes.
 
 Block collapse transitions and fullscreen viewport geometry stay within the terminal feature.
+
+Edit menu now routes Cmd-Z/Shift-Cmd-Z through native Undo/Redo responders to the active draft.
+Backend/web terminal work is planning-only in `../../docs/backend/`.

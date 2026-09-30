@@ -23,3 +23,6 @@ Paste/startup follow-up uses the existing terminal surface and shell bootstrap.
 Resource optimization build 103 keeps the native presentation and existing features unchanged.
 
 Block collapse and fullscreen edge repair: build 105 installed without launching.
+
+Active-editor undo/redo is repaired using native per-pane histories; no appearance change.
+Web terminal relay, browser input and static sharing remain planning artifacts under `../docs/backend/`.

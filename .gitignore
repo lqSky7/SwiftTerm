@@ -6,5 +6,6 @@ DerivedData/
 *.dSYM
 dist/
 
-# The design notes are not part of the repository.
-docs/
+# Historical design notes stay local; the backend contract is versioned.
+/docs/*
+!/docs/backend/

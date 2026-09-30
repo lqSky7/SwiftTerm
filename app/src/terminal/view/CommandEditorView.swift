@@ -21,6 +21,10 @@ import AppKit
 /// `Completion` and `CommandSubmission`. See `docs/phase-3-todo.md` and `docs/learnings.md`.
 @MainActor
 final class CommandEditorView: NSTextView {
+    private let commandUndoManager = UndoManager()
+    override var undoManager: UndoManager? { commandUndoManager }
+    var onUndoRedo: (() -> Void)?
+
     /// The buffer, submitted. The caller turns it into bytes.
     var onSubmit: ((String) -> Void)?
     /// Keys the shell owns rather than the editor: signals, and history search.
@@ -117,6 +121,7 @@ final class CommandEditorView: NSTextView {
         // Everything AppKit would like to do to a person's typing. A shell command is not prose.
         isRichText = false
         allowsUndo = true
+        commandUndoManager.levelsOfUndo = 100
         isAutomaticQuoteSubstitutionEnabled = false
         isAutomaticDashSubstitutionEnabled = false
         isAutomaticTextReplacementEnabled = false
@@ -164,12 +169,29 @@ final class CommandEditorView: NSTextView {
     /// Puts the buffer back to empty. Called on submit, because the shell will draw the next prompt
     /// itself and the editor starts again beside it.
     func reset() {
+        breakUndoCoalescing()
         string = ""
+        commandUndoManager.removeAllActions()
         ghostText = nil
         // A submitted command is the end of the walk. Without this the next ↑ would carry on from wherever
         // the last one left off, which is not what a shell does and not what anybody expects.
         history.reset()
         setSelectedRange(NSRange(location: 0, length: 0))
+        didChangeText()
+    }
+
+    @objc func undo(_ sender: Any?) {
+        guard commandUndoManager.canUndo else { return }
+        onUndoRedo?()
+        breakUndoCoalescing()
+        commandUndoManager.undo()
+    }
+
+    @objc func redo(_ sender: Any?) {
+        guard commandUndoManager.canRedo else { return }
+        onUndoRedo?()
+        breakUndoCoalescing()
+        commandUndoManager.redo()
     }
 
     /// A new `PATH` to resolve commands against.
@@ -242,6 +264,8 @@ final class CommandEditorView: NSTextView {
     /// `TerminalSurfaceView.validateMenuItem` has carried the same correction for the same reason since the
     /// block menu was built; this is the other half of the responder chain, and it was missed.
     override func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(undo(_:)) { return commandUndoManager.canUndo }
+        if menuItem.action == #selector(redo(_:)) { return commandUndoManager.canRedo }
         if menuItem.action == #selector(copy(_:)) {
             return selectedRange().length > 0 || surface?.hasCopyableSelection == true
         }
@@ -398,14 +422,13 @@ final class CommandEditorView: NSTextView {
         setBuffer(text, caret: (text as NSString).length)
     }
 
-    /// Replace the whole buffer and put the caret somewhere in it.
-    ///
-    /// `didChangeText` is called by hand because the buffer was set directly rather than typed into. Without
-    /// it nothing is told the text changed: the surface would not redraw, and the document would go on
-    /// reserving room for the line the buffer used to be. Completion needs the caret placed inside the text
-    /// rather than at the end of it, which is the only reason this takes a position.
+    // History and completion replacements must use the same undo registration as typed text.
     func setBuffer(_ text: String, caret: Int) {
-        string = text
+        if string != text {
+            breakUndoCoalescing()
+            insertText(text, replacementRange: NSRange(location: 0, length: (string as NSString).length))
+            breakUndoCoalescing()
+        }
         setSelectedRange(NSRange(location: min(max(0, caret), (text as NSString).length), length: 0))
         didChangeText()
     }
