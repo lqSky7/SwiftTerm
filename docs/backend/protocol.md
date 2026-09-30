@@ -1,6 +1,7 @@
 # Web terminal protocol v1
 
-Planning contract, not a running API. All HTTP endpoints are under `/v1`. UUID IDs and sequence
+Planning contract, not a running API. wire-contract.md fixes exact DTOs and validation limits;
+implementation-handoff.md fixes package ownership and auth/session credential lifecycle. All HTTP endpoints are under `/v1`. UUID IDs and sequence
 counters are strings in JSON (avoid JavaScript integer precision loss). Errors are JSON
 `{ "code": "...", "request_id": "..." }`, never raw terminal text or stack traces.
 
@@ -8,8 +9,9 @@ counters are strings in JSON (avoid JavaScript integer precision loss). Errors a
 
 | Method/path | Contract |
 | --- | --- |
+| `POST /auth/logout` | revoke current web session and close its sockets |
 | `GET /me` | verified account and registered devices |
-| `POST /devices` | register this native installation, return device UUID |
+| `POST /devices` | register installation with client_request_id and client-generated device token; return UUID |
 | `DELETE /devices/:id` | revoke device, end streams and close its sockets |
 | `POST /live` | owner/device, stable pane UUID, request UUID and title; create paused session |
 | `GET /live` | owner's sessions, keyset page by `(created_at,id)`; default 50, max 100 |
@@ -26,6 +28,9 @@ counters are strings in JSON (avoid JavaScript integer precision loss). Errors a
 Assign a stable stream UUID to a pane when sharing starts; current numeric PaneIDs are local
 identities and cannot be used as globally persistent pane IDs.
 
+Native device credentials are random 256-bit secrets generated once by the client and stored in
+Keychain; only token_sha256 is stored in devices. web_sessions stores browser token/CSRF digests
+and expiry/revocation. Narrow credential resolvers authenticate before owner-scoped RLS access.
 Native tokens bind a verified registered device. A claimed device UUID alone is not authentication.
 Website session cookies require CSRF protection on writes. Content is excluded from logs.
 Never accept `owner_id` from request JSON. With verified account context:
@@ -75,11 +80,11 @@ regardless of whether the former relay is reachable. This is the host-side fence
 ## Output state and replay
 
 ```json
-{"type":"hello","version":1,"session_id":"uuid","epoch":"4","mode":"blocks","columns":100,"rows":32}
+{"type":"hello","version":1,"session_id":"uuid","epoch":"4","mode":"blocks","columns":2,"rows":32}
 ```
 
 Then send a snapshot with `snapshot.begin`, ordered `snapshot.chunk` frames and `snapshot.end`.
-Chunks are at most 64 KiB and total snapshot at most 4 MiB; include total bytes/count and SHA-256.
+Serialized chunks are at most 64 KiB (45 KiB raw bytes), and total snapshot at most 4 MiB; include total bytes/count and SHA-256.
 Snapshot describes one consistent state through sequence S. Buffer deltas above S until snapshot
 finishes. Native captures immutable state + watermark together; output continues locally without
 waiting for transfer. Browser assembles and verifies in bounded scratch memory, swaps atomically,
@@ -87,13 +92,13 @@ then applies consecutive deltas. Discard incomplete snapshots on reconnect.
 
 The DTO includes version, epoch/S, palette, viewport, primary/alternate mode, bounded visible/recent
 blocks, each block's stable export UUID/header/collapsed state/grid rows, cursor visibility/style,
-and the active editor text/UTF-16 selection. Cells hold grapheme, width (0 continuation/1/2), bounded
-style and color indices/RGB. The browser treats all text as data, never terminal commands or HTML.
+and the active editor text/UTF-16 selection. Cells hold grapheme, width (0 continuation/1/2) and a bounded style-table index;
+styles hold palette/RGB colors. The browser treats all text as data, never terminal commands or HTML.
 Omit active external links, local environment and full path history. Closed blocks outside the
 window are evicted with explicit IDs. Later archived output uses static sharing.
 
 ```json
-{"type":"damage","epoch":"4","seq":"19","base_seq":"18","changes":[{"op":"replace_row","block_id":"uuid","row":2,"cells":[{"text":"x","width":1,"fg":7,"bg":0}]}]}
+{"type":"damage","epoch":"4","seq":"19","base_seq":"18","changes":[{"op":"replace_row","block_id":"uuid","grid":"output","row":2,"cells":[{"text":"x","width":1,"style":0},{"text":" ","width":1,"style":0}]}]}
 ```
 
 Operations: block insert/remove/header/collapse, row replacement, cursor change and editor replace.
@@ -145,7 +150,7 @@ No durable input queue, no speculative exactly-once effects, no keyboard replay 
 ## Static sharing DTO
 
 ```json
-{"client_request_id":"uuid","read_secret":"base64url-32-random-bytes","access_mode":"restricted","recipient_user_ids":["uuid"],"snapshot":{"schema_version":1,"blocks":[{"id":"uuid","command":"ls","directory":"~/project","exit_code":0,"duration_ms":12,"lines":[{"text":"file.txt","styles":[]}]}]}}
+{"client_request_id":"uuid","read_secret":"base64url-32-random-bytes","access_mode":"restricted","recipient_user_ids":["uuid"],"snapshot":{"schema_version":1,"blocks":[{"id":"uuid","command":"ls","directory":"~/project","exit_code":0,"duration_ms":12,"lines":[{"text":"file.txt","styles":[]}]}],"styles":[{"fg":{"kind":"palette","index":7},"bg":{"kind":"palette","index":0},"flags":0}]}}
 ```
 
 Only sanitized sealed blocks; 20 blocks / 2 MiB encoded JSON. Source IDs are globally allocated

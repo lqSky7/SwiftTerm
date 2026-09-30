@@ -1,28 +1,26 @@
-# Web terminal and remaining phases — index
+# Backend, website and headless handoffs
 
-Planning phase B0, 2026-09-30. No backend deployed. Terminal chat means streaming the selected
-native terminal to the website and sending browser input back to it. The host Mac owns the PTY.
+Planning artifacts, ready for delegation. No backend deployed or headless frontend implemented.
+Terminal chat means live terminal output to browser + browser input back to the host PTY. No AI.
 
 | File | Read for |
 | --- | --- |
-| `architecture.md` | hosting, relay boundaries, authorization and scaling decisions |
-| `schema.sql` | PostgreSQL draft for accounts, devices, live sessions and block sharing |
-| `protocol.md` | WebSocket frames, resync, browser input and share API contract |
-| `feature-status.md` | current source-audited status of all 33 catalogue features |
-| `roadmap.md` | verified baseline and remaining native/web/backend phases |
-| `todo.md` | current phase completion and future implementation checklists |
+| `implementation-handoff.md` | C0/B1–B7 task ownership, file allowlists, dependencies, gates; remaining Git/SSH/web review |
+| `headless-handoff.md` | H1–H4 shared module, console frontend and portability boundaries |
+| `wire-contract.md` | frozen DTO shapes, limits, directions, counters and render/input rules |
+| `protocol.md` | HTTP/WebSocket flow, replay, leases, input uncertainty and share API |
+| `schema.sql` | eight-table PostgreSQL draft, browser session/CSRF and device credential digests, owner RLS |
+| `architecture.md` | relay/data ownership and scaling/privacy boundaries |
+| `native-review-ssh.md` | implemented R1 scope, Warp references, divergences, limitations and checklist |
+| `feature-status.md` | source-audited catalogue status |
+| `roadmap.md` / `todo.md` | remaining phases and implementation checklists |
 
-Default stack: TypeScript on a supported Node LTS, managed PostgreSQL and OIDC. Live output and
-input are bidirectional WebSocket traffic; terminal data is not a database event queue. There are
-no model providers, assistants, prompts or generated commands in this product plan.
+Start C0 + B1A independently for backend/website; start H1 independently for headless. Remaining
+packages wait for their named predecessors. Do not provision infrastructure, expand protocols or
+implement deferred features silently. Each package stops after validation/signed commit for user
+acceptance. Node 24 LTS + TypeScript backend; TypeScript DOM/canvas website, managed PostgreSQL,
+OIDC and outbound WSS. No PTY/shell execution on backend and no durable live input/output queue.
 
-The latest request explicitly brings web viewing/control into planning even though feature #31
-was previously deferred. Start with owner-only browser control, then invited viewers/controllers.
-General simultaneous multiplayer and the local IPC daemon remain deferred. SQL is a schema draft,
-not an applied migration; deployment roles and database integration tests are future B1 gates.
-
-Validation: 33 harnesses pass, including 25 native undo checks. Debug and release builds have no
-compiler warnings; lint succeeds with existing warnings in other files. PostgreSQL DDL syntax
-was parsed with pglast in a temporary tool environment; no DB was created or migration applied.
-Build 0.1.0 (106) installed at `/Applications/swiftTerm.app` without launching. U0/B0 complete;
-user acceptance and all future implementation checklists remain open.
+SQL syntax validation: pglast parsed 49 statements in a temporary environment; schema was not
+applied to a DB. Actual role/auth/transaction tests are mandatory in B1A. Native R1 verification,
+installation and user acceptance are tracked separately; documentation is not runtime completion.

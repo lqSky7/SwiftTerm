@@ -35,10 +35,10 @@ although an older checklist claims it exists. Verify actual callers for every ne
 | 6D | universal palette (#15), reuse FuzzyMatcher/KeymapAction | actions/search discoverable and dispatched to focused context; no duplicate action model |
 | 6E | file/history/scrollback search (#42), reuse existing find | cancellation, scoped roots/ignored files and bounded results; compare rg CLI reuse first, then embed only if required benefit justifies FFI |
 | 7A | declarative launch configs (#25), depends pane/session models | validated profiles create named layout/directories/env; explicit trusted command launch |
-| 7B | SSH bootstrap (#19) | use system ssh, hook negotiation, remote cwd/prompt/resize/input parity, no secret logging |
+| 7B | SSH bootstrap (#19), basic R1 implemented; remaining scope in native-review-ssh.md | use system ssh, hook negotiation, remote cwd/prompt/resize/input parity, no secret logging |
 | 7C | Kitty/iTerm2 media (#23) | bounded payload/decode/cache, protocol tests, correct placement and memory reclamation |
 | 7D | executable Markdown notebooks (#20) | editable cells/blocks, explicit execution, persistence/export, no automatic command replay |
-| 7E | native Git diff/review (#26) | repository-scoped status/diff, large diff cancellation, correct file navigation |
+| 7E | native Git diff/review (#26), local R1 implemented; full review remains partial | repository-scoped status/diff, large diff cancellation, correct file navigation |
 | 7F | headless console TUI (#41) | reuse pure core; independent renderer and keyboard frontend, no AppKit leakage into models |
 
 Order may move independent 7A/7B work earlier when user requests it. Avoid wholesale renderer/PTY
@@ -61,11 +61,13 @@ uncatalogued automation, agents, cloud shells or command-generation features.
 B5 can precede B4 independently. Web input is requested; full multiplayer is still deferred:
 no concurrent writers, presence avatars, session recording or collaborative editing in these phases.
 Sharing plans are brought forward by the user's explicit backend/website request. Local IPC stays
-out of scope. Stop after B0/U0 in this turn; do not roll into hosted infrastructure or the next app phase.
+out of scope. Current requested R1 implements local Git review and basic SSH bootstrap, with headless/backend/website
+implementation handoffs. Do not roll into hosted infrastructure or headless runtime in this turn.
 
-## Assumptions to resolve before implementation
+## Configuration to supply before production implementation
 
-- Backend stack/hosting default above; user can select a provider before B1 provisioning.
+- Stack and file/package boundaries are fixed in implementation-handoff.md; no provider provisioning yet.
+- Headless implementation starts with H1 in headless-handoff.md; no console runtime shipped.
 - Domain, identity provider, email invitations and signing/notarization/download distribution.
 - Retention durations, account/session limits and whether relay-visible TLS is acceptable.
 - Browser control initial owner-only; invited controller UX/policies in B4.

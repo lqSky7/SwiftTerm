@@ -1,5 +1,9 @@
 # Live web terminal and block sharing
 
+Task ownership/runtime choices are fixed in implementation-handoff.md; exact DTOs are in
+wire-contract.md. Browser web_sessions and registered device token digests extend the SQL draft;
+B1 must implement narrow credential resolvers before owner-scoped RLS queries.
+
 ## Product boundary
 
 Terminal chat means live native terminal output in a browser and browser input returned to that

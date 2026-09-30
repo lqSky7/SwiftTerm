@@ -15,12 +15,29 @@ CREATE TABLE swiftterm.app_users (
   deactivated_at timestamptz,
   UNIQUE (auth_issuer, auth_subject)
 );
+CREATE TABLE swiftterm.web_sessions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_id uuid NOT NULL REFERENCES swiftterm.app_users(id) ON DELETE CASCADE,
+  token_sha256 bytea NOT NULL UNIQUE CHECK (octet_length(token_sha256) = 32),
+  csrf_sha256 bytea NOT NULL CHECK (octet_length(csrf_sha256) = 32),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL DEFAULT (now() + interval '24 hours'),
+  revoked_at timestamptz,
+  CHECK (expires_at > created_at AND expires_at <= created_at + interval '24 hours'),
+  UNIQUE (owner_id, id)
+);
+CREATE INDEX web_session_owner ON swiftterm.web_sessions(owner_id, created_at DESC, id DESC);
+CREATE INDEX web_session_expiry ON swiftterm.web_sessions(expires_at, id);
 CREATE TABLE swiftterm.devices (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   owner_id uuid NOT NULL REFERENCES swiftterm.app_users(id) ON DELETE CASCADE,
   label text NOT NULL CHECK (octet_length(label) BETWEEN 1 AND 256),
+  client_request_id uuid NOT NULL,
+  registration_sha256 bytea NOT NULL CHECK (octet_length(registration_sha256) = 32),
+  token_sha256 bytea NOT NULL UNIQUE CHECK (octet_length(token_sha256) = 32),
   created_at timestamptz NOT NULL DEFAULT now(),
   revoked_at timestamptz,
+  UNIQUE (owner_id, client_request_id),
   UNIQUE (owner_id, id)
 );
 
@@ -112,6 +129,10 @@ ALTER TABLE swiftterm.app_users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE swiftterm.app_users FORCE ROW LEVEL SECURITY;
 CREATE POLICY user_self ON swiftterm.app_users
   USING (id = swiftterm.request_user_id()) WITH CHECK (id = swiftterm.request_user_id());
+ALTER TABLE swiftterm.web_sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE swiftterm.web_sessions FORCE ROW LEVEL SECURITY;
+CREATE POLICY web_session_owner ON swiftterm.web_sessions
+  USING (owner_id = swiftterm.request_user_id()) WITH CHECK (owner_id = swiftterm.request_user_id());
 ALTER TABLE swiftterm.devices ENABLE ROW LEVEL SECURITY;
 ALTER TABLE swiftterm.devices FORCE ROW LEVEL SECURITY;
 CREATE POLICY device_owner ON swiftterm.devices

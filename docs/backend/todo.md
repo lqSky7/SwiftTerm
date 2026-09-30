@@ -12,7 +12,9 @@ Every implementation phase must update its own tests/indexes, run the required c
 - [x] Record bringing web view/control and sharing forward into planning.
 - [x] Choose small default backend/website/database boundaries.
 - [x] Describe native/shared/backend/website feature placement.
-- [x] Draft seven-table SQL with ownership FKs, idempotency and forced RLS.
+- [x] Draft SQL with ownership FKs, idempotency and forced RLS.
+- [x] Extend draft to eight tables with browser session/CSRF digests and device credentials.
+- [x] Freeze wire DTOs and explicit headless/backend/website agent package boundaries.
 - [x] Specify HTTP and WebSocket payload/lifecycle contracts.
 - [x] Plan snapshot barriers, deltas, replay/resync and alternate-screen behavior.
 - [x] Plan one-controller approval, local takeover and uncertain input acknowledgements.
@@ -95,11 +97,13 @@ Every implementation phase must update its own tests/indexes, run the required c
 - [ ] Make startup commands explicit trusted configuration.
 - [ ] Test malformed config, missing directory and partial launch failure.
 
-## 7B — SSH bootstrapping
+## 7B — SSH bootstrapping (R1 basic implementation, see native-review-ssh.md)
 
-- [ ] Reuse system SSH and host-key/auth behavior.
-- [ ] Negotiate remote shell hooks and handle unsupported shells.
-- [ ] Carry remote cwd/title/exit status without contaminating local state.
+- [x] Reuse system SSH and host-key/auth behavior.
+- [x] Install existing remote shell hooks and handle unsupported shells.
+- [x] Carry remote cwd/title/exit status without contaminating local state.
+- [x] Bounded current-directory/PATH completion and original SSH command history.
+- [ ] Complete nested SSH, attached/quoted options and remote child-directory completion.
 - [ ] Test resize, reconnect/disconnect and raw fullscreen programs.
 
 ## 7C — terminal media
@@ -116,16 +120,19 @@ Every implementation phase must update its own tests/indexes, run the required c
 - [ ] Keep commands read-only until deliberately run.
 - [ ] Test notebook reopen, partial execution and cancellation.
 
-## 7E — Git review
+## 7E — Git review (R1 local review, full #26 still partial)
 
-- [ ] Reuse project-root detection and cancellable system git commands.
-- [ ] Implement native file list/diff view with large-result limits.
+- [x] Reuse project-root detection and cancellable system git commands.
+- [x] Implement native file list/diff view with large-result limits.
+- [x] Pinned diff chip, shared right-sidebar background/opacity and one-pixel separators.
+- [x] File staging/unstaging, including unborn repository.
+- [ ] Syntax/side-by-side view, hunk staging and GitHub PR reviews.
 - [ ] Support safe file navigation and stale repository updates.
 - [ ] Test binary files, renames and huge diffs.
 
 ## 7F — headless frontend
 
-- [ ] Specify explicit invocation and renderer/input boundary.
+- [x] Specify explicit invocation and renderer/input boundary in headless-handoff.md.
 - [ ] Reuse pure terminal/session models with no AppKit dependency.
 - [ ] Add headless renderer and keyboard input mapping.
 - [ ] Test terminal dimensions, nested terminal behavior and clean exit.
