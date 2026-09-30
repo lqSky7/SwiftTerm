@@ -25,3 +25,9 @@ The same repair restores inline current-directory suggestions and prioritizes hi
 
 Verified build: 0.1.0 (101), installed at `/Applications/swiftTerm.app` without launching;
 31 harnesses pass. Phase notes remain local under the repository's existing `docs/` ignore rule.
+
+Follow-up repair: raw nano paste sends CR line endings without shell escapes; zsh/bash emit
+only real prompt boundaries, and zsh prompt padding no longer creates a `%` block.
+
+Current follow-up build: 0.1.0 (102), installed without launching. All 31 harnesses pass;
+checklist: `docs/phase-paste-startup-todo.md`.

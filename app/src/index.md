@@ -14,3 +14,5 @@ workspace is what decides how many of them there are and where they sit. Nothing
 knows that a sidebar exists.
 
 TUI compatibility is owned by `terminal/`; no new application feature or cross-feature import.
+
+Raw-program paste uses `TerminalInput.paste`; prompt pastes retain native editor handling.

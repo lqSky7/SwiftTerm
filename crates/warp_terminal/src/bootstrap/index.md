@@ -11,3 +11,6 @@ Two markers come out of `preexec`. `OSC 133 ; C` is the spec-clean "command exec
 understands. `OSC 9281` is swiftTerm's own, carrying the command line itself — the grid cannot give
 that up, because the prompt and the command are one drawn line and splitting them would mean
 guessing where the user's prompt ends.
+
+Startup markers come only from real prompt hooks, avoiding duplicate native blocks. zsh PROMPT_SP
+is disabled because native input/chips own prompt layout and do not use its `%` partial-line marker.

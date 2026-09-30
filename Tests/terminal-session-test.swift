@@ -200,6 +200,12 @@ enum TerminalSessionTest {
             session.searchPath?.contains("/") == true,
             "and what arrived is a PATH rather than an empty report")
 
+        harness.expect(await poll(timeout: 8) { session.activeBlock?.headerGrid.promptEnd != nil },
+                       "the first real prompt arrived")
+        harness.equal(session.blocks.count, 1, "shell startup creates exactly one prompt block")
+        harness.expect(session.blocks[0].headerGrid.promptAndCommandGrid.grid.contentLineCount == 0,
+                       "the native prompt has no stray percent marker")
+
         session.write("echo BLOCKPROBE-$((6*7))\n")
         harness.expect(
             await waitForText("BLOCKPROBE-42", in: session),
@@ -210,6 +216,9 @@ enum TerminalSessionTest {
             await waitForSealedBlock(in: session, timeout: 8),
             "the prompt cycle sealed a block")
 
+        harness.expect(await poll(timeout: 8) { session.activeBlock?.headerGrid.promptEnd != nil },
+                       "the prompt returned after the command")
+        harness.equal(session.blocks.count, 2, "one command leaves one completed block and one prompt")
         let sealed = session.blocks.filter(\.isSealed)
         harness.expect(sealed.count >= 1, "at least one block was sealed")
         guard let block = sealed.first(where: { ($0.command ?? "").contains("BLOCKPROBE") }) else {
@@ -357,7 +366,8 @@ enum TerminalSessionTest {
                 continue
             }
             let script = directory.appending(path: shellName == "zsh" ? "integration.zsh" : "integration.bash")
-            let result = runShell(shellPath, arguments: extra + ["-c", "source \(script.path); echo LOADED"])
+            let probe = "source \(script.path); __swiftterm_report_prompt; echo LOADED"
+            let result = runShell(shellPath, arguments: extra + ["-c", probe])
 
             harness.equal(result.status, 0, "\(shellName) sourced the integration without erroring")
             harness.expect(result.output.contains("LOADED"), "\(shellName) ran the whole script")

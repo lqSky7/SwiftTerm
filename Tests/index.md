@@ -80,3 +80,7 @@ helper plus the read-only extensions the harnesses use to look at a grid.
 
 `completion-test` also checks inline local files, directories, escaped names, history/context
 priority across different commands, current-directory changes, and history-only fallback.
+
+Paste regressions cover raw/bracketed CR/LF/CRLF payloads, Unicode, indentation and trailing blank
+lines. The real scratch-zsh session checks one initial block, no `%`, then exactly two blocks after
+one completed command. Shell-script probes call the real prompt hook explicitly.

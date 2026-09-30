@@ -187,8 +187,8 @@ struct ShellBootstrap {
     PROMPT=''
     RPROMPT=''
     PROMPT2=''
-
-    printf '\e]133;A\a\e]133;B\a'
+    # The native editor owns prompt spacing; zsh's end-of-line marker would create a stray % row.
+    unsetopt PROMPT_SP
     """#
 
     /// bash has no `precmd`, so `PROMPT_COMMAND` is the prompt hook and a `DEBUG` trap stands in
@@ -232,8 +232,6 @@ struct ShellBootstrap {
     # The terminal draws the prompt's context itself, as chips above the input; see the zsh script.
     PS1=''
     PS2=''
-
-    printf '\e]133;A\a\e]133;B\a'
     """#
 
     private static let fishIntegration = #"""

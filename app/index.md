@@ -17,3 +17,5 @@ There is no `assets/` yet: the shell integration scripts are embedded in the bin
 shipped beside it, so the protocol and the parser that reads it can never disagree about a version.
 
 The TUI repair uses the existing native terminal surface; build/install leaves the app unopened.
+
+Paste/startup follow-up uses the existing terminal surface and shell bootstrap.

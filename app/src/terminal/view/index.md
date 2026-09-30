@@ -44,3 +44,6 @@ live in `Tests/terminal-renderer-test.swift`; they create no windows and do not 
 
 Inline ghost text now includes local paths and history/context ranking; the AppKit caret is
 checked in UTF-16 before the pure engine receives a Character count.
+
+Raw-program paste uses CR line breaks and preserves all trailing lines; it never applies shell
+continuation escaping to nano or another running program.

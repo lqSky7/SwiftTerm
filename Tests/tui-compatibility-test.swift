@@ -10,6 +10,7 @@ enum TUICompatibilityTest {
         editing(harness)
         queries(harness)
         input(harness)
+        paste(harness)
         harness.finish()
     }
 
@@ -127,5 +128,21 @@ enum TUICompatibilityTest {
         harness.equal(TerminalInput.cursor("C", application: false, modifier: 3), Array("\u{1B}[1;3C".utf8), "Alt arrow")
         harness.equal(TerminalInput.tilde(5, modifier: 2), Array("\u{1B}[5;2~".utf8), "Shift Page Up")
         harness.equal(TerminalInput.tilde(3), Array("\u{1B}[3~".utf8), "Delete")
+    }
+
+    private static func paste(_ harness: Harness) {
+        for newline in ["\n", "\r\n", "\r"] {
+            let text = "first" + newline + "  second" + newline
+            harness.equal(TerminalInput.paste(text, bracketed: false), Array("first\r  second\r".utf8),
+                          "raw paste preserves lines, indentation and the trailing newline")
+            harness.equal(TerminalInput.paste(text, bracketed: true),
+                          Array("\u{1B}[200~first\r  second\r\u{1B}[201~".utf8),
+                          "bracketed paste uses the same payload with one wrapper")
+        }
+        let source = "if ready {\n\tprint(\"👩🏽‍💻\")\n}\n\n"
+        let pasted = TerminalInput.paste(source, bracketed: false)
+        harness.expect(!pasted.contains(0x0A), "nano never receives Ctrl-J from a pasted newline")
+        harness.equal(String(bytes: pasted, encoding: .utf8), source.replacingOccurrences(of: "\n", with: "\r"),
+                      "pasting code adds no continuation backslashes and removes no blank lines")
     }
 }

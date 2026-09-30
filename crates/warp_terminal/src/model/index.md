@@ -155,3 +155,6 @@ commands; geometry and private cursor queries return the current grid dimensions
 
 Inline completion reuses path sources; history + existing local paths rank first, including paths
 used by other commands. Local paths outrank history-only lines; shell escaping is preserved.
+
+`TerminalInput.paste` normalizes LF/CRLF to CR and optionally wraps bracketed paste, preserving
+code, indentation, blank lines and trailing newlines. Shell command encoding remains separate.

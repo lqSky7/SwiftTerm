@@ -11,3 +11,5 @@ harness with no window server, which is what makes the escape-sequence behaviour
 | `src/bootstrap/` | the shell integration scripts and how they get installed |
 
 TUI regressions are covered by `Tests/tui-compatibility-test.swift` and offscreen renderer checks.
+
+`TerminalInput.paste` protects nano from Ctrl-J; bootstrap prompt hooks emit one startup prompt.
