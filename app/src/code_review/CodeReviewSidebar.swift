@@ -147,9 +147,12 @@ private struct DiffTable: NSViewRepresentable {
         table.intercellSpacing = .zero
         table.backgroundColor = .clear
         table.gridStyleMask = []
-        for (name, width) in [("old", 48.0), ("new", 48.0), ("text", 40_000.0)] {
+        table.columnAutoresizingStyle = .noColumnAutoresizing
+        for (name, width) in [("old", 24.0), ("new", 24.0), ("text", 40_000.0)] {
             let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(name))
+            column.minWidth = 0
             column.width = width
+            column.resizingMask = []
             table.addTableColumn(column)
         }
         let scroll = NSScrollView()
@@ -163,6 +166,15 @@ private struct DiffTable: NSViewRepresentable {
     func updateNSView(_ scroll: NSScrollView, context: Context) {
         guard context.coordinator.document?.id != document.id else { return }
         context.coordinator.document = document
+        let maximum = document.rows.reduce(into: (old: 0, new: 0)) { maximum, row in
+            maximum.old = max(maximum.old, row.oldLine ?? 0)
+            maximum.new = max(maximum.new, row.newLine ?? 0)
+        }
+        let font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+        for (column, line) in zip(context.coordinator.table?.tableColumns.prefix(2) ?? [], [maximum.old, maximum.new]) {
+            column.isHidden = line == 0
+            column.width = (String(line) as NSString).size(withAttributes: [.font: font]).width + 10
+        }
         context.coordinator.table?.tableColumns.last?.width = CGFloat(max(360, min(20_000, document.maximumRowBytes) * 8))
         context.coordinator.table?.reloadData()
     }
@@ -177,6 +189,7 @@ private struct DiffTable: NSViewRepresentable {
             field.identifier = identifier
             field.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
             field.lineBreakMode = .byClipping
+            field.alignment = identifier.rawValue == "text" ? .left : .right
             field.textColor = .labelColor
             let entry = document.rows[row]
             switch identifier.rawValue {

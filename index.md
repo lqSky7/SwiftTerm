@@ -75,3 +75,7 @@ for the saved backend/website packages; headless remains an implementation hando
 C0 implementation audit: hardened transfer hash/watermark verification, counters, snapshot rollback,
 atomic retained-size/fullscreen validation and sealed exports. All 37 suite gates pass. Build 116
 installed unopened; details in `docs/backend/c0-audit.md`. Backend and website runtime still absent.
+
+Diff gutter follow-up: number columns fit actual digits and unused sides disappear for new/deleted
+files. Build 117 installed unopened; Debug/release and lint pass. Backend files are excluded from
+the native app's SwiftPM target.

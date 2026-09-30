@@ -115,3 +115,11 @@ Verification: build 115 installed at `/Applications/swiftTerm.app` without launc
 harnesses pass; the current working tree also passes the delegated Swift contract harness and Node
 fixture gate (37 total checks). Debug/release have no compiler warnings. Lint succeeds with existing
 and separately owned contract warnings; SQL draft syntax was validated previously (49 statements).
+
+Gutter follow-up: diff old/new number columns fit actual digits rather than fixed 48-point widths;
+new/deleted files hide the absent number side. Metadata-only patches have no number gutter.
+Numbers align right; patch text remains left-aligned. Width is measured once per loaded document.
+
+Gutter checklist: digit-sized/right-aligned number columns, absent-side hiding, fixed column
+autoresizing policy, Debug/release builds and lint completed. Build 117 installed without launch.
+User acceptance pending. Untracked backend work stays outside the native SwiftPM target.
