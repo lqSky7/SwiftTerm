@@ -73,3 +73,6 @@ numbers from `app/assets/swiftTerm.icon/Assets/SVG Image.svg`, in that file's co
 changes, that file changes with it. The one thing that is *not* the icon's is the stroke weight, and the
 note on `Theme.Size.identityMarkStrokeRatio` says why: 3 units in a 100-unit box is right on a 1024-point
 canvas and under three quarters of a point on a row.
+
+Settings search/command entry and Profile name opt out of Apple completion, AutoFill content hints
+and Writing Tools; all native field editors also receive the shared window policy.

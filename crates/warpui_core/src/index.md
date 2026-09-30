@@ -16,7 +16,7 @@ chrome, so it lives with the terminal in `crates/warp_terminal/src/model/Termina
 the split is deliberate rather than tidiness: they are `Foundation`-only, so the harnesses compile them and a
 harness can hold the ranges, the clamping, shortcut resolution, and what happens to a settings file written by another build.
 `Theme.swift` beside them imports AppKit and is not compiled by the harnesses — and neither is
-`TextIntelligence.swift`, which is AppKit extensions and nothing else. That is why
+`TextIntelligence.swift`, which contains AppKit policy, SwiftUI modifiers and the window field-editor hook. That is why
 `Scripts/run-tests.sh` names these files individually instead of globbing the directory — a glob would let a UI
 framework into the harnesses through the back door — and `Scripts/lint.sh` names them the same way.
 
@@ -27,3 +27,11 @@ that have to agree, and the view that draws the slider is the last place that ca
 rather than in a feature because two features need it: the terminal's editor and find bar, and the
 sidebar's rename field. A feature may not import another feature, so a shared answer to "what should
 macOS be allowed to do to this text view" has to live below both of them.
+
+Text-input policy now covers SwiftUI fields and all native window field-editor requests, clearing
+AutoFill content hints and disabling completion/prediction/Writing Tools. It reuses the system
+field editor, with no extra editor allocation. Optional protocol selectors retain safety guards.
+
+Startup crash repair: window field-editor lookup never mutates NSTextField, because its content-type
+setter re-enters the lookup. Regression fields are attached to a window; user authorized app launch
+for crash diagnosis and installed-build verification.

@@ -62,3 +62,10 @@ use the same full-width policy. Ordinary command blocks retain the 12-point inse
 Active draft undo/redo uses a bounded native UndoManager per editor, standard responder actions,
 and undoable history/completion replacements. Submit/Ctrl-C clears old actions; raw programs
 do not expose editor undo. Surface forwarding handles focus drift and dismisses completion previews.
+
+Terminal windows configure their system field editor for all fields. CommandEditorView uses the
+shared disabled text-assistance policy and routes manual completion to the app engine.
+
+Startup crash repair: window field-editor lookup never mutates NSTextField, because its content-type
+setter re-enters the lookup. Regression fields are attached to a window; user authorized app launch
+for crash diagnosis and installed-build verification.

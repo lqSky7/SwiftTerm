@@ -26,3 +26,9 @@ Block collapse and fullscreen edge repair: build 105 installed without launching
 
 Active-editor undo/redo is repaired using native per-pane histories; no appearance change.
 Web terminal relay, browser input and static sharing remain planning artifacts under `../docs/backend/`.
+
+Apple text assistance is disabled for terminal, Settings, Profile, rename and find inputs.
+
+Startup crash repair: window field-editor lookup never mutates NSTextField, because its content-type
+setter re-enters the lookup. Regression fields are attached to a window; user authorized app launch
+for crash diagnosis and installed-build verification.

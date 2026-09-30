@@ -118,23 +118,10 @@ final class CommandEditorView: NSTextView {
         isHorizontallyResizable = false
         isVerticallyResizable = false
 
-        // Everything AppKit would like to do to a person's typing. A shell command is not prose.
         isRichText = false
         allowsUndo = true
         commandUndoManager.levelsOfUndo = 100
-        isAutomaticQuoteSubstitutionEnabled = false
-        isAutomaticDashSubstitutionEnabled = false
-        isAutomaticTextReplacementEnabled = false
-        isAutomaticSpellingCorrectionEnabled = false
-        isContinuousSpellCheckingEnabled = false
-        isGrammarCheckingEnabled = false
         usesFindBar = false
-
-        // **The same list again, in the spelling that is not deprecated.** The eight above are the
-        // legacy accessors and cover about half of it; the modern `NSTextInputTraits` family is what
-        // carries text completion, data and link detection, inline prediction and Writing Tools — and
-        // what the system AutoFill service hangs off. See `TextIntelligence.swift` for why a terminal
-        // wants none of them.
         disableTextIntelligence()
 
         typingAttributes = baseAttributes
@@ -241,6 +228,10 @@ final class CommandEditorView: NSTextView {
     /// above. A right-click in a terminal belongs to the block underneath it, so returning nil hands the click
     /// up the view hierarchy to `TerminalSurfaceView`, which is where the block actions live.
     override func menu(for event: NSEvent) -> NSMenu? { nil }
+
+    override func complete(_ sender: Any?) {
+        _ = onCompletionRequest?()
+    }
 
     /// **The editor's own selection first, then the grid's.**
     ///

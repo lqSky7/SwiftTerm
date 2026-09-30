@@ -23,3 +23,5 @@ Block collapse transitions and fullscreen viewport geometry stay within the term
 
 Edit menu now routes Cmd-Z/Shift-Cmd-Z through native Undo/Redo responders to the active draft.
 Backend/web terminal work is planning-only in `../../docs/backend/`.
+
+Every application window applies the shared text-input policy to native/SwiftUI field editors.

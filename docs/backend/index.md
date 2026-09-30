@@ -8,6 +8,7 @@ native terminal to the website and sending browser input back to it. The host Ma
 | `architecture.md` | hosting, relay boundaries, authorization and scaling decisions |
 | `schema.sql` | PostgreSQL draft for accounts, devices, live sessions and block sharing |
 | `protocol.md` | WebSocket frames, resync, browser input and share API contract |
+| `feature-status.md` | current source-audited status of all 33 catalogue features |
 | `roadmap.md` | verified baseline and remaining native/web/backend phases |
 | `todo.md` | current phase completion and future implementation checklists |
 

@@ -271,6 +271,7 @@ struct SettingsView: View {
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(Color(nsColor: .secondaryLabelColor))
             TextField("Search settings", text: search)
+                .disableTextIntelligence()
                 .textFieldStyle(.plain)
                 .font(.system(size: 14))
         }
@@ -926,6 +927,7 @@ struct CommandsSettingsView: View {
             SettingsGroup(label: "Add Command") {
                 HStack(spacing: Theme.Spacing.md) {
                     TextField("e.g. ./build-app.sh release", text: draft)
+                        .disableTextIntelligence()
                         .textFieldStyle(.plain)
                         .font(.system(size: 13, design: .monospaced))
                     Button("Add") {
@@ -976,4 +978,3 @@ struct CommandsSettingsView: View {
             set: { workspace.setNewCommandDraft($0) })
     }
 }
-

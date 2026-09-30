@@ -52,3 +52,15 @@ Historical docs stay ignored; only `docs/backend/` is versioned. Build/check res
 
 Current installed build: 0.1.0 (106), unopened. All 33 harnesses pass; PostgreSQL draft syntax
 validated without deploying a service. User tests the active editor shortcuts.
+
+Apple text assistance cleanup: all app inputs clear AutoFill content hints and disable system
+completion/prediction/Writing Tools, while terminal manual completion uses the local engine.
+Checklist: `docs/phase-autofill-todo.md`. No system-wide preferences are modified.
+
+Startup crash repair: window field-editor lookup never mutates NSTextField, because its content-type
+setter re-enters the lookup. Regression fields are attached to a window; user authorized app launch
+for crash diagnosis and installed-build verification.
+
+Current build 108 fixes the startup recursion; app reopened with user authorization and user
+confirmed it works. All 33 harnesses pass (59 native editor/text-policy checks). Catalogue audit:
+`docs/backend/feature-status.md` — 5 substantially built, 12 partial, 16 not implemented.

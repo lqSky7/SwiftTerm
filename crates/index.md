@@ -19,3 +19,5 @@ Paste/startup follow-up is shared terminal input encoding plus shell bootstrap h
 Resource optimization stays in existing Swift models; no new dependencies or subsystems.
 
 Block collapse scroll anchoring/clamping is pure geometry in the existing terminal model.
+
+Unused Apple text assistance is disabled centrally in warpui_core; app recommendations stay local.

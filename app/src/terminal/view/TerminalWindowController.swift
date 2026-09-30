@@ -30,7 +30,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     /// macOS remembers between launches — a second window sharing that same autosave name would pull
     /// every later window to the first one's saved frame instead of cascading from it.
     init(isPrimary: Bool = true) {
-        let window = NSWindow(
+        let window = TextInputWindow(
             contentRect: NSRect(origin: .zero, size: Theme.Size.defaultWindow),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,

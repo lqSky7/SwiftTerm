@@ -98,3 +98,6 @@ renderer checks cover left/right/bottom backgrounds and fractional edge strips. 
 
 Active-editor undo regressions use native NSTextView/UndoManager without showing a window,
 plus an isolated scratch-shell prompt/fullscreen transition. No app launch or shared pasteboard writes.
+
+The native editor harness also validates all supported text-assistance traits, reused system
+field-editor password/email hint clearing and manual completion dispatch to the app engine.

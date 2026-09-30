@@ -21,3 +21,5 @@ recompute PTY columns; ordinary blocks retain their existing padding and appeara
 
 Active command editor undo/redo is native and isolated per pane; submission/cancel starts fresh.
 Future web-terminal capture/control is specified in `../../../docs/backend/`, with no runtime networking yet.
+
+Apple text assistance is disabled through shared UI policy; native editor and IME stay intact.

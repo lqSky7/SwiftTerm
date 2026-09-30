@@ -69,6 +69,7 @@ struct ProfileView: View {
                 text: Binding(
                     get: { workspace.profileNameDraft },
                     set: { workspace.setProfileNameDraft($0) }))
+                .disableTextIntelligence()
                 .textFieldStyle(.plain)
                 .font(.system(size: 30, weight: .bold))
                 .multilineTextAlignment(.center)
