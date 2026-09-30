@@ -265,6 +265,17 @@ the direct `db.<ref>.supabase.co` host is IPv6-only and unreachable from this ne
 
 ## Deferred
 
+- **A native client has to claim a browser `Origin`.** `requireCsrf` refuses a cookie-authenticated
+  write whose `Origin` is missing or is not on `ALLOWED_ORIGINS`. That rule exists because a browser
+  cookie is *ambient* — any page the browser loads can send it, so the Origin is what proves the
+  request came from our own site. A native client holds the cookie in its own jar and no third party
+  can make it send one, so the check defends against nothing there, and satisfying it means the Mac
+  app asserts `https://swiftterm.catinice.workers.dev` as its origin. That is exactly the kind of
+  claim an origin allowlist exists to make meaningless. The honest fix is a second authentication
+  path for non-browser clients — CSRF token without an Origin, behind a separate route prefix or a
+  client-type marker — but it changes an auth rule and needs its own review, so it is recorded here
+  rather than done quietly inside B1B. Until then the client sends the origin and says why.
+
 - [ ] Local IPC daemon/CLI (#27): do not implement in these phases.
 - [ ] Simultaneous terminal writers, presence and full multiplayer: later explicit scope.
 - [ ] Automatic masking of every live terminal cell: separate #14 phase.
