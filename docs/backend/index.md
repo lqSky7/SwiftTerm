@@ -8,6 +8,7 @@ input back to the host PTY. No AI.
 
 | File | Read for |
 | --- | --- |
+| `agent-context.md` | what already exists, what to build next, and the environment traps that cost real time — read this before starting any implementation |
 | `implementation-handoff.md` | C0/B1–B7 task ownership, file allowlists, dependencies, gates; remaining Git/SSH/web review |
 | `headless-handoff.md` | H1–H4 shared module, console frontend and portability boundaries |
 | `wire-contract.md` | frozen DTO shapes, limits, directions, counters and render/input rules; "Frozen by C0" records the spellings and rules C0 had to decide |
