@@ -35,6 +35,12 @@ enum WireCanonicalJSON {
     }
 
     static func decode<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
+        guard data.count <= WireLimits.maxSnapshotBytes else {
+            throw WireError.oversized(path: "JSON", limit: WireLimits.maxSnapshotBytes, actual: data.count)
+        }
+        guard String(bytes: data, encoding: .utf8) != nil, !data.contains(0) else {
+            throw WireError.malformedFrame(reason: "not UTF-8 JSON")
+        }
         do {
             return try JSONDecoder().decode(type, from: data)
         } catch let error as WireError {

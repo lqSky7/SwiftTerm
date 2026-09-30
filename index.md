@@ -71,3 +71,7 @@ split are adjustable. Curved terminal outline and Glass circle actions share exi
 Build 115 installed without launching; 35 native harnesses pass (37 checks including delegated C0).
 Read `docs/backend/native-review-ssh.md` for limits and `docs/backend/implementation-handoff.md`
 for the saved backend/website packages; headless remains an implementation handoff.
+
+C0 implementation audit: hardened transfer hash/watermark verification, counters, snapshot rollback,
+atomic retained-size/fullscreen validation and sealed exports. All 37 suite gates pass. Build 116
+installed unopened; details in `docs/backend/c0-audit.md`. Backend and website runtime still absent.

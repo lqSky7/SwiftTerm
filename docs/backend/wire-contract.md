@@ -165,3 +165,19 @@ Rules this file left implicit, now enforced by both implementations:
 
 Where the two implementations and the fixtures live, and how to run both halves of the gate, is in
 `contracts/index.md`.
+
+## C0 audit corrections
+
+- Transfer begin metadata is validated before allocation/arithmetic; each chunk obeys its byte cap.
+- Both assemblers validate the decoded snapshot and bind its epoch/seq to snapshot.begin.
+- TypeScript `SnapshotAssembler.finish` is now async with a mandatory digest callback. Await it;
+  a browser may inject an async Web Crypto SHA-256 callback. No unverified bytes are returned.
+- Applying a snapshot cannot roll back epoch or a same-epoch sequence. New epochs may restart seq.
+- Damage's resulting state obeys all snapshot invariants, including fullscreen and 4 MiB retention.
+- Exhausted Int64 counters fail closed; advancing beyond the maximum is not permitted.
+- Swift JSON admission is bounded at 4 MiB and UTF-8 only; WireFrame.decode retains its 64 KiB cap.
+- TypeScript string validation rejects unpaired surrogates. Date strings must round-trip exactly.
+- Static exports contain sealed blocks only. UTF-16 span boundaries may not split surrogate pairs.
+
+No schema version or wire field changes. These corrections close validation holes in the frozen v1
+rules. Helpers are not an authenticated streaming service; B1/B2/B3 remain unimplemented.

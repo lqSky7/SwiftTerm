@@ -62,8 +62,12 @@ extension WireColor: Codable {
         try container.encode(kind, forKey: WireKey(Field.kind))
         switch self {
         case let .palette(index):
+            _ = try WireValue.safeInteger(index, path: "color.index", range: 0...WireLimits.maxColorIndex)
             try container.encode(index, forKey: WireKey(Field.index))
         case let .rgb(r, g, b):
+            for channel in [r, g, b] {
+                _ = try WireValue.safeInteger(channel, path: "color.rgb", range: 0...WireLimits.maxChannel)
+            }
             try container.encode(r, forKey: WireKey(Field.r))
             try container.encode(g, forKey: WireKey(Field.g))
             try container.encode(b, forKey: WireKey(Field.b))
@@ -103,6 +107,7 @@ struct WireStyle: Equatable, Sendable, Codable {
         var container = encoder.container(keyedBy: WireKey.self)
         try container.encode(fg, forKey: WireKey(Field.fg))
         try container.encode(bg, forKey: WireKey(Field.bg))
+        _ = try WireValue.safeInteger(flags, path: "style.flags", range: 0...WireLimits.maxStyleFlags)
         try container.encode(flags, forKey: WireKey(Field.flags))
     }
 }
@@ -264,11 +269,11 @@ struct WireGrid: Equatable, Sendable, Codable {
             }
             return
         }
-        guard cursor.row < lines.count else {
+        guard cursor.row >= 0, cursor.row < lines.count else {
             throw WireError.outOfBounds(
                 path: "\(path).cursor.row", reason: "\(cursor.row) of \(lines.count) lines")
         }
-        guard cursor.column < columns else {
+        guard cursor.column >= 0, cursor.column < columns else {
             throw WireError.outOfBounds(
                 path: "\(path).cursor.column", reason: "\(cursor.column) of \(columns) columns")
         }
@@ -285,6 +290,7 @@ extension WireRow {
         }
         for (index, cell) in cells.enumerated() {
             let cellPath = "\(path)[\(index)]"
+            _ = try WireValue.safeInteger(cell.style, path: "\(cellPath).style", range: 0...WireLimits.maxStyleIndex)
             switch cell.width {
             case 0:
                 guard cell.text.isEmpty else {
@@ -365,6 +371,8 @@ struct WireEditor: Equatable, Sendable, Codable {
             }
             return
         }
+        _ = try WireValue.safeInteger(selectionStart, path: "\(path).selection_start")
+        _ = try WireValue.safeInteger(selectionLength, path: "\(path).selection_length")
         let units = Array(text.utf16)
         let end = selectionStart + selectionLength
         guard end <= units.count else {
@@ -502,6 +510,9 @@ struct WireBlock: Equatable, Sendable, Codable {
 
     func validate(path: String, columns: Int) throws {
         try WireValue.utf8(command, path: "\(path).command", limit: WireLimits.maxCommandBytes)
+        _ = try WireValue.uuid(id, path: "\(path).id")
+        if let exitCode { _ = try WireValue.signedInt32(exitCode, path: "\(path).exit_code") }
+        if let durationMS { _ = try WireValue.safeInteger(durationMS, path: "\(path).duration_ms") }
         try header.validate(path: "\(path).header", columns: columns)
         try output.validate(path: "\(path).output", columns: columns)
     }
@@ -653,6 +664,8 @@ struct WireSnapshot: Equatable, Sendable, Codable {
             }
         }
 
+        _ = try WireValue.safeInteger(viewport.firstLine, path: "snapshot.viewport.first_line",
+                                      range: 0...WireLimits.maxTotalGridLines)
         guard identifiers.contains(viewport.firstBlockID) else {
             throw WireError.unknownBlock(viewport.firstBlockID)
         }

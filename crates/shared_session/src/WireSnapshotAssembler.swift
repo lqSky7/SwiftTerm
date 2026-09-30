@@ -10,6 +10,7 @@ import Foundation
 struct WireSnapshotAssembler: Sendable {
     private struct Pending: Sendable {
         var epoch: String
+        var seq: String
         var snapshotID: String
         var expectedBytes: Int
         var expectedChunks: Int
@@ -30,6 +31,7 @@ struct WireSnapshotAssembler: Sendable {
         guard pending == nil else {
             throw WireError.resyncRequired(reason: "a snapshot is already in flight")
         }
+        _ = try WireCanonicalJSON.decode(WireSnapshotBegin.self, from: WireCanonicalJSON.encode(frame))
         // The declared size has to be consistent with the declared chunk count at the frame
         // limit, or the buffer bound is a promise the sender never intended to keep.
         let maximum = frame.chunks * WireLimits.maxRawChunkBytes
@@ -38,7 +40,7 @@ struct WireSnapshotAssembler: Sendable {
                 path: "snapshot.begin.bytes", limit: maximum, actual: frame.bytes)
         }
         pending = Pending(
-            epoch: frame.epoch, snapshotID: frame.snapshotID, expectedBytes: frame.bytes,
+            epoch: frame.epoch, seq: frame.seq, snapshotID: frame.snapshotID, expectedBytes: frame.bytes,
             expectedChunks: frame.chunks, sha256: frame.sha256,
             buffer: Data(capacity: min(frame.bytes, WireLimits.maxSnapshotBytes)), received: 0)
     }
@@ -59,6 +61,11 @@ struct WireSnapshotAssembler: Sendable {
         guard current.received < current.expectedChunks else {
             pending = nil
             throw WireError.resyncRequired(reason: "more chunks than declared")
+        }
+        guard frame.data.count <= WireLimits.maxRawChunkBytes else {
+            pending = nil
+            throw WireError.oversized(path: "snapshot.chunk", limit: WireLimits.maxRawChunkBytes,
+                                      actual: frame.data.count)
         }
         let total = current.buffer.count + frame.data.count
         guard total <= current.expectedBytes else {
@@ -91,6 +98,10 @@ struct WireSnapshotAssembler: Sendable {
         }
         guard WireSHA256.hexDigest(current.buffer) == current.sha256 else {
             throw WireError.resyncRequired(reason: "digest mismatch")
+        }
+        let snapshot = try WireCanonicalJSON.decode(WireSnapshot.self, from: current.buffer)
+        guard snapshot.epoch == current.epoch, snapshot.seq == current.seq else {
+            throw WireError.resyncRequired(reason: "snapshot differs from its transfer watermark")
         }
         return current.buffer
     }

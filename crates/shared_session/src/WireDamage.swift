@@ -235,6 +235,9 @@ struct WireDamage: Equatable, Sendable, Codable {
     func validate() throws {
         let seq = try WireValue.positiveCounter(self.seq, path: "damage.seq")
         let base = try WireValue.counter(baseSeq, path: "damage.base_seq")
+        guard base < WireLimits.maxCounterValue else {
+            throw WireError.resyncRequired(reason: "sequence counter exhausted")
+        }
         guard seq == base + 1 else {
             throw WireError.sequenceGap(expected: String(base + 1), got: String(seq))
         }

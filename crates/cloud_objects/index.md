@@ -14,3 +14,5 @@ contract target and the same Foundation-only harness.
 
 `docs/backend/protocol.md` and `docs/backend/wire-contract.md` are the specification. The 20-block
 and 2 MiB caps are enforced here and again by the TypeScript validators.
+
+Audit: only sealed blocks are accepted; style spans cannot split UTF-16 surrogate pairs.

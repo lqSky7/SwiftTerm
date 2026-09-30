@@ -31,6 +31,16 @@ struct WireStreamState: Sendable {
     /// editor and geometry all come from this one snapshot.
     mutating func apply(snapshot: WireSnapshot) throws {
         try snapshot.validate()
+        if let epoch {
+            let currentEpoch = try WireValue.positiveCounter(epoch, path: "state.epoch")
+            let incomingEpoch = try WireValue.positiveCounter(snapshot.epoch, path: "snapshot.epoch")
+            guard incomingEpoch >= currentEpoch else {
+                throw WireError.staleEpoch(expected: epoch, got: snapshot.epoch)
+            }
+            if incomingEpoch == currentEpoch, try WireValue.counter(snapshot.seq, path: "snapshot.seq") < seq {
+                throw WireError.resyncRequired(reason: "snapshot watermark precedes current state")
+            }
+        }
         epoch = snapshot.epoch
         seq = try WireValue.counter(snapshot.seq, path: "snapshot.seq")
         mode = snapshot.mode
@@ -68,9 +78,12 @@ struct WireStreamState: Sendable {
                 op, blocks: &nextBlocks, viewport: &nextViewport, editor: &nextEditor,
                 columns: columns, styles: styles)
         }
-        try Self.checkInvariants(
-            blocks: nextBlocks, viewport: nextViewport, editor: nextEditor, columns: columns,
-            styles: styles)
+        guard let mode, let nextViewport, let nextEditor else {
+            throw WireError.resyncRequired(reason: "unprimed viewer state")
+        }
+        try WireSnapshot(epoch: epoch, seq: damage.seq, mode: mode, columns: columns, rows: rows,
+                         styles: styles, blocks: nextBlocks, viewport: nextViewport,
+                         editor: nextEditor).validate()
 
         blocks = nextBlocks
         viewport = nextViewport
@@ -81,7 +94,7 @@ struct WireStreamState: Sendable {
 
     /// Applies one operation to a copy of the state. Operations check only their *local*
     /// preconditions — bounds, existence, geometry. Cross-cutting state such as cursor placement
-    /// is checked once per frame by `checkInvariants`, because a frame is allowed to truncate a
+    /// is checked once per frame by the snapshot validator, because a frame may truncate a
     /// grid and move the cursor in the same message, and an eager per-operation check would reject
     /// an intermediate state that never ships.
     private static func apply(
@@ -130,6 +143,7 @@ struct WireStreamState: Sendable {
 
         case let .replaceRow(blockID, grid, row, cells):
             let index = try requireIndex(blockID, in: blocks)
+            _ = try WireValue.safeInteger(row, path: "replace_row.row")
             try cells.validate(path: "replace_row.cells", columns: columns)
             var lines = gridLines(blocks[index], grid)
             // Append at the current length only. A row index past the end would leave a gap the
@@ -146,6 +160,7 @@ struct WireStreamState: Sendable {
             setGridLines(&blocks[index], grid, lines)
 
         case let .truncateGrid(blockID, grid, lineCount):
+            _ = try WireValue.safeInteger(lineCount, path: "truncate_grid.line_count")
             let index = try requireIndex(blockID, in: blocks)
             var lines = gridLines(blocks[index], grid)
             guard lineCount <= lines.count else {
@@ -169,72 +184,6 @@ struct WireStreamState: Sendable {
         }
     }
 
-    /// The frame-level invariants. Checked once after every operation has run, so a frame that
-    /// fixes up a reference in a later op is not rejected for a state that never shipped.
-    private static func checkInvariants(
-        blocks: [WireBlock], viewport: WireViewport?, editor: WireEditor?, columns: Int,
-        styles: [WireStyle]
-    ) throws {
-        guard let viewport else {
-            throw WireError.missingField(path: "state", field: "viewport")
-        }
-        let identifiers = Set(blocks.map(\.id))
-        guard identifiers.contains(viewport.firstBlockID) else {
-            throw WireError.unknownBlock(viewport.firstBlockID)
-        }
-        guard identifiers.contains(viewport.pinnedBlockID) else {
-            throw WireError.unknownBlock(viewport.pinnedBlockID)
-        }
-        guard let editor else {
-            throw WireError.missingField(path: "state", field: "editor")
-        }
-        try editor.validate(path: "editor")
-        let lines = blocks.reduce(0) { $0 + $1.lineCount }
-        guard lines <= WireLimits.maxTotalGridLines else {
-            throw WireError.oversized(
-                path: "state.blocks", limit: WireLimits.maxTotalGridLines, actual: lines)
-        }
-        for (index, block) in blocks.enumerated() {
-            try checkCursor(block, .header, columns: columns, path: "blocks[\(index)].header")
-            try checkCursor(block, .output, columns: columns, path: "blocks[\(index)].output")
-            for (gridName, grid) in [("header", block.header), ("output", block.output)] {
-                for (lineIndex, row) in grid.lines.enumerated() {
-                    for (cellIndex, cell) in row.cells.enumerated() {
-                        guard cell.style < styles.count else {
-                            throw WireError.outOfBounds(
-                                path: "blocks[\(index)].\(gridName)[\(lineIndex)]"
-                                    + "[\(cellIndex)].style",
-                                reason: "style \(cell.style) of \(styles.count)")
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private static func checkCursor(
-        _ block: WireBlock, _ kind: WireGridKind, columns: Int, path: String? = nil
-    ) throws {
-        let grid = gridLines(block, kind)
-        let cursor = gridCursor(block, kind)
-        let label = path ?? kind.rawValue
-        if grid.isEmpty {
-            guard cursor.row == 0, cursor.column == 0, !cursor.visible else {
-                throw WireError.outOfBounds(
-                    path: "\(label).cursor", reason: "empty grid must park an invisible cursor")
-            }
-            return
-        }
-        guard cursor.row < grid.count else {
-            throw WireError.outOfBounds(
-                path: "\(label).cursor.row", reason: "\(cursor.row) of \(grid.count) lines")
-        }
-        guard cursor.column < columns else {
-            throw WireError.outOfBounds(
-                path: "\(label).cursor.column", reason: "\(cursor.column) of \(columns) columns")
-        }
-    }
-
     private static func requireIndex(_ blockID: String, in blocks: [WireBlock]) throws -> Int {
         guard let index = blocks.firstIndex(where: { $0.id == blockID }) else {
             throw WireError.unknownBlock(blockID)
@@ -253,10 +202,6 @@ struct WireStreamState: Sendable {
         case .header: block.header.lines = lines
         case .output: block.output.lines = lines
         }
-    }
-
-    private static func gridCursor(_ block: WireBlock, _ kind: WireGridKind) -> WireCursor {
-        kind == .header ? block.header.cursor : block.output.cursor
     }
 
     private static func setGridCursor(

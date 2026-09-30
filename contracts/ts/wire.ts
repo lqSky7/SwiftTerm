@@ -382,6 +382,7 @@ function readBoolean(value: unknown, path: string): boolean {
 
 function readString(value: unknown, path: string): string {
   if (typeof value !== "string") invalid(path, "expected a string");
+  if (!value.isWellFormed()) invalid(path, "unpaired UTF-16 surrogate");
   return value;
 }
 
@@ -1123,16 +1124,16 @@ export function validateShareSnapshot(value: unknown): WireShareSnapshot {
           if (span.style >= styles.length) {
             invalid(`${spanPath}.style`, `style ${span.style} of ${styles.length}`);
           }
+          for (const offset of [span.start, end]) {
+            const unit = text.charCodeAt(offset);
+            if (unit >= 0xdc00 && unit <= 0xdfff) invalid(spanPath, "span splits a surrogate pair");
+          }
           previousEnd = end;
         });
         return { text, spans };
       },
     );
-    const state = readEnum(required(block, "state", blockPath), `${blockPath}.state`, [
-      "draft",
-      "running",
-      "sealed",
-    ] as const);
+    const state = readEnum(required(block, "state", blockPath), `${blockPath}.state`, ["sealed"] as const);
     const result: WireShareBlock = { id, command, state, lines };
     const exit_code = optional(block, "exit_code", blockPath);
     if (exit_code !== undefined) {
@@ -1369,7 +1370,7 @@ export function validateFrame(value: unknown, direction: Direction, columns?: nu
 export function isWireTime(text: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(text)) return false;
   const parsed = Date.parse(text);
-  return Number.isFinite(parsed);
+  return Number.isFinite(parsed) && new Date(parsed).toISOString() === text;
 }
 
 // MARK: - Snapshot assembly
@@ -1381,6 +1382,7 @@ export function isWireTime(text: string): boolean {
 export class SnapshotAssembler {
   private pending: {
     epoch: string;
+    seq: string;
     snapshot_id: string;
     expectedBytes: number;
     expectedChunks: number;
@@ -1401,6 +1403,7 @@ export class SnapshotAssembler {
     if (this.pending !== null) {
       throw new ContractError("resync_required", "snapshot.begin", "a snapshot is already in flight");
     }
+    validateFrame({ ...frame, type: "snapshot.begin" }, "relay_to_viewer");
     const bytes = frame.bytes as number;
     const chunks = frame.chunks as number;
     if (bytes > chunks * LIMITS.maxRawChunkBytes) {
@@ -1408,6 +1411,7 @@ export class SnapshotAssembler {
     }
     this.pending = {
       epoch: String(frame.epoch),
+      seq: String(frame.seq),
       snapshot_id: String(frame.snapshot_id),
       expectedBytes: bytes,
       expectedChunks: chunks,
@@ -1430,9 +1434,13 @@ export class SnapshotAssembler {
     const raw = frame.data;
     const data =
       typeof raw === "string" ? base64Decode(raw) : (raw as Uint8Array | undefined);
-    if (data === null || data === undefined) {
+    if (!(data instanceof Uint8Array)) {
       this.pending = null;
       invalid("snapshot.chunk.data", "not canonical base64");
+    }
+    if (data.byteLength > LIMITS.maxRawChunkBytes) {
+      this.pending = null;
+      oversized("snapshot.chunk", LIMITS.maxRawChunkBytes, data.byteLength);
     }
     if (current.snapshot_id !== snapshot_id || current.epoch !== epoch) {
       this.pending = null;
@@ -1455,22 +1463,14 @@ export class SnapshotAssembler {
       this.pending = null;
       oversized("snapshot", current.expectedBytes, total);
     }
-    current.chunks.push(data);
+    current.chunks.push(data.slice());
   }
 
-  /**
-   * Verify and return the bytes. The buffer is dropped either way, so a failed transfer cannot be
-   * resumed from a half-checked state.
-   *
-   * `digest` is injected rather than imported: this module must load in a browser, where the only
-   * SHA-256 is `crypto.subtle` and it is asynchronous. A caller that has a synchronous digest
-   * passes it here and gets the `snapshot.begin` check; a caller that does not must verify
-   * asynchronously before rendering.
-   */
-  finish(
+  /** Verification is mandatory and supports the browser's asynchronous Web Crypto digest. */
+  async finish(
     frame: Record<string, unknown>,
-    digest?: (bytes: Uint8Array) => string,
-  ): Uint8Array {
+    digest: (bytes: Uint8Array) => string | Promise<string>,
+  ): Promise<Uint8Array> {
     const current = this.pending;
     if (current === null) {
       throw new ContractError("resync_required", "snapshot.end", "end without a begin");
@@ -1502,8 +1502,18 @@ export class SnapshotAssembler {
         `${buffer.length} bytes, expected ${current.expectedBytes}`,
       );
     }
-    if (digest !== undefined && digest(buffer) !== current.sha256) {
-      throw new ContractError("resync_required", "snapshot.end", "digest mismatch");
+    if (typeof digest !== "function" || await digest(buffer) !== current.sha256) {
+      throw new ContractError("resync_required", "snapshot.end", "digest mismatch or missing verifier");
+    }
+    let value: unknown;
+    try {
+      value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(buffer));
+    } catch {
+      invalid("snapshot", "not UTF-8 JSON");
+    }
+    const snapshot = validateSnapshot(value);
+    if (snapshot.epoch !== current.epoch || snapshot.seq !== current.seq) {
+      throw new ContractError("resync_required", "snapshot.end", "snapshot differs from its transfer watermark");
     }
     return buffer;
   }

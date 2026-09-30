@@ -33,6 +33,8 @@ import {
   validateSnapshot,
   type Direction,
   type ErrorCode,
+  readGrapheme,
+  isWireTime,
 } from "./wire.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -47,10 +49,10 @@ function expect(condition: boolean, message: string): void {
   if (!condition) failures.push(message);
 }
 
-function rejects(label: string, expected: ErrorCode, body: () => void): void {
+async function rejects(label: string, expected: ErrorCode, body: () => void | Promise<unknown>): Promise<void> {
   checks += 1;
   try {
-    body();
+    await body();
     failures.push(`${label}: expected ${expected}, nothing thrown`);
   } catch (error) {
     if (error instanceof ContractError) {
@@ -63,10 +65,10 @@ function rejects(label: string, expected: ErrorCode, body: () => void): void {
   }
 }
 
-function accepts(label: string, body: () => void): void {
+async function accepts(label: string, body: () => void | Promise<unknown>): Promise<void> {
   checks += 1;
   try {
-    body();
+    await body();
   } catch (error) {
     failures.push(`${label}: rejected (${String(error)})`);
   }
@@ -112,7 +114,7 @@ for (const [name, validate] of Object.entries(goldenValidators)) {
   );
 
   // And it is valid under the TypeScript rules, not merely well-formed JSON.
-  accepts(`${name} validates`, () => {
+  await accepts(`${name} validates`, () => {
     validate(parsed);
   });
 
@@ -145,7 +147,7 @@ expect(invalidIndex.cases.length > 0, "invalid.json carries cases");
 const columnsForGeometry = 80;
 
 for (const testCase of invalidIndex.cases) {
-  rejects(testCase.name, testCase.expected, () => {
+  await rejects(testCase.name, testCase.expected, () => {
     const payload = JSON.parse(testCase.payload) as unknown;
     switch (testCase.kind) {
       case "snapshot":
@@ -176,9 +178,9 @@ const chunkSize = 45 * 1024;
 const chunkCount = Math.max(1, Math.ceil(snapshotBytes.length / chunkSize));
 const snapshotID = "44444444-4444-4444-8444-444444444444";
 
-function assemble(
+async function assemble(
   mutate?: (frame: Record<string, unknown>, index: number) => Record<string, unknown>,
-): Uint8Array {
+): Promise<Uint8Array> {
   const assembler = new SnapshotAssembler();
   assembler.begin({
     epoch: "1",
@@ -201,23 +203,23 @@ function assemble(
   return assembler.finish({ epoch: "1", snapshot_id: snapshotID }, sha256Hex);
 }
 
-accepts("chunked snapshot assembles", () => {
-  const assembled = assemble();
+await accepts("chunked snapshot assembles", async () => {
+  const assembled = await assemble();
   expect(
     Buffer.compare(Buffer.from(assembled), Buffer.from(snapshotBytes)) === 0,
     "assembled bytes differ from the golden snapshot",
   );
 });
 
-rejects("chunk from another snapshot", "resync_required", () => {
-  assemble((frame, index) => (index === 0 ? { ...frame, snapshot_id: "9".repeat(8) + "-1111-4111-8111-111111111111" } : frame));
+await rejects("chunk from another snapshot", "resync_required", () => {
+  return assemble((frame, index) => (index === 0 ? { ...frame, snapshot_id: "9".repeat(8) + "-1111-4111-8111-111111111111" } : frame));
 });
 
-rejects("chunk out of order", "resync_required", () => {
-  assemble((frame, index) => (index === 0 ? { ...frame, index: 5 } : frame));
+await rejects("chunk out of order", "resync_required", () => {
+  return assemble((frame, index) => (index === 0 ? { ...frame, index: 5 } : frame));
 });
 
-rejects("digest mismatch", "resync_required", () => {
+await rejects("digest mismatch", "resync_required", () => {
   const assembler = new SnapshotAssembler();
   assembler.begin({
     epoch: "1",
@@ -235,10 +237,10 @@ rejects("digest mismatch", "resync_required", () => {
       data: base64Encode(snapshotBytes.subarray(index * chunkSize, (index + 1) * chunkSize)),
     });
   }
-  assembler.finish({ epoch: "1", snapshot_id: snapshotID }, sha256Hex);
+  return assembler.finish({ epoch: "1", snapshot_id: snapshotID }, sha256Hex);
 });
 
-rejects("end without all chunks", "resync_required", () => {
+await rejects("end without all chunks", "resync_required", () => {
   const assembler = new SnapshotAssembler();
   assembler.begin({
     epoch: "1",
@@ -248,10 +250,10 @@ rejects("end without all chunks", "resync_required", () => {
     chunks: 2,
     sha256: sha256Hex(snapshotBytes),
   });
-  assembler.finish({ epoch: "1", snapshot_id: snapshotID }, sha256Hex);
+  return assembler.finish({ epoch: "1", snapshot_id: snapshotID }, sha256Hex);
 });
 
-rejects("second begin while assembling", "resync_required", () => {
+await rejects("second begin while assembling", "resync_required", () => {
   const assembler = new SnapshotAssembler();
   const begin = {
     epoch: "1",
@@ -268,16 +270,80 @@ rejects("second begin while assembling", "resync_required", () => {
 // MARK: - 4. Frame size and direction
 
 const padding = "a".repeat(64 * 1024);
-rejects("frame over 64 KiB", "invalid_frame", () => {
+await rejects("frame over 64 KiB", "invalid_frame", () => {
   validateFrame({ type: "resync", epoch: "1", pad: padding }, "viewer_to_relay");
 });
 
-accepts("resume from a viewer", () => {
+await accepts("resume from a viewer", () => {
   validateFrame({ type: "resume", epoch: "1", seq: "0" }, "viewer_to_relay");
 });
 
-accepts("viewer.count to the host", () => {
+await accepts("viewer.count to the host", () => {
   validateFrame({ type: "viewer.count", epoch: "1", count: 0 }, "relay_to_host");
+});
+
+// Audit regressions: admission must fail closed before downstream runtime work begins.
+await rejects("exhausted counter", "resync_required", () => validateDamage({
+  type: "damage", epoch: "1", seq: "1", base_seq: "9223372036854775807", changes: [],
+}, 12));
+await rejects("unpaired surrogate", "invalid_frame", () => readGrapheme("\ud800", "text"));
+expect(!isWireTime("2026-02-31T12:00:00.000Z"), "impossible calendar date rejected");
+expect(isWireTime("2028-02-29T12:00:00.000Z"), "valid leap day accepted");
+for (const state of ["draft", "running"]) {
+  await rejects(`export must be sealed: ${state}`, "invalid_frame", () => {
+    const share = JSON.parse(textOf(join(golden, "share.json")));
+    share.blocks[0].state = state;
+    validateShareSnapshot(share);
+  });
+}
+await rejects("export span splits emoji", "invalid_frame", () => {
+  const share = JSON.parse(textOf(join(golden, "share.json")));
+  share.blocks[0].lines = [{ text: "😀", spans: [{ start: 0, length: 1, style: 0 }] }];
+  validateShareSnapshot(share);
+});
+function prepared(epoch = "1", seq = "0"): SnapshotAssembler {
+  const assembler = new SnapshotAssembler();
+  assembler.begin({ epoch, seq, snapshot_id: snapshotID, bytes: snapshotBytes.length,
+    chunks: chunkCount, sha256: sha256Hex(snapshotBytes) });
+  for (let index = 0; index < chunkCount; index += 1) {
+    assembler.append({ epoch, snapshot_id: snapshotID, index,
+      data: snapshotBytes.subarray(index * chunkSize, (index + 1) * chunkSize) });
+  }
+  return assembler;
+}
+await accepts("asynchronous browser digest", async () => {
+  const bytes = await prepared().finish({ epoch: "1", snapshot_id: snapshotID }, async (bytes) => {
+    const digest = await crypto.subtle.digest("SHA-256", bytes);
+    return Buffer.from(digest).toString("hex");
+  });
+  expect(Buffer.compare(Buffer.from(bytes), Buffer.from(snapshotBytes)) === 0, "browser digest bytes");
+});
+await rejects("digest verification cannot be omitted", "resync_required", () =>
+  prepared().finish({ epoch: "1", snapshot_id: snapshotID }, undefined as never));
+for (const [epoch, seq] of [["2", "0"], ["1", "1"]]) {
+  await rejects(`transfer watermark mismatch ${epoch}/${seq}`, "resync_required", () =>
+    prepared(epoch, seq).finish({ epoch, snapshot_id: snapshotID }, sha256Hex));
+}
+await rejects("assembler validates native begin values", "invalid_frame", () => {
+  const assembler = new SnapshotAssembler();
+  assembler.begin({ epoch: "1", seq: "0", snapshot_id: snapshotID, bytes: -1,
+    chunks: -1, sha256: "0".repeat(64) });
+});
+await rejects("assembler enforces individual chunk bound", "invalid_frame", () => {
+  const assembler = new SnapshotAssembler();
+  assembler.begin({ epoch: "1", seq: "0", snapshot_id: snapshotID, bytes: 2 * chunkSize,
+    chunks: 2, sha256: "0".repeat(64) });
+  assembler.append({ epoch: "1", snapshot_id: snapshotID, index: 0,
+    data: new Uint8Array(chunkSize + 1) });
+});
+await accepts("assembler owns buffered chunk bytes", async () => {
+  const bytes = snapshotBytes.slice();
+  const assembler = new SnapshotAssembler();
+  assembler.begin({ epoch: "1", seq: "0", snapshot_id: snapshotID, bytes: bytes.length,
+    chunks: 1, sha256: sha256Hex(bytes) });
+  assembler.append({ epoch: "1", snapshot_id: snapshotID, index: 0, data: bytes });
+  bytes.fill(0);
+  await assembler.finish({ epoch: "1", snapshot_id: snapshotID }, sha256Hex);
 });
 
 // MARK: - Verdict

@@ -14,6 +14,7 @@ input back to the host PTY. No AI.
 | `protocol.md` | HTTP/WebSocket flow, replay, leases, input uncertainty and share API |
 | `schema.sql` | eight-table PostgreSQL draft, browser session/CSRF and device credential digests, owner RLS |
 | `architecture.md` | relay/data ownership and scaling/privacy boundaries |
+| `c0-audit.md` | source audit, fixed contract failures and runtime work still absent |
 | `native-review-ssh.md` | implemented R1 scope, Warp references, divergences, limitations and checklist |
 | `feature-status.md` | source-audited catalogue status |
 | `roadmap.md` / `todo.md` | remaining phases and implementation checklists |

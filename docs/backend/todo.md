@@ -147,8 +147,8 @@ Every implementation phase must update its own tests/indexes, run the required c
 - [x] Publish fixtures and exports before downstream packages begin.
 - [ ] B1A identity/database foundation (next; no code yet).
 
-Gate result: the Foundation-only harness passes 270 checks and the TypeScript validator check passes
-79, over 3 goldens and 54 shared invalid cases. `Scripts/run-tests.sh` runs both halves. The
+Gate result after audit: the Foundation-only harness passes 301 checks and the TypeScript validator check passes
+94, over 3 goldens and 54 shared invalid cases. `Scripts/run-tests.sh` runs both halves. The
 spellings and rules C0 had to freeze are recorded in wire-contract.md under "Frozen by C0".
 
 ## B1 — account/API/website foundation
@@ -224,3 +224,10 @@ spellings and rules C0 had to freeze are recorded in wire-contract.md under "Fro
 - [ ] Simultaneous terminal writers, presence and full multiplayer: later explicit scope.
 - [ ] Automatic masking of every live terminal cell: separate #14 phase.
 - [ ] Session recordings, teams and public indexing: no requirement yet.
+
+## C0 audit follow-up
+
+- [x] Harden counter/transfer/Unicode/native bounds and static exports.
+- [x] Preserve snapshot ordering, fullscreen invariants and aggregate byte bounds during damage.
+- [x] Make TypeScript snapshot completion async with required hash verification.
+- [x] Complete audit validation/install (build 116); see c0-audit.md.

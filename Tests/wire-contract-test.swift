@@ -1603,6 +1603,138 @@ func checkInvalidFixtures() {
 
 // MARK: - Run
 
+func checkAuditRegressions() {
+    checks.rejects("UTF-16 frame cannot bypass UTF-8 transport", .invalidFrame) {
+        let text = #"{"type":"resync","epoch":"1"}"#
+        _ = try WireFrame.decode(from: Data(text.utf16.flatMap { [UInt8($0 & 255), UInt8($0 >> 8)] }),
+                                 direction: .viewerToRelay)
+    }
+    checks.rejects("raw JSON bounded before decoding", .invalidFrame) {
+        _ = try WireCanonicalJSON.decode(WireSnapshot.self,
+            from: Data(repeating: 32, count: WireLimits.maxSnapshotBytes + 1))
+    }
+    checks.rejects("negative native cursor", .invalidFrame) {
+        var snapshot = sampleSnapshot()
+        snapshot.blocks[0].output.cursor.row = -1
+        try snapshot.validate()
+    }
+    checks.rejects("invalid native color", .invalidFrame) {
+        var snapshot = sampleSnapshot()
+        snapshot.styles[0].fg = .palette(index: -1)
+        try snapshot.validate()
+    }
+    checks.rejects("exhausted counter fails without overflow", .resyncRequired) {
+        _ = try decode(WireDamage.self,
+            #"{"type":"damage","epoch":"1","seq":"1","base_seq":"9223372036854775807","changes":[]}"#)
+    }
+    checks.rejects("negative native editor offset", .invalidFrame) {
+        try WireEditor(visible: true, text: "abc", selectionStart: -1, selectionLength: 0).validate(path: "editor")
+    }
+    checks.rejects("overflowing native editor offset", .invalidFrame) {
+        try WireEditor(visible: true, text: "abc", selectionStart: Int.max, selectionLength: 1).validate(path: "editor")
+    }
+    checks.expect(!WireTime.isValid("2026-02-31T12:00:00.000Z"), "impossible calendar date rejected")
+    checks.expect(WireTime.isValid("2028-02-29T12:00:00.000Z"), "valid leap day accepted")
+    for (epoch, seq) in [("2", "0"), ("1", "1")] {
+        checks.rejects("transfer watermark mismatch \(epoch)/\(seq)", .resyncRequired) {
+            let frames = try WireSnapshotAssembler.chunk(bytes: snapshotBytes(sampleSnapshot()),
+                epoch: epoch, seq: seq, snapshotID: snapshotID)
+            _ = try WireSnapshotAssembler.assemble(frames: frames)
+        }
+    }
+    checks.rejects("native begin cannot overflow multiplication", .invalidFrame) {
+        var assembler = WireSnapshotAssembler()
+        try assembler.begin(WireSnapshotBegin(epoch: "1", seq: "0", snapshotID: snapshotID,
+            bytes: 1, chunks: Int.max, sha256: String(repeating: "a", count: 64)))
+    }
+    checks.rejects("native chunk enforces byte cap", .invalidFrame) {
+        var assembler = WireSnapshotAssembler()
+        try assembler.begin(WireSnapshotBegin(epoch: "1", seq: "0", snapshotID: snapshotID,
+            bytes: WireLimits.maxRawChunkBytes * 2, chunks: 2, sha256: String(repeating: "a", count: 64)))
+        try assembler.append(WireSnapshotChunk(epoch: "1", snapshotID: snapshotID, index: 0,
+            data: Data(repeating: 0, count: WireLimits.maxRawChunkBytes + 1)))
+    }
+    checks.accepts("snapshot rollback and fullscreen damage leave state intact") {
+        var state = WireStreamState()
+        var current = sampleSnapshot()
+        current.epoch = "2"
+        current.seq = "4"
+        try state.apply(snapshot: current)
+        var old = current
+        old.epoch = "1"
+        checks.rejects("older snapshot epoch", .staleEpoch) { try state.apply(snapshot: old) }
+        old.epoch = "2"
+        old.seq = "3"
+        checks.rejects("older snapshot watermark", .resyncRequired) { try state.apply(snapshot: old) }
+        checks.equal(state.lastSeq, 4, "rollback rejection retains sequence")
+        state = WireStreamState()
+        try state.apply(snapshot: sampleSnapshot(mode: .fullscreen))
+        checks.rejects("fullscreen damage cannot expose editor", .invalidFrame) {
+            try state.apply(damage: WireDamage(epoch: "1", seq: "1", baseSeq: "0", changes: [
+                .replaceEditor(editor: WireEditor(visible: true, text: "", selectionStart: 0, selectionLength: 0))]))
+        }
+        checks.rejects("fullscreen damage cannot insert second block", .invalidFrame) {
+            try state.apply(damage: WireDamage(epoch: "1", seq: "1", baseSeq: "0", changes: [
+                .insertBlock(afterID: nil, block: sampleSnapshot().blocks[1])]))
+        }
+        checks.equal(state.blockCount, 1, "fullscreen rejects partial changes")
+        checks.equal(state.lastSeq, 0, "fullscreen rejection retains sequence")
+        checks.rejects("negative native damage row", .invalidFrame) {
+            try state.apply(damage: WireDamage(epoch: "1", seq: "1", baseSeq: "0", changes: [
+                .replaceRow(blockID: firstBlockID, grid: .output, row: -1, cells: row("", columns: 12))]))
+        }
+    }
+    checks.accepts("damage enforces aggregate retained byte budget atomically") {
+        var snapshot = sampleSnapshot()
+        snapshot.columns = 64
+        snapshot.blocks = [snapshot.blocks[0]]
+        snapshot.viewport.pinnedBlockID = firstBlockID
+        let cell = WireCell(text: "a" + String(repeating: "\u{0301}", count: 31), width: 1, style: 0)
+        let line = WireRow(cells: Array(repeating: cell, count: 64))
+        snapshot.blocks[0].header = WireGrid(lines: [],
+            cursor: WireCursor(row: 0, column: 0, visible: false, shape: .block, blink: false))
+        snapshot.blocks[0].output = WireGrid(lines: Array(repeating: line, count: 550),
+            cursor: WireCursor(row: 0, column: 0, visible: true, shape: .block, blink: false))
+        var state = WireStreamState()
+        try state.apply(snapshot: snapshot)
+        var rejected = false
+        for _ in 0..<30 {
+            let previousSeq = state.lastSeq
+            let previousLines = state.totalLines
+            let changes = (0..<8).map { offset in
+                WireDamageOp.replaceRow(blockID: firstBlockID, grid: .output,
+                    row: previousLines + offset, cells: line)
+            }
+            do {
+                try state.apply(damage: WireDamage(epoch: "1", seq: String(previousSeq + 1),
+                    baseSeq: String(previousSeq), changes: changes))
+            } catch let error as WireError {
+                checks.equal(error.code, .invalidFrame, "byte budget rejection")
+                checks.equal(state.lastSeq, previousSeq, "oversized damage preserves seq")
+                checks.equal(state.totalLines, previousLines, "oversized damage preserves rows")
+                rejected = true
+                break
+            }
+        }
+        checks.expect(rejected, "retained bytes capped before reaching line limit")
+    }
+    for blockState in [WireBlockState.draft, .running] {
+        checks.rejects("export requires sealed blocks \(blockState)", .invalidFrame) {
+            var share = sampleShare()
+            share.blocks[0].state = blockState
+            try share.validate()
+        }
+    }
+    checks.rejects("export span cannot split emoji", .invalidFrame) {
+        try WireShareLine(text: "😀", spans: [WireShareSpan(start: 0, length: 1, style: 0)])
+            .validate(path: "line", styleCount: 1)
+    }
+    checks.rejects("native span length cannot overflow", .invalidFrame) {
+        try WireShareLine(text: "abc", spans: [WireShareSpan(start: 1, length: Int.max, style: 0)])
+            .validate(path: "line", styleCount: 1)
+    }
+}
+
 @main
 enum WireContractTest {
     static func main() {
@@ -1619,6 +1751,7 @@ enum WireContractTest {
         checkAssembler()
         checkShares()
         checkInvalidFixtures()
+        checkAuditRegressions()
         checks.finish()
     }
 }

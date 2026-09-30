@@ -89,7 +89,8 @@ struct WireShareLine: Equatable, Sendable, Codable {
                     path: "\(path).text", reason: "control scalar U+\(String(scalar.value, radix: 16))")
             }
         }
-        let units = text.utf16.count
+        let utf16 = Array(text.utf16)
+        let units = utf16.count
         var previousEnd = 0
         for (index, span) in spans.enumerated() {
             let spanPath = "\(path).spans[\(index)]"
@@ -97,6 +98,9 @@ struct WireShareLine: Equatable, Sendable, Codable {
                 throw WireError.outOfBounds(
                     path: spanPath, reason: "overlaps or is out of order at \(span.start)")
             }
+            _ = try WireValue.safeInteger(span.start, path: "\(spanPath).start")
+            _ = try WireValue.safeInteger(span.length, path: "\(spanPath).length", range: 1...WireLimits.maxSafeInteger)
+            _ = try WireValue.safeInteger(span.style, path: "\(spanPath).style", range: 0...WireLimits.maxStyleIndex)
             let end = span.start + span.length
             guard end <= units else {
                 throw WireError.outOfBounds(
@@ -105,6 +109,11 @@ struct WireShareLine: Equatable, Sendable, Codable {
             guard span.style < styleCount else {
                 throw WireError.outOfBounds(
                     path: "\(spanPath).style", reason: "style \(span.style) of \(styleCount)")
+            }
+            for offset in [span.start, end] where offset < units {
+                guard !(0xDC00...0xDFFF).contains(utf16[offset]) else {
+                    throw WireError.outOfBounds(path: spanPath, reason: "span splits a surrogate pair")
+                }
             }
             previousEnd = end
         }
@@ -167,6 +176,12 @@ struct WireShareBlock: Equatable, Sendable, Codable {
     }
 
     func validate(path: String, styleCount: Int) throws {
+        guard state == .sealed else {
+            throw WireError.invalidValue(path: "\(path).state", reason: "only sealed blocks can be exported")
+        }
+        _ = try WireValue.uuid(id, path: "\(path).id")
+        if let exitCode { _ = try WireValue.signedInt32(exitCode, path: "\(path).exit_code") }
+        if let durationMS { _ = try WireValue.safeInteger(durationMS, path: "\(path).duration_ms") }
         try WireValue.utf8(command, path: "\(path).command", limit: WireLimits.maxCommandBytes)
         for scalar in command.unicodeScalars where scalar.value == 0x0A || scalar.value == 0x0D {
             throw WireError.invalidValue(path: "\(path).command", reason: "command is not one line")

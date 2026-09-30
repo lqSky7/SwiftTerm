@@ -53,3 +53,6 @@ swiftc -swift-version 6 -warnings-as-errors \
 
 — and read the diff. A regenerated golden is a change to the bytes on the wire, and it should be
 reviewed as one.
+
+C0 audit: async TypeScript assembly always verifies a digest and watermark. Snapshot/damage
+admission and static export checks have dedicated Swift/Node regressions; wire shapes are unchanged.

@@ -13,3 +13,5 @@ knowing before editing:
 
 The share capability is 32 random bytes in one canonical base64url spelling. The server stores
 only the SHA-256, and the secret lives in the browser fragment.
+
+Exports enforce sealed blocks, bounded native values and UTF-16 span boundaries before upload.

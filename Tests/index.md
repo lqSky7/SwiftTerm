@@ -118,3 +118,6 @@ field-editor password/email hint clearing and manual completion dispatch to the 
 Git review harness uses temporary real repositories and the production coordinator to test scope/totals/preview invalidation after add/commit. SSH harness uses a local transport fixture for hooks, manifests, exit cleanup and alias bypass. Chip click is tested in an undisplayed surface.
 
 Git review resize checks cover cumulative drag updates, narrow windows and reserved diff space.
+
+C0 audit regressions cover counter exhaustion, snapshot rollback/fullscreen/aggregate size, transfer
+watermarks, native-value bounds, UTF-8 admission, strict calendar dates and sealed emoji-safe exports.

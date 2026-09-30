@@ -41,3 +41,6 @@ the same message. A frame that fails anywhere leaves the view exactly as it was.
 - The `directory` in an export is an abbreviated display label. An absolute path is refused rather
   than silently abbreviated, because implicit full-path export is the thing the contract forbids.
 - A browser paste never gets an appended newline, and a rejected input always carries a code.
+
+C0 audit fixes watermark/size admission, snapshot rollback, counter overflow and damage invariants.
+WireStreamState remains a contract reference, not a measured production capture/render hot path.

@@ -10,3 +10,7 @@ been validated; there is no second pass a caller can forget.
 
 See the directory above for what each file holds, and `docs/backend/wire-contract.md` for the
 specification. Both DTO sets and the shared fixtures change together or not at all.
+
+Audit hardening: UTF-8/raw-byte admission, overflow-safe counters, validated transfer metadata and
+watermark binding. Viewer snapshots cannot regress epoch/seq; damage uses the snapshot validator
+atomically, including fullscreen and aggregate byte limits. Native values receive bounds checks too.

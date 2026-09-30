@@ -20,7 +20,9 @@ enum WireTime {
             4: "-", 7: "-", 10: "T", 13: ":", 16: ":", 19: ".", 23: "Z",
         ]
         for (offset, expected) in separators where scalars[offset] != expected { return false }
-        return formatter().date(from: text) != nil
+        let formatter = formatter()
+        guard let date = formatter.date(from: text) else { return false }
+        return formatter.string(from: date) == text
     }
 
     static func string(from date: Date) -> String { formatter().string(from: date) }
