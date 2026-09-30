@@ -36,6 +36,16 @@ if [ "${1:-}" = "--exec" ]; then
     shift
     name=$1
     shift
+    # The wire contract harness is Foundation-only by design: it compiles the transport DTOs and
+    # nothing else, so a contract type that reached for TerminalGrid, AppKit or a view would stop
+    # it compiling. That is the whole point of C0, and it is why this harness gets its own source
+    # list instead of the shared one.
+    if [ "$name" = "wire-contract-test" ]; then
+        SOURCES=(
+            crates/shared_session/src/*.swift
+            crates/cloud_objects/src/*.swift
+        )
+    fi
     if [ "$name" = "terminal-renderer-test" ] || [ "$name" = "block-collapse-test" ] \
         || [ "$name" = "command-editor-undo-test" ]; then
         SOURCES+=(
@@ -106,6 +116,7 @@ rm -f "$BIN"/*.failed "$BIN"/*.running
 printf '%s\n' "${NAMES[@]}" | xargs -P "$(sysctl -n hw.ncpu)" -I {} "$SELF" --exec {}
 
 failed=0
+total=${#NAMES[@]}
 for name in "${NAMES[@]}"; do
     if [ -f "$BIN/$name.failed" ]; then
         failed=$((failed + 1))
@@ -115,9 +126,27 @@ for name in "${NAMES[@]}"; do
     fi
 done
 
+# The wire contract has two independent implementations: the Swift DTOs and the TypeScript
+# validators in contracts/ts. The gate is that both agree on the same bytes and reject the same
+# cases, and a Swift-only run cannot notice the other half drifting.
+echo
+if command -v node >/dev/null 2>&1; then
+    total=$((total + 1))
+    if node contracts/ts/check-fixtures.ts > "$BIN/contracts.log" 2>&1; then
+        printf '\033[32mok\033[0m    %-28s\n' "contracts/check-fixtures"
+    else
+        failed=$((failed + 1))
+        echo
+        echo "── contracts/check-fixtures ──"
+        sed -n '1,60p' "$BIN/contracts.log"
+    fi
+else
+    printf '\033[33mskip\033[0m  %-28s %s\n' "contracts/check-fixtures" "no node on PATH"
+fi
+
 echo
 if [ "$failed" -ne 0 ]; then
-    echo "✗ $failed of ${#NAMES[@]} harnesses failed" >&2
+    echo "✗ $failed of $total checks failed" >&2
     exit 1
 fi
-echo "✓ all ${#NAMES[@]} harnesses pass"
+echo "✓ all $total checks pass"

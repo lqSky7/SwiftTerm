@@ -137,6 +137,20 @@ Every implementation phase must update its own tests/indexes, run the required c
 - [ ] Add headless renderer and keyboard input mapping.
 - [ ] Test terminal dimensions, nested terminal behavior and clean exit.
 
+## C0 — immutable shared contracts (implemented)
+
+- [x] Encode/decode the exact snapshot, damage, input and share structures.
+- [x] Test all boundary sizes, malformed UTF-8/base64, UUIDs/decimal counters and grapheme widths.
+- [x] Golden UTF-8 bytes hashed identically by Swift and Node.
+- [x] Frame schema version mismatch fails closed; no implicit downgrade.
+- [x] Explicit eviction and geometry/mode barriers cannot leave stale cells/blocks.
+- [x] Publish fixtures and exports before downstream packages begin.
+- [ ] B1A identity/database foundation (next; no code yet).
+
+Gate result: the Foundation-only harness passes 270 checks and the TypeScript validator check passes
+79, over 3 goldens and 54 shared invalid cases. `Scripts/run-tests.sh` runs both halves. The
+spellings and rules C0 had to freeze are recorded in wire-contract.md under "Frozen by C0".
+
 ## B1 — account/API/website foundation
 
 - [ ] Select hosting/domain/OIDC provider and pin runtime/dependencies.

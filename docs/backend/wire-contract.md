@@ -118,3 +118,50 @@ Reject frames from the wrong direction/role; viewer cannot send snapshot/damage/
 Malformed/oversized traffic closes the connection after a bounded error; do not buffer for recovery.
 Transport Ping/Pong uses WebSocket control frames rather than JSON messages. Renewals/fences are
 relay/host operations, never a browser-written lease timestamp.
+
+## Frozen by C0
+
+C0 implemented this file and had to decide the spellings and the cases it left open. Those decisions
+are now part of the contract: the Swift DTOs in `crates/shared_session/src` and
+`crates/cloud_objects/src`, the TypeScript validators in `contracts/ts/wire.ts`, and the shared
+fixtures in `contracts/fixtures` all encode them. Changing any of them is a coordinated revision of
+all four, not an implementation detail.
+
+Enum spellings this file had named but not spelled:
+
+| Enum | Wire values |
+| --- | --- |
+| `key` | `enter`, `tab`, `backspace`, `delete`, `escape`, `arrow_up`, `arrow_down`, `arrow_left`, `arrow_right`, `home`, `end`, `page_up`, `page_down`, `f1`…`f12`, `a`…`z` |
+| `modifiers` | `shift`, `control`, `alt`, `meta` |
+| frame direction | `host_to_relay`, `viewer_to_relay`, `relay_to_host`, `relay_to_viewer` |
+
+Rules this file left implicit, now enforced by both implementations:
+
+- **A letter key requires a control, alt or meta chord.** An unmodified letter is text, and a
+  keyboard-layout guess is what "never a keyboard-layout guess" forbids.
+- **A rejected `input.ack` must carry a code.** A silent rejection is the failure mode the
+  acknowledgement exists to prevent.
+- **An explicit JSON `null` is refused for an optional field.** Optional fields are omitted; a null
+  is a peer that means something else.
+- **An empty grid parks an invisible cursor at row 0, column 0.** Any other cursor in an empty grid
+  is out of bounds.
+- **Styles are a non-empty table and index 0 is the default.** Every cell's style index must be
+  inside the table, so a renderer never falls back silently.
+- **The whole snapshot is capped at 2000 grid lines** across all blocks, not per grid.
+- **A snapshot is the only carrier of an epoch, a geometry or a mode change.** No damage operation
+  resizes, and none changes mode. Applying a snapshot replaces every field at once.
+- **A damage frame is applied atomically.** Operations check their own local preconditions;
+  cursor placement, viewport references, style indices and the line budget are checked once per
+  frame, so a frame may truncate a grid and move the cursor in the same message. A frame that fails
+  anywhere leaves the view unchanged.
+- **`seq` may be 0 in a snapshot and must be >= 1 in damage and input frames.** `epoch` and
+  `input_seq` are always >= 1.
+- **An export directory label may not be absolute, may not start with `~`, and may not contain a
+  `..` component.** Abbreviating a real path silently is the implicit full-path export the
+  contract forbids.
+- **The share capability is 43 base64url characters, and the final character's low two bits are
+  zero.** 32 bytes is 256 bits and 43 characters hold 258, so a larger final character is a second
+  spelling of the same secret. The server stores the SHA-256 of the one spelling.
+
+Where the two implementations and the fixtures live, and how to run both halves of the gate, is in
+`contracts/index.md`.

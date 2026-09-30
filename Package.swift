@@ -18,7 +18,7 @@ let package = Package(
             // Everything that is not the binary: documentation, scripts, harnesses, and the source
             // Info.plist, which Scripts/build-app.sh copies into the bundle itself.
             exclude: [
-                "Tests", "docs", "Scripts", "dist",
+                "Tests", "docs", "Scripts", "dist", "contracts",
                 "app/Info.plist", "app/SwiftTerm.entitlements", "app/assets",
                 "README.md", "READ_ME.md", "EDITOR.md", "index.md",
                 "AGENTS.md", "tinycast_architecture_and_rules.md", "warp_features.md",
@@ -34,6 +34,10 @@ let package = Package(
                 "app/src/terminal/model/index.md",
                 "app/src/terminal/view/index.md",
                 "crates/index.md",
+                "crates/shared_session/index.md",
+                "crates/shared_session/src/index.md",
+                "crates/cloud_objects/index.md",
+                "crates/cloud_objects/src/index.md",
                 "crates/warp_terminal/index.md",
                 "crates/warp_terminal/src/index.md",
                 "crates/warp_terminal/src/model/index.md",
@@ -45,6 +49,8 @@ let package = Package(
             ],
             sources: [
                 "app/src",
+                "crates/shared_session/src",
+                "crates/cloud_objects/src",
                 "crates/warp_terminal/src",
                 "crates/warpui_core/src",
                 "crates/git/src",

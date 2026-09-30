@@ -3,7 +3,20 @@
 One harness per guarded decision. Each compiles the shipped sources directly with `swiftc`, so a
 harness that stops compiling means a decision leaked out of a pure layer. There is no XCTest target.
 
-35 harnesses. The count is not a goal — it is what the decisions cost to hold down.
+36 harnesses. The count is not a goal — it is what the decisions cost to hold down.
+
+## The wire contract
+
+| Harness | Guards |
+| --- | --- |
+| `wire-contract-test.swift` | the frozen v1 wire format: canonical bytes and their digests, every boundary size, strict decoding, damage ordering, snapshot barriers, the input union, chunked assembly, export spans and labels, and the 54 shared cases both implementations must reject |
+
+`wire-contract-test` is the only harness that compiles a source list of its own: the transport
+DTOs, and nothing else. That is the C0 gate — a contract type that reached for `TerminalGrid`,
+`Block`, `NSTextView` or AppKit would stop it compiling. It also writes
+`contracts/fixtures/golden` and `contracts/fixtures/invalid.json` when run with
+`--write-fixtures`, and the Node half of the same gate replays those fixtures through the
+TypeScript validators. `Scripts/run-tests.sh` runs both halves.
 
 ## The emulator
 
