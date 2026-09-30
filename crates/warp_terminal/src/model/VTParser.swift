@@ -266,9 +266,13 @@ final class VTParser {
             privateMarker = 0
         }
 
+        // Unsupported private protocols must never execute their unrelated ANSI final byte.
+        if isPrivate, ![0x68, 0x6C, 0x6E, 0x63].contains(final) { return }
+        if isSecondary, final != 0x63 { return }
+
         func value(_ index: Int, _ fallback: Int) -> Int {
             guard parameters.indices.contains(index), let parameter = parameters[index] else { return fallback }
-            return parameter
+            return parameter == 0 ? fallback : parameter
         }
 
         switch final {
@@ -306,22 +310,29 @@ final class VTParser {
         case 0x58: grid.eraseCharacters(value(0, 1))                        // ECH
         case 0x5A: repeatCount(value(0, 1)) { grid.horizontalTabBack() }    // CBT
         case 0x60: grid.setCursorColumn(value(0, 1) - 1)                    // HPA
-        case 0x61: grid.setCursorRow(value(0, 1) - 1)                       // VPA
+        case 0x61: grid.moveCursor(columnDelta: value(0, 1))                // HPR
         case 0x62: repeatLastCharacter(value(0, 1))                         // REP
         case 0x63: reportDeviceAttributes(isSecondary: isSecondary)         // DA
-        case 0x64: grid.moveCursor(rowDelta: value(0, 1))                   // VPR
-        case 0x65: grid.moveCursor(rowDelta: -value(0, 1))                  // VPB
+        case 0x64: grid.setCursorRow(value(0, 1) - 1)                       // VPA
+        case 0x65: grid.moveCursor(rowDelta: value(0, 1))                   // VPR
         case 0x67: grid.clearTabStops(mode: value(0, 0))                    // TBC
         case 0x68: applyModes(parameters, enabled: true, isPrivate: isPrivate)
         case 0x6C: applyModes(parameters, enabled: false, isPrivate: isPrivate)
         case 0x6D: applySGR(raw)                                            // SGR
-        case 0x6E: reportDeviceStatus(value(0, 0))                          // DSR
+        case 0x6E: reportDeviceStatus(value(0, 0), isPrivate: isPrivate)    // DSR
         case 0x70 where intermediate == 0x21: softReset()                   // DECSTR
         case 0x71 where intermediate == 0x20:                              // DECSCUSR
             grid.setCursorStyle(TerminalCursorStyle(decscusr: value(0, 0)))
         case 0x72:                                                          // DECSTBM
             grid.setScrollRegion(top: value(0, 1) - 1, bottom: value(1, grid.size.rows) - 1)
         case 0x73: grid.saveCursor()                                        // SCOSC
+        case 0x74:
+            switch value(0, 0) {
+            case 14: onReply?("\u{1B}[4;\(grid.size.rows * grid.size.cellHeight);\(grid.size.columns * grid.size.cellWidth)t")
+            case 16: onReply?("\u{1B}[6;\(grid.size.cellHeight);\(grid.size.cellWidth)t")
+            case 18: onReply?("\u{1B}[8;\(grid.size.rows);\(grid.size.columns)t")
+            default: break
+            }
         case 0x75: grid.restoreCursor()                                     // SCORC
         default: break
         }
@@ -352,6 +363,9 @@ final class VTParser {
             switch mode {
             case 47, 1047, 1049: grid.setAlternateScreen(enabled)
             case 1048: enabled ? grid.saveCursor() : grid.restoreCursor()
+            case 6:
+                grid.modes.originMode = enabled
+                grid.setCursorPosition(row: 1, column: 1)
             default: grid.modes.apply(mode: mode, enabled: enabled, isPrivate: true)
             }
         }
@@ -377,13 +391,13 @@ final class VTParser {
         onReply?(isSecondary ? "\u{1B}[>0;0;0c" : "\u{1B}[?1;2c")
     }
 
-    private func reportDeviceStatus(_ request: Int) {
+    private func reportDeviceStatus(_ request: Int, isPrivate: Bool) {
         switch request {
         case 5:
             onReply?("\u{1B}[0n")
         case 6:
             let row = grid.modes.originMode ? grid.cursorRow - grid.scrollTop + 1 : grid.cursorRow + 1
-            onReply?("\u{1B}[\(row);\(grid.cursorColumn + 1)R")
+            onReply?("\u{1B}[\(isPrivate ? "?" : "")\(row);\(grid.cursorColumn + 1)R")
         default:
             break
         }

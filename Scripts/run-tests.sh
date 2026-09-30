@@ -36,6 +36,13 @@ if [ "${1:-}" = "--exec" ]; then
     shift
     name=$1
     shift
+    if [ "$name" = "terminal-renderer-test" ]; then
+        SOURCES+=(
+            crates/warpui_core/src/Theme.swift
+            app/src/terminal/view/TerminalFont.swift
+            app/src/terminal/view/TerminalRenderer.swift
+        )
+    fi
     : > "$BIN/$name.running"
     trap 'rm -f "$BIN/$name.running"' EXIT
     fail() {

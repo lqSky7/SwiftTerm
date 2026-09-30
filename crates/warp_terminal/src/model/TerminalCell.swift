@@ -21,6 +21,7 @@ extension TerminalCell {
     /// A grapheme's column span. The maximum over its scalars, because a base character plus
     /// a combining mark is still one column while a base plus a wide ideograph is two.
     static func displayWidth(of character: Character) -> Int {
+        if character.unicodeScalars.contains(where: { $0.value == 0xFE0F }) { return 2 }
         var span = 0
         for scalar in character.unicodeScalars {
             span = max(span, width(of: scalar))

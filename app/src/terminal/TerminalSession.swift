@@ -47,7 +47,7 @@ final class TerminalSession {
 
     /// Whether a full-screen program is running. It runs in the block that started it, so this is
     /// that block's output grid's own mode rather than a session-wide flag.
-    var isAlternateScreen: Bool { blockList.activeBlock?.isAlternateScreen ?? false }
+    var isAlternateScreen: Bool { activeGrid.isAlternateScreen }
 
     /// Whether a command is running. See `BlockList.isRunningCommand`.
     var isRunningCommand: Bool { blockList.isRunningCommand }
@@ -147,6 +147,7 @@ final class TerminalSession {
 
     deinit {
         readTask?.cancel()
+        pendingResize?.cancel()
     }
 
     /// A shell with no prompt markers is still a usable shell, so a filesystem failure while writing
@@ -204,19 +205,17 @@ final class TerminalSession {
     /// The *grid* is resized immediately, because the view has to be right on the frame it is drawn; only the
     /// signal to the program waits. Eighty milliseconds is below the threshold where a one-off resize feels late
     /// and above the gap between two mouse events in a drag.
-    private static let resizeSettleInterval: TimeInterval = 0.08
-    private var pendingResize: DispatchWorkItem?
+    private var pendingResize: Task<Void, Never>?
 
     /// Tell the kernel the new size, once it has settled.
     private func scheduleTerminalResize() {
         pendingResize?.cancel()
-        let work = DispatchWorkItem { [weak self] in
-            guard let self else { return }
+        pendingResize = Task { [weak self] in
+            do { try await Task.sleep(for: .milliseconds(80)) } catch { return }
+            guard let self, !hasStopped else { return }
             pendingResize = nil
             terminal.resize(to: blockList.size)
         }
-        pendingResize = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.resizeSettleInterval, execute: work)
     }
 
     /// Remember the command, and write it down.

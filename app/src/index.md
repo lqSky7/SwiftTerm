@@ -12,3 +12,5 @@
 `workspace/` composes `terminal/` rather than the other way round: a pane is a terminal, and a
 workspace is what decides how many of them there are and where they sit. Nothing in `terminal/`
 knows that a sidebar exists.
+
+TUI compatibility is owned by `terminal/`; no new application feature or cross-feature import.

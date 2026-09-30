@@ -15,3 +15,5 @@ bundled resource would go.
 
 There is no `assets/` yet: the shell integration scripts are embedded in the binary rather than
 shipped beside it, so the protocol and the parser that reads it can never disagree about a version.
+
+The TUI repair uses the existing native terminal surface; build/install leaves the app unopened.

@@ -8,6 +8,7 @@ code-review note.
 
 | File | Holds |
 | --- | --- |
+| `TerminalInput.swift` | pure xterm cursor/function/navigation sequence encoding with modifiers |
 | `TerminalGrid.swift` | the screen: cursor, scroll region, scrollback, erase/edit, alt screen, resize |
 | `TerminalLine.swift` | one row of cells, and whether the next row continues it |
 | `TerminalCell.swift` | one cell, plus the display width of a grapheme |
@@ -145,3 +146,12 @@ Two rules worth knowing before changing any of them:
 - **`CommandResolver` never guesses.** It answers `found`, `notFound` or `indeterminate`, and
   `notFound` is the only one that earns an underline. A two-valued check would have to guess about
   `$EDITOR` and `foo*`, and underlining a command that works teaches people to ignore the underline.
+
+
+TUI invariants: streamed graphemes occupy one lead cell; wide tails stay paired after edits.
+Alternate-screen resize crops/pads existing rows without reflow. Cursor saves are screen-local
+and do not restore mouse/paste modes. Unsupported private CSI sequences cannot execute ANSI
+commands; geometry and private cursor queries return the current grid dimensions/position.
+
+Inline completion reuses path sources; history + existing local paths rank first, including paths
+used by other commands. Local paths outrank history-only lines; shell escaping is preserved.

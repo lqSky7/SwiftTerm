@@ -45,6 +45,7 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
     private var appearanceMode: AppearanceMode = .system
     private var blinkTask: Task<Void, Never>?
     private var cursorBlinkOn = true
+    private var reportedFocus: Bool?
     /// The chips above the prompt, and what they were computed for.
     ///
     /// Recomputed when a new prompt begins, which is exactly when the directory and the branch may have
@@ -135,6 +136,10 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
         // The session is the view's model, so the view is what listens for its changes. Events and
         // exit are the coordinator's to observe; they are separate properties for exactly this.
         session.onUpdate = { [weak self] in self?.sessionDidUpdate() }
+        for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(windowFocusDidChange(_:)), name: name, object: nil)
+        }
         startBlinking()
     }
 
@@ -145,6 +150,7 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
 
     deinit {
         blinkTask?.cancel()
+        NotificationCenter.default.removeObserver(self)
     }
 
     // MARK: - Geometry
@@ -163,6 +169,8 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        reportedFocus = nil
+        reportFocus()
         updateGridForBounds()
         claimFocusIfActive()
         syncFirstResponder()
@@ -351,13 +359,36 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
     override var acceptsFirstResponder: Bool { true }
 
     override func becomeFirstResponder() -> Bool {
+        cursorBlinkOn = true
+        sendFocusReport(focused: window?.isKeyWindow == true)
         needsDisplay = true
         return true
     }
 
     override func resignFirstResponder() -> Bool {
+        sendFocusReport(focused: false)
         needsDisplay = true
         return true
+    }
+
+    @objc private func windowFocusDidChange(_ notification: Notification) {
+        guard notification.object as? NSWindow === window else { return }
+        reportFocus()
+        needsDisplay = true
+    }
+
+    private func reportFocus() {
+        sendFocusReport(focused: window?.isKeyWindow == true && window?.firstResponder === self)
+    }
+
+    private func sendFocusReport(focused: Bool) {
+        guard session.activeGrid.modes.focusReporting else {
+            reportedFocus = nil
+            return
+        }
+        guard reportedFocus != focused else { return }
+        reportedFocus = focused
+        session.write(focused ? "\u{1B}[I" : "\u{1B}[O")
     }
 
     // MARK: - Drawing
@@ -444,6 +475,7 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
         }
         needsDisplay = true
         syncFirstResponder()
+        reportFocus()
     }
 
     /// The one place that decides who has the keyboard.
@@ -560,7 +592,7 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
     private var shouldDrawGridCursor: Bool {
         // The keyboard first, then the session's own answer — which is harnessed, because every time this rule was
         // reasoned about rather than asserted it was wrong.
-        window?.firstResponder === self && session.showsShellCursor
+        window?.isKeyWindow == true && window?.firstResponder === self && session.showsShellCursor
     }
 
     /// Whether a prompt is showing that the editor can own: not a full-screen program, not a
@@ -608,12 +640,13 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
     /// Only offered with the caret at the end of the line, and that rule is the engine's rather than this
     /// view's: ghost text in the middle of a line is a suggestion about a buffer that does not exist yet.
     private func refreshGhostText() {
-        guard editorIsVisible else {
+        let selection = editor.selectedRange()
+        guard editorIsVisible, selection.length == 0, selection.location == editor.string.utf16.count else {
             editor.ghostText = nil
             return
         }
         editor.ghostText = completionEngine.ghostText(
-            for: editor.string, cursor: editor.selectedRange().location)
+            for: editor.string, cursor: editor.string.count)
     }
 
     /// Tab. Build the list from the buffer and show it, or answer `false` so the key goes on to the shell.
@@ -1315,6 +1348,7 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
     override func keyDown(with event: NSEvent) {
         if handleKeymapAction(event) { return }
         guard !handleNavigationKey(event) else { return }
+        guard !event.modifierFlags.contains(.command) else { return }
         // A keystroke that reaches the surface while a prompt is showing belongs in the editor —
         // it only lands here when focus drifted (a block was clicked, say), and writing it to the
         // pty instead is how the editor's buffer and the shell's line editor diverge. Warp's
@@ -1336,6 +1370,7 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
 
     private func send(_ bytes: [UInt8]) {
         guard !bytes.isEmpty else { return }
+        cursorBlinkOn = true
         session.write(bytes)
         scrollToBottom()
     }
@@ -1359,7 +1394,7 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
         if command, key == .end { scrollToBottom(); return true }
 
         // A full-screen program owns the page keys too: it wants them as input, not as scrolling.
-        guard !session.activeGrid.isAlternateScreen else { return false }
+        guard !session.isAlternateScreen, !session.isRunningCommand else { return false }
         if key == .pageUp { scroll(byLines: page); return true }
         if key == .pageDown { scroll(byLines: -page); return true }
         return false
@@ -1378,19 +1413,25 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
         if let key = event.specialKey {
             // Option plus a horizontal arrow is word movement, which the input system knows how to
             // express and `doCommand(by:)` turns into the shell's own binding.
-            if isOption, key == .leftArrow || key == .rightArrow { return nil }
-            return bytes(forSpecialKey: key)
+            if !session.isAlternateScreen, isOption, key == .leftArrow || key == .rightArrow { return nil }
+            let modifier = 1 + (flags.contains(.shift) ? 1 : 0) + (isOption ? 2 : 0) + (isControl ? 4 : 0)
+            return bytes(forSpecialKey: key, modifier: modifier)
         }
         // Tab, Return, Escape, Backspace and every Ctrl chord arrive as control characters rather
         // than as special keys, so they are read out of the characters the event carries.
         if let sequence = controlSequence(for: event, isOption: isOption) { return sequence }
         guard isControl, let scalar = event.charactersIgnoringModifiers?.unicodeScalars.first else {
+            if isOption, session.isAlternateScreen, let text = event.charactersIgnoringModifiers {
+                return [0x1B] + Array(text.utf8)
+            }
             return nil
         }
         switch scalar.value {
         case 0x40...0x5F: return [UInt8(scalar.value - 0x40)]    // @ A–Z [ \ ] ^ _
         case 0x61...0x7A: return [UInt8(scalar.value - 0x60)]    // a–z
-        case 0x3F: return [0x7F]                                 // Ctrl+? is backspace
+        case 0x20, 0x32: return [0x00]
+        case 0x33...0x37: return [UInt8(scalar.value - 0x33 + 0x1B)]
+        case 0x38, 0x3F: return [0x7F]                                 // Ctrl+? is backspace
         default: return nil
         }
     }
@@ -1409,44 +1450,38 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
         return [UInt8(value)]
     }
 
-    private func bytes(forSpecialKey key: NSEvent.SpecialKey) -> [UInt8]? {
+    private func bytes(forSpecialKey key: NSEvent.SpecialKey, modifier: Int) -> [UInt8]? {
         let application = session.activeGrid.modes.applicationCursorKeys
         switch key {
-        case .upArrow: return cursorSequence("A", application: application)
-        case .downArrow: return cursorSequence("B", application: application)
-        case .rightArrow: return cursorSequence("C", application: application)
-        case .leftArrow: return cursorSequence("D", application: application)
-        case .home, .begin: return cursorSequence("H", application: application)
-        case .end: return cursorSequence("F", application: application)
-        case .pageUp: return Array("\u{1B}[5~".utf8)
-        case .pageDown: return Array("\u{1B}[6~".utf8)
-        case .deleteForward: return Array("\u{1B}[3~".utf8)
-        case .insert: return Array("\u{1B}[2~".utf8)
+        case .upArrow: return TerminalInput.cursor("A", application: application, modifier: modifier)
+        case .downArrow: return TerminalInput.cursor("B", application: application, modifier: modifier)
+        case .rightArrow: return TerminalInput.cursor("C", application: application, modifier: modifier)
+        case .leftArrow: return TerminalInput.cursor("D", application: application, modifier: modifier)
+        case .home, .begin: return TerminalInput.cursor("H", application: application, modifier: modifier)
+        case .end: return TerminalInput.cursor("F", application: application, modifier: modifier)
+        case .pageUp: return TerminalInput.tilde(5, modifier: modifier)
+        case .pageDown: return TerminalInput.tilde(6, modifier: modifier)
+        case .deleteForward: return TerminalInput.tilde(3, modifier: modifier)
+        case .insert: return TerminalInput.tilde(2, modifier: modifier)
         case .delete, .backspace: return [0x7F]
         case .enter, .carriageReturn, .newline: return [0x0D]
         case .tab: return [0x09]
         case .backTab: return Array("\u{1B}[Z".utf8)
-        default: return functionKeyBytes(for: key)
+        default: return functionKeyBytes(for: key, modifier: modifier)
         }
     }
 
-    /// `DECCKM`: a full-screen program that asked for application cursor keys gets `SS3` rather than
-    /// `CSI`, and a program that checks for the wrong one never sees the arrow at all.
-    private func cursorSequence(_ final: String, application: Bool) -> [UInt8] {
-        Array((application ? "\u{1B}O" : "\u{1B}[").utf8) + Array(final.utf8)
-    }
-
-    private func functionKeyBytes(for key: NSEvent.SpecialKey) -> [UInt8]? {
+    private func functionKeyBytes(for key: NSEvent.SpecialKey, modifier: Int) -> [UInt8]? {
         let order: [NSEvent.SpecialKey] = [.f1, .f2, .f3, .f4, .f5, .f6, .f7, .f8, .f9, .f10, .f11, .f12]
         guard let index = order.firstIndex(of: key) else { return nil }
         let number = index + 1
         if number <= 4 {
             let finals = Array("PQRS".utf8)
-            return Array("\u{1B}O".utf8) + [finals[index]]
+            return TerminalInput.cursor(String(Unicode.Scalar(finals[index])), application: true, modifier: modifier)
         }
         let codes = [15, 17, 18, 19, 20, 21, 23, 24]
         guard number - 5 < codes.count else { return nil }
-        return Array("\u{1B}[\(codes[number - 5])~".utf8)
+        return TerminalInput.tilde(codes[number - 5], modifier: modifier)
     }
 
     /// The selectors the input system produces for keys this view does not translate itself. Only the

@@ -36,3 +36,11 @@ Since Phase 4b there is a third thing to know, and it is the one that changed:
   Nothing in this folder reacts to shell output to move focus, and that is deliberate: the defect
   `journal.md` records as "focus that moved under the user's hands" was the echo of a keystroke
   handing the keyboard to the editor mid-keystroke.
+
+TUI repair: glyphs are cached individually and painted at cell origins, including fallback fonts.
+Fullscreen cursors honor focus, blink and wide-cell spans. Raw navigation preserves xterm modifiers;
+focus notifications are emitted only when the program enables mode 1004. Offscreen render checks
+live in `Tests/terminal-renderer-test.swift`; they create no windows and do not launch the app.
+
+Inline ghost text now includes local paths and history/context ranking; the AppKit caret is
+checked in UTF-16 before the pure engine receives a Character count.

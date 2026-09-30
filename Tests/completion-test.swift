@@ -20,6 +20,7 @@ enum CompletionTest {
         pathNamesAreEscapedForTheShell(harness)
         theShellsOwnCommands(harness)
         ghostText(harness)
+        contextualGhostText(harness)
         ranking(harness)
 
         harness.finish()
@@ -257,6 +258,37 @@ enum CompletionTest {
         harness.equal(
             history.ghostText(for: "ls -l", cursor: 5), "a",
             "the newest entry wins, because that is the order history is kept in")
+    }
+
+    private static func contextualGhostText(_ harness: Harness) {
+        let local = makeEngine()
+        harness.equal(local.ghostText(for: "cat ma", cursor: 6), "in.swift", "inline files without history")
+        harness.equal(local.ghostText(for: "cd sr", cursor: 5), "c/", "inline directories without history")
+        harness.equal(local.ghostText(for: "cat src/ma", cursor: 10), "in.swift", "inline nested files")
+        harness.equal(local.ghostText(for: "cd Cal", cursor: 6), "ibre\\ Library/", "inline paths are escaped")
+        let reused = CompletionEngine(history: ["vim main.swift"], workingDirectory: "/work") { _ in
+            [DirectoryEntry(name: "main.txt", isDirectory: false), DirectoryEntry(name: "main.swift", isDirectory: false)]
+        }
+        harness.equal(reused.ghostText(for: "cat ma", cursor: 6), "in.swift",
+                      "a current file used by another historical command gets highest priority")
+        let shared = makeEngine(history: ["cat missing.swift", "cat main.swift --verbose"])
+        harness.equal(shared.ghostText(for: "cat m", cursor: 5), "ain.swift --verbose",
+                      "an existing path in history outranks newer missing history")
+        let fresh = makeEngine(history: ["cat missing.swift"])
+        harness.equal(fresh.ghostText(for: "cat m", cursor: 5), "ain.swift", "local-only beats history-only")
+        let directories = makeEngine(history: ["cd missing", "cd src"])
+        harness.equal(directories.ghostText(for: "cd s", cursor: 4), "rc", "history directories need no trailing slash")
+        let absent = makeEngine(history: ["cat old.swift"])
+        harness.equal(absent.ghostText(for: "cat ol", cursor: 6), "d.swift", "history remains a fallback")
+        var elsewhere = shared
+        elsewhere.workingDirectory = "/empty"
+        harness.equal(elsewhere.ghostText(for: "cat m", cursor: 5), "issing.swift", "ranking follows the current directory")
+        harness.equal(local.ghostText(for: "cat .h", cursor: 6), "idden", "hidden files require a leading dot")
+        harness.equal(local.ghostText(for: "cat h", cursor: 5), nil, "hidden files are not offered implicitly")
+        harness.equal(local.ghostText(for: "git --a", cursor: 7), "ll", "flags can complete inline")
+        harness.equal(local.ghostText(for: "gi", cursor: 2), "t", "commands can complete inline")
+        let spaced = makeEngine(history: ["cd Calibre\\ Library"])
+        harness.equal(spaced.ghostText(for: "cd Cal", cursor: 6), "ibre\\ Library", "escaped history and local paths overlap")
     }
 
     private static func ranking(_ harness: Harness) {

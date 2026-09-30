@@ -8,3 +8,6 @@ part that knows about this application.
 | `TerminalSession.swift` | one shell on one pty: spawns it, reads it, feeds the parser, and points the parser at the grid of whichever block is currently being written to |
 | `model/` | feature-level models — empty until a phase needs one |
 | `view/` | the renderer, the surface, the window, the coordinator |
+
+Fullscreen state is read from the active grid, including shells without integration hooks.
+PTY resize settling uses an owned cancellable Swift task.

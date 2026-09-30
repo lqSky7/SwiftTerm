@@ -90,6 +90,13 @@ enum TerminalSessionTest {
         let reported = await waitForText("LEN6", in: session)
         harness.expect(reported, "the terminal's cursor report reached the shell intact")
 
+        session.write("printf '\\033[?1049h'\n")
+        for _ in 0..<100 {
+            if session.activeGrid.isAlternateScreen { break }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        harness.expect(session.isAlternateScreen, "a shell without integration still enters fullscreen mode")
+        harness.expect(session.showsShellCursor, "a shell without integration retains its fullscreen cursor")
         session.stop()
     }
 

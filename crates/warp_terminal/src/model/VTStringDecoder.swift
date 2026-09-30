@@ -1,13 +1,6 @@
 import Foundation
 
-/// Turns a byte stream into characters without assuming chunk boundaries fall on them.
-///
-/// A read from a PTY can end mid-codepoint, so the bytes that do not yet form a scalar are held
-/// until the next read. Grapheme clustering is left to `String`: the scalars that arrive in one
-/// piece are appended to a `String` and read back out as `Character`s, which is what makes a
-/// combining mark join the letter before it. A sequence split across reads degrades to its
-/// pieces rather than being held hostage — a terminal that withholds the last character until
-/// more output arrives is worse than one that renders a torn emoji.
+// Incremental UTF-8 decoding; TerminalGrid joins graphemes across decoder calls and PTY chunks.
 struct VTStringDecoder {
     private var pending: [UInt8] = []
 

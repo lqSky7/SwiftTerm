@@ -10,3 +10,6 @@
 
 `run-tests.sh --exec <name>` is the worker half the runner re-enters itself with; it is not meant
 to be called by hand.
+
+Only `terminal-renderer-test` adds AppKit/CoreText view sources; all other harnesses preserve the
+pure-model compilation gate. The renderer harness paints memory bitmaps without opening a window.

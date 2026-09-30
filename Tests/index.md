@@ -9,6 +9,8 @@ harness that stops compiling means a decision leaked out of a pure layer. There 
 
 | Harness | Guards |
 | --- | --- |
+| `tui-compatibility-test.swift` | chunked emoji/CJK, fixed fullscreen resize, VT cursor/erase/edit rules, queries, modified keys |
+| `terminal-renderer-test.swift` | offscreen bitmap checks of cell alignment and fullscreen cursor focus/blink; no app launch |
 | `terminal-grid-test.swift` | wrapping, scrolling, the scrollback, wide glyphs, editing, resize and reflow, the alternate screen, line identity |
 | `vt-parser-test.swift` | the escape-sequence dispatch tables, the string states, SGR's two spellings of an extended colour, UTF-8 buffering, OSC 8 |
 | `shell-integration-test.swift` | the `OSC 133` prompt cycle that blocks are built on, in the order a real shell emits it |
@@ -74,3 +76,7 @@ harness that stops compiling means a decision leaked out of a pure layer. There 
 
 `HarnessSupport.swift` is shared by all of them and is not itself a harness — it is the assertion
 helper plus the read-only extensions the harnesses use to look at a grid.
+
+
+`completion-test` also checks inline local files, directories, escaped names, history/context
+priority across different commands, current-directory changes, and history-only fallback.

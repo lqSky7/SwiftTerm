@@ -662,20 +662,79 @@ struct CompletionEngine {
         return rank(candidates, query: word)
     }
 
-    /// The rest of the most recent history entry that starts with what has been typed.
-    ///
-    /// Only offered with the cursor at the end of the line: ghost text in the middle of a line is a
-    /// suggestion about a buffer that does not exist yet.
+    // Existing paths used in history win, then local paths, then history and command metadata.
     func ghostText(for buffer: String, cursor: Int) -> String? {
         guard cursor == buffer.count, !buffer.isEmpty else { return nil }
-        guard let match = history.first(where: { entry in
-            guard entry.hasPrefix(buffer) && entry.count > buffer.count else { return false }
+        let characters = Array(buffer)
+        let wordStart = startOfWord(in: characters, before: cursor)
+        let word = String(characters[wordStart..<cursor])
+        let before = String(characters[..<wordStart])
+        let command = wordStart > 0 ? firstWord(characters) : nil
+        let takesPaths = !word.hasPrefix("-") && (command.flatMap { signatures[$0]?.takesPaths } ?? true)
+        let matchingHistory = history.filter { entry in
+            guard entry.hasPrefix(buffer), entry.count > buffer.count else { return false }
             let parts = entry.split(separator: " ")
-            if parts.count >= 2 && parts[0] == parts[1] { return false }
-            return true
-        })
-        else { return nil }
-        return String(match.dropFirst(buffer.count))
+            return parts.count < 2 || parts[0] != parts[1]
+        }
+        if takesPaths, let match = matchingHistory.first(where: { entry in
+            let historical = Array(entry)
+            var end = wordStart
+            while end < historical.count {
+                if historical[end].isWhitespace && !Self.isEscaped(historical, at: end) { break }
+                end += 1
+            }
+            var path = String(historical[wordStart..<end])
+            if path.hasSuffix("/"), path.count > 1 { path.removeLast() }
+            return pathCandidates(prefix: path, command: command).contains { candidate in
+                var insertion = candidate.insertion ?? candidate.text
+                if insertion.hasSuffix("/"), insertion.count > 1 { insertion.removeLast() }
+                return insertion == path
+            }
+        }) {
+            return String(match.dropFirst(buffer.count))
+        }
+        if takesPaths {
+            let paths = rankPathsUsingHistory(rank(pathCandidates(prefix: word, command: command), query: word))
+            if let completion = paths.lazy.map({ before + ($0.insertion ?? $0.text) }).first(where: {
+                $0.hasPrefix(buffer) && $0.count > buffer.count
+            }) {
+                return String(completion.dropFirst(buffer.count))
+            }
+        }
+        if let match = matchingHistory.first { return String(match.dropFirst(buffer.count)) }
+        guard let candidate = candidates(for: buffer, cursor: cursor).first(where: {
+            guard $0.kind != .history else { return false }
+            let insertion = $0.insertion ?? $0.text
+            return insertion.hasPrefix(word) && insertion.count > word.count
+        }) else { return nil }
+        return String((candidate.insertion ?? candidate.text).dropFirst(word.count))
+    }
+
+    private func rankPathsUsingHistory(_ candidates: [CompletionCandidate]) -> [CompletionCandidate] {
+        let keys = Set(candidates.flatMap { [Self.pathKey($0.text), Self.pathKey($0.insertion ?? $0.text)] })
+        guard !keys.isEmpty else { return candidates }
+        var recency: [String: Int] = [:]
+        for (index, entry) in history.enumerated() {
+            guard keys.contains(where: { entry.contains($0) }) else { continue }
+            for token in ShellTokenizer.tokens(in: entry) {
+                let key = Self.pathKey(String(entry[token.range]))
+                if keys.contains(key), recency[key] == nil { recency[key] = index }
+            }
+        }
+        return candidates.enumerated().sorted { left, right in
+            let lhs = recency[Self.pathKey(left.element.insertion ?? left.element.text)]
+                ?? recency[Self.pathKey(left.element.text)] ?? Int.max
+            let rhs = recency[Self.pathKey(right.element.insertion ?? right.element.text)]
+                ?? recency[Self.pathKey(right.element.text)] ?? Int.max
+            return lhs == rhs ? left.offset < right.offset : lhs < rhs
+        }.map(\.element)
+    }
+
+    private static func pathKey(_ path: String) -> String {
+        var key = path.trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+        if key.hasSuffix("/"), key.count > 1 { key.removeLast() }
+        if key.hasPrefix("./") { key.removeFirst(2) }
+        return key
     }
 
     // MARK: - The sources

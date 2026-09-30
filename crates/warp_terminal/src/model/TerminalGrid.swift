@@ -128,7 +128,9 @@ final class TerminalGrid {
     }
 
     func moveCursor(rowDelta: Int = 0, columnDelta: Int = 0) {
-        cursorRow = min(max(cursorRow + rowDelta, 0), size.rows - 1)
+        let top = modes.originMode ? scrollTop : 0
+        let bottom = modes.originMode ? scrollBottom : size.rows - 1
+        cursorRow = min(max(cursorRow + rowDelta, top), bottom)
         cursorColumn = min(max(cursorColumn + columnDelta, 0), size.columns - 1)
         pen.pendingWrap = false
     }
@@ -139,7 +141,9 @@ final class TerminalGrid {
     }
 
     func setCursorRow(_ row: Int) {
-        cursorRow = min(max(row, 0), size.rows - 1)
+        let top = modes.originMode ? scrollTop : 0
+        let bottom = modes.originMode ? scrollBottom : size.rows - 1
+        cursorRow = min(max(top + row, top), bottom)
         pen.pendingWrap = false
     }
 
@@ -158,9 +162,9 @@ final class TerminalGrid {
         cursorRow = min(saved.row, size.rows - 1)
         cursorColumn = min(saved.column, size.columns - 1)
         pen = saved.pen
-        modes = saved.modes
+        modes.originMode = saved.modes.originMode
+        modes.automaticWrap = saved.modes.automaticWrap
         cursorStyle = saved.style
-        pen.pendingWrap = false
     }
 
     func setCursorStyle(_ style: TerminalCursorStyle) {
@@ -250,17 +254,18 @@ final class TerminalGrid {
     // MARK: - Printing
 
     func put(_ character: Character) {
+        if appendGrapheme(character) { return }
         let width = TerminalCell.displayWidth(of: character)
         if width == 0 {
-            appendCombining(character)
             return
         }
         if pen.pendingWrap {
             pen.pendingWrap = false
-            guard modes.automaticWrap else { return }
-            markWrapped(cursorRow)
-            carriageReturn()
-            lineFeed()
+            if modes.automaticWrap {
+                markWrapped(cursorRow)
+                carriageReturn()
+                lineFeed()
+            }
         }
         // A double-width glyph cannot straddle the right margin, so it wraps whole.
         if width == 2, cursorColumn + 1 >= size.columns {
@@ -292,15 +297,34 @@ final class TerminalGrid {
         screen[row].isWrapped = true
     }
 
-    /// Folds a combining mark into the cell it belongs to. At column zero there is nothing to
-    /// fold into, so it is dropped — the same thing xterm does.
-    private func appendCombining(_ character: Character) {
-        let column = pen.pendingWrap ? size.columns - 1 : cursorColumn - 1
-        guard column >= 0, screen[cursorRow].cells.indices.contains(column) else { return }
+    // PTY chunks can split a grapheme anywhere, including after a ZWJ or variation selector.
+    private func appendGrapheme(_ character: Character) -> Bool {
+        var column = pen.pendingWrap ? cursorColumn : cursorColumn - 1
+        guard column >= 0 else { return false }
+        if screen[cursorRow].cells[column].isContinuation { column -= 1 }
+        guard column >= 0 else { return false }
         var cell = screen[cursorRow].cells[column]
-        cell.text += String(character)
-        screen[cursorRow].cells[column] = cell
-        markRow(cursorRow)
+        guard !cell.text.isEmpty else { return false }
+        let combined = cell.text + String(character)
+        guard combined.count == 1, let grapheme = combined.first else { return false }
+        let width = TerminalCell.displayWidth(of: grapheme)
+        if width > cell.width {
+            setCell(row: cursorRow, column: column, cell: .blank)
+            cursorColumn = column
+            pen.pendingWrap = false
+            let currentPen = pen
+            pen.attributes = cell.attributes
+            pen.hyperlink = cell.hyperlink
+            put(grapheme)
+            let wrap = pen.pendingWrap
+            pen = currentPen
+            pen.pendingWrap = wrap
+        } else {
+            cell.text = combined
+            screen[cursorRow].cells[column] = cell
+            markRow(cursorRow)
+        }
+        return true
     }
 
     private func translated(_ character: Character) -> String {
@@ -317,14 +341,15 @@ final class TerminalGrid {
         pen.pendingWrap = true
     }
 
-    private func setCell(row: Int, column: Int, cell: TerminalCell) {        guard screen.indices.contains(row), screen[row].cells.indices.contains(column) else { return }
+    private func setCell(row: Int, column: Int, cell: TerminalCell) {
+        guard screen.indices.contains(row), screen[row].cells.indices.contains(column) else { return }
         // A wide glyph occupies two cells, so overwriting either half has to blank the other.
         // Without this a row keeps a stray half-glyph that no later output ever repairs.
         let existing = screen[row].cells[column]
         if existing.width == 2, screen[row].cells.indices.contains(column + 1) {
-            screen[row].cells[column + 1] = .blank
+            screen[row].cells[column + 1] = eraseCell
         } else if existing.isContinuation, column > 0 {
-            screen[row].cells[column - 1] = .blank
+            screen[row].cells[column - 1] = eraseCell
         }
         screen[row].cells[column] = cell
         markRow(row)
@@ -340,6 +365,7 @@ final class TerminalGrid {
 
     /// `ED`: 0 to end of screen, 1 to start, 2 everything, 3 everything plus history.
     func eraseInDisplay(mode: Int) {
+        pen.pendingWrap = false
         switch mode {
         case 1:
             eraseInLine(mode: 1)
@@ -358,17 +384,18 @@ final class TerminalGrid {
 
     /// `EL`: 0 to end of line, 1 to start, 2 the whole line.
     func eraseInLine(mode: Int) {
+        pen.pendingWrap = false
         let cells = screen[cursorRow].cells
         switch mode {
         case 1:
             for column in 0...min(cursorColumn, cells.count - 1) where cells.indices.contains(column) {
-                screen[cursorRow].cells[column] = eraseCell
+                setCell(row: cursorRow, column: column, cell: eraseCell)
             }
         case 2:
-            for column in cells.indices { screen[cursorRow].cells[column] = eraseCell }
+            for column in cells.indices { setCell(row: cursorRow, column: column, cell: eraseCell) }
         default:
             for column in cursorColumn..<cells.count where cells.indices.contains(column) {
-                screen[cursorRow].cells[column] = eraseCell
+                setCell(row: cursorRow, column: column, cell: eraseCell)
             }
         }
         screen[cursorRow].isWrapped = false
@@ -384,34 +411,55 @@ final class TerminalGrid {
 
     /// `ECH`: blanks cells in place, shifting nothing.
     func eraseCharacters(_ count: Int) {
+        pen.pendingWrap = false
         guard count > 0 else { return }
         let limit = min(cursorColumn + count, size.columns)
         guard cursorColumn < limit else { return }
-        for column in cursorColumn..<limit { screen[cursorRow].cells[column] = eraseCell }
+        for column in cursorColumn..<limit { setCell(row: cursorRow, column: column, cell: eraseCell) }
         markRow(cursorRow)
     }
 
     /// `ICH`: pushes the row right, off the end.
     func insertCharacters(_ count: Int) {
+        pen.pendingWrap = false
         guard count > 0, cursorColumn < size.columns else { return }
         let count = min(count, size.columns - cursorColumn)
         let blanks = Array(repeating: eraseCell, count: count)
         screen[cursorRow].cells.insert(contentsOf: blanks, at: cursorColumn)
         screen[cursorRow].cells.removeLast(count)
+        repairWideCells(row: cursorRow)
         markRow(cursorRow)
     }
 
     /// `DCH`: pulls the row left and pads with blanks at the margin.
     func deleteCharacters(_ count: Int) {
+        pen.pendingWrap = false
         guard count > 0, cursorColumn < size.columns else { return }
         let count = min(count, size.columns - cursorColumn)
         screen[cursorRow].cells.removeSubrange(cursorColumn..<(cursorColumn + count))
         screen[cursorRow].cells.append(contentsOf: Array(repeating: eraseCell, count: count))
+        repairWideCells(row: cursorRow)
         markRow(cursorRow)
+    }
+
+    private func repairWideCells(row: Int) {
+        for column in screen[row].cells.indices {
+            let cell = screen[row].cells[column]
+            if cell.isContinuation {
+                if column == 0 || screen[row].cells[column - 1].width != 2 {
+                    screen[row].cells[column] = eraseCell
+                }
+            } else if cell.width == 2 {
+                if column + 1 == screen[row].cells.count || !screen[row].cells[column + 1].isContinuation {
+                    screen[row].cells[column] = eraseCell
+                }
+            }
+        }
     }
 
     /// `IL`: opens blank lines at the cursor, inside the scroll region only.
     func insertLines(_ count: Int) {
+        pen.pendingWrap = false
         guard cursorRow >= scrollTop, cursorRow <= scrollBottom, count > 0 else { return }
         let count = min(count, scrollBottom - cursorRow + 1)
         screen.removeSubrange((scrollBottom - count + 1)...scrollBottom)
@@ -423,6 +471,7 @@ final class TerminalGrid {
 
     /// `DL`: removes lines at the cursor, inside the scroll region only.
     func deleteLines(_ count: Int) {
+        pen.pendingWrap = false
         guard cursorRow >= scrollTop, cursorRow <= scrollBottom, count > 0 else { return }
         let count = min(count, scrollBottom - cursorRow + 1)
         screen.removeSubrange(cursorRow..<(cursorRow + count))
@@ -488,8 +537,10 @@ final class TerminalGrid {
             savedPrimary = SavedScreen(
                 screen: screen, scrollback: scrollback, cursorRow: cursorRow,
                 cursorColumn: cursorColumn, pen: pen, scrollTop: scrollTop,
-                scrollBottom: scrollBottom, tabStops: tabStops)
+                scrollBottom: scrollBottom, tabStops: tabStops, savedCursor: savedCursor,
+                cursorStyle: cursorStyle)
             isAlternateScreen = true
+            savedCursor = nil
             screen = (0..<size.rows).map { _ in TerminalLine(columns: size.columns) }
             scrollback = []
             cursorRow = 0
@@ -509,6 +560,8 @@ final class TerminalGrid {
                 scrollTop = saved.scrollTop
                 scrollBottom = min(saved.scrollBottom, size.rows - 1)
                 tabStops = saved.tabStops
+                savedCursor = saved.savedCursor
+                cursorStyle = saved.cursorStyle
             } else {
                 screen = (0..<size.rows).map { _ in TerminalLine(columns: size.columns) }
                 cursorRow = 0
@@ -541,15 +594,26 @@ final class TerminalGrid {
         let rows = max(1, rows)
         guard columns != size.columns || rows != size.rows else { return }
 
-        let reflowed = Self.reflow(
-            scrollback: scrollback, screen: screen, columns: columns, rows: rows,
-            keepsHistory: !isAlternateScreen,
-            cursor: (scrollback.count + cursorRow, cursorColumn))
-        scrollback = reflowed.scrollback
-        screen = reflowed.screen
-        cursorRow = reflowed.cursorRow
-        cursorColumn = reflowed.cursorColumn
-        trimScrollback()
+        if isAlternateScreen {
+            screen = Array(screen.prefix(rows))
+            while screen.count < rows { screen.append(TerminalLine(columns: columns)) }
+            for row in screen.indices {
+                screen[row].resize(columns: columns)
+                screen[row].isWrapped = false
+                repairWideCells(row: row)
+            }
+            cursorRow = min(cursorRow, rows - 1)
+            cursorColumn = min(cursorColumn, columns - 1)
+        } else {
+            let reflowed = Self.reflow(
+                scrollback: scrollback, screen: screen, columns: columns, rows: rows,
+                cursor: (scrollback.count + cursorRow, cursorColumn))
+            scrollback = reflowed.scrollback
+            screen = reflowed.screen
+            cursorRow = reflowed.cursorRow
+            cursorColumn = reflowed.cursorColumn
+            trimScrollback()
+        }
 
         // The saved primary screen moves to the new shape too, or leaving a full-screen program after a
         // resize puts a screen of the old shape back, with every line the wrong width.
@@ -739,5 +803,7 @@ final class TerminalGrid {
         var scrollTop: Int
         var scrollBottom: Int
         var tabStops: Set<Int>
+        var savedCursor: SavedCursor?
+        var cursorStyle: TerminalCursorStyle
     }
 }

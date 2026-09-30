@@ -23,7 +23,7 @@ struct HoveredLink: Equatable, Sendable {
 
 @MainActor
 final class TerminalRenderer {
-    /// A stretch of one row that shares attributes and can be drawn as a single `CTLine`.
+    // Attribute spans paint cell backgrounds and underlines; glyphs use their own cell origins.
     private struct Run {
         var column: Int
         var columns: Int
@@ -33,7 +33,7 @@ final class TerminalRenderer {
 
     private struct CachedRow {
         var generation: UInt64
-        var line: CTLine
+        var glyphs: [(column: Int, line: CTLine)]
         var runs: [Run]
     }
 
@@ -77,8 +77,10 @@ final class TerminalRenderer {
     /// A new font or a new palette invalidates every cached line, because both are baked into the
     /// `CTLine`'s attributes rather than applied at draw time.
     func update(palette: TerminalPalette, font: TerminalFont) {
-        let changed = palette != self.palette || font.cellWidth != self.font.cellWidth
-            || font.cellHeight != self.font.cellHeight || font.base != self.font.base
+        let changed = palette != self.palette || font.base != self.font.base
+            || font.cellWidth != self.font.cellWidth || font.cellHeight != self.font.cellHeight
+            || font.baselineFromTop != self.font.baselineFromTop
+
         self.palette = palette
         self.font = font
         if changed { rowCache.removeAll() }
@@ -131,7 +133,9 @@ final class TerminalRenderer {
         context.fill(bounds)
 
         guard !session.isAlternateScreen else {
-            drawAlternateScreen(in: context, bounds: bounds, grid: session.activeGrid, hoveredLink: hoveredLink)
+            drawAlternateScreen(
+                in: context, bounds: bounds, grid: session.activeGrid, showsCursor: showsCursor,
+                markedText: markedText, blinkOn: cursorBlinkOn, hoveredLink: hoveredLink)
             return
         }
         drawBlocks(
@@ -491,8 +495,9 @@ final class TerminalRenderer {
             }
     }
     /// A full-screen program owns the screen: no blocks, no headers, no scrollback.
-    private func drawAlternateScreen(
-        in context: CGContext, bounds: CGRect, grid: TerminalGrid, hoveredLink: HoveredLink? = nil
+    func drawAlternateScreen(
+        in context: CGContext, bounds: CGRect, grid: TerminalGrid, showsCursor: Bool = true,
+        markedText: String? = nil, blinkOn: Bool = true, hoveredLink: HoveredLink? = nil
     ) {
         for screenRow in 0..<grid.size.rows {
             let row = grid.historyLineCount + screenRow
@@ -508,11 +513,12 @@ final class TerminalRenderer {
                 draw(linkUnderline: hoveredLink.colRange, originX: originX, originY: originY, in: context)
             }
         }
+        guard showsCursor else { return }
         drawCursor(
             in: context, grid: grid,
             originX: bounds.minX + contentInset + CGFloat(grid.cursorColumn) * font.cellWidth,
             originY: bounds.maxY - CGFloat(grid.cursorRow + 1) * font.cellHeight,
-            markedText: nil, blinkOn: true)
+            markedText: markedText, blinkOn: !grid.cursorStyle.blinks || blinkOn)
     }
 
     private func draw(linkUnderline range: Range<Int>, originX: CGFloat, originY: CGFloat, in context: CGContext) {
@@ -598,8 +604,12 @@ final class TerminalRenderer {
         for run in cached.runs { draw(background: run, originX: originX, originY: originY, in: context) }
         for run in cached.runs { draw(underline: run, originX: originX, originY: originY, in: context) }
         context.textMatrix = .identity
-        context.textPosition = CGPoint(x: originX, y: originY + font.cellHeight - font.baselineFromTop)
-        CTLineDraw(cached.line, context)
+        for glyph in cached.glyphs {
+            context.textPosition = CGPoint(
+                x: originX + CGFloat(glyph.column) * font.cellWidth,
+                y: originY + font.cellHeight - font.baselineFromTop)
+            CTLineDraw(glyph.line, context)
+        }
     }
 
     /// A row's `CTLine`, from the cache whenever the cache can prove it is still current.
@@ -641,15 +651,16 @@ final class TerminalRenderer {
     /// the palette are baked into the attributed string.
     private func build(line: TerminalLine, isCommand: Bool = false) -> CachedRow {
         let runs = Self.runs(for: line)
-        let attributed = NSMutableAttributedString()
-        for run in runs { attributed.append(attributedString(for: run, isCommand: isCommand)) }
-        return CachedRow(
-            generation: 0, line: CTLineCreateWithAttributedString(attributed), runs: runs)
+        let glyphs = line.cells.enumerated().compactMap { column, cell -> (column: Int, line: CTLine)? in
+            guard !cell.isContinuation, !cell.text.isEmpty, cell.text != " " else { return nil }
+            let run = Run(
+                column: column, columns: cell.width, attributes: cell.attributes, string: cell.text)
+            return (column, CTLineCreateWithAttributedString(attributedString(for: run, isCommand: isCommand)))
+        }
+        return CachedRow(generation: 0, glyphs: glyphs, runs: runs)
     }
 
-    /// Splits a row into stretches that can each be one `CTLine`. A glyph wider than one column is
-    /// always its own run: a monospace face does not promise a double-width advance, so placing it at
-    /// its own column is the only way to keep the columns after it lined up.
+    // Background and underline spans retain the full width, including continuation cells.
     private static func runs(for line: TerminalLine) -> [Run] {
         var runs: [Run] = []
         let cells = line.cells
@@ -952,15 +963,21 @@ final class TerminalRenderer {
         in context: CGContext, grid: TerminalGrid,
         originX: CGFloat, originY: CGFloat, markedText: String?, blinkOn: Bool
     ) {
-        guard grid.modes.cursorVisible, blinkOn else { return }
-        let cell = CGRect(x: originX, y: originY, width: font.cellWidth, height: font.cellHeight)
+        guard grid.modes.cursorVisible, !grid.cursorStyle.blinks || blinkOn else { return }
+        let line = grid.line(at: grid.cursorLine)
+        var column = grid.cursorColumn
+        if line?.cells[column].isContinuation == true { column = max(0, column - 1) }
+        let cellContent = line?.cells[column] ?? .blank
+        let originX = originX - CGFloat(grid.cursorColumn - column) * font.cellWidth
+        let width = CGFloat(max(1, cellContent.width)) * font.cellWidth
+        let cell = CGRect(x: originX, y: originY, width: width, height: font.cellHeight)
         let thickness = max(1, font.cellWidth / 8)
 
         context.setFillColor(palette.cursor.nsColor.cgColor)
         switch grid.cursorStyle.shape {
         case .block: context.fill(cell)
         case .bar: context.fill(CGRect(x: originX, y: originY, width: thickness, height: font.cellHeight))
-        case .underline: context.fill(CGRect(x: originX, y: originY, width: font.cellWidth, height: thickness))
+        case .underline: context.fill(CGRect(x: originX, y: originY, width: width, height: thickness))
         }
 
         if let markedText, !markedText.isEmpty {
@@ -969,11 +986,7 @@ final class TerminalRenderer {
         }
         // The character under a block cursor is repainted in the background colour, which is what
         // makes the cursor read as behind the text rather than over it.
-        guard grid.cursorStyle.shape == .block,
-            let line = grid.line(at: grid.cursorLine),
-            line.cells.indices.contains(grid.cursorColumn)
-        else { return }
-        let cellContent = line.cells[grid.cursorColumn]
+        guard grid.cursorStyle.shape == .block else { return }
         guard !cellContent.isContinuation, !cellContent.text.isEmpty, cellContent.text != " " else { return }
         let attributed = NSAttributedString(
             string: cellContent.text,

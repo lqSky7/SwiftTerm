@@ -9,3 +9,5 @@
 
 The split is Warp's: `model` is the emulator proper, `local_tty` is the operating system's part, and
 `shell`/`bootstrap` are the two halves of talking to the shell that is running inside it.
+
+`model/TerminalInput.swift` encodes xterm cursor/function/navigation sequences and modifiers.

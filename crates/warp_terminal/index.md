@@ -9,3 +9,5 @@ harness with no window server, which is what makes the escape-sequence behaviour
 | `src/local_tty/` | the pseudo-terminal and the process on it |
 | `src/shell/` | recognising which shell is about to be started |
 | `src/bootstrap/` | the shell integration scripts and how they get installed |
+
+TUI regressions are covered by `Tests/tui-compatibility-test.swift` and offscreen renderer checks.

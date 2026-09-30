@@ -17,3 +17,11 @@ then `docs/journal.md` for what has been tried and what broke. `docs/phases.md` 
 
 If your task is the command editor, `EDITOR.md` is written for you and is the only file you need to start
 from.
+
+Latest repair: TUI cell alignment, streamed Unicode, fullscreen resize and cursor/input protocols.
+See `docs/phase-tui-todo.md` for the repair checklist and human test targets.
+
+The same repair restores inline current-directory suggestions and prioritizes history + local paths.
+
+Verified build: 0.1.0 (101), installed at `/Applications/swiftTerm.app` without launching;
+31 harnesses pass. Phase notes remain local under the repository's existing `docs/` ignore rule.

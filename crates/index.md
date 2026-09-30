@@ -11,3 +11,5 @@ would fail if a UI framework ever leaked in.
 | `warpui_core/` | the shared UI framework: design tokens and the AppKit primitives SwiftUI cannot express |
 
 Nothing here may import another feature. That is the whole point of the folder.
+
+TUI repair stays in `warp_terminal`: grapheme cells, VT movement, fixed-coordinate fullscreen resize.
