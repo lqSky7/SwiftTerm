@@ -425,7 +425,7 @@ enum WireFrame: Equatable, Sendable {
     var directions: [WireDirection] {
         switch self {
         case .auth: [.hostToRelay, .viewerToRelay]
-        case .hello: [.relayToHost, .relayToViewer]
+        case .hello: [.hostToRelay, .relayToViewer]
         case .resume: [.viewerToRelay]
         case .resync: [.viewerToRelay, .relayToHost]
         case .outputAck: [.viewerToRelay, .relayToHost]

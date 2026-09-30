@@ -22,6 +22,11 @@ CREATE SCHEMA IF NOT EXISTS swiftterm;
 -- security applies to the owner too.
 GRANT CREATE ON SCHEMA swiftterm TO swiftterm_resolver;
 
+-- Reaching the schema at all is a separate privilege from reaching anything in it, and a role with
+-- neither sees "schema does not exist" rather than "permission denied", which is a confusing way to
+-- discover a missing grant. Stated here for every role that has business in this schema.
+GRANT USAGE ON SCHEMA swiftterm TO swiftterm_api, swiftterm_migrator, swiftterm_resolver;
+
 -- The managed `auth`, `storage` and `extensions` schemas are left exactly as Supabase configured
 -- them. Revoking their grants would break Supabase's own Auth flows, and this migration has no
 -- business reaching outside its own schema.
@@ -242,6 +247,58 @@ CREATE POLICY web_session_resolver ON swiftterm.web_sessions
 DROP POLICY IF EXISTS device_resolver ON swiftterm.devices;
 CREATE POLICY device_resolver ON swiftterm.devices
   FOR ALL TO swiftterm_resolver USING (true) WITH CHECK (true);
+
+-- MARK: - Grants (as the owner)
+--
+-- This section is why "the API cannot read a credential digest" is a property of the database
+-- rather than a promise in a code review. It is also the section whose absence is easiest to miss:
+-- without it every statement below still applies cleanly and the service simply fails at runtime
+-- with 42501, so the migration is verified by diffing the resulting ACLs and not by exit code.
+--
+-- The API is granted **column** privileges, never table privileges, on the three credential
+-- tables. `has_table_privilege('swiftterm_api', 'swiftterm.web_sessions', 'SELECT')` is therefore
+-- false while `SELECT id, expires_at FROM swiftterm.web_sessions` succeeds — the difference is
+-- exactly the columns a handler needs versus `token_sha256`, `csrf_sha256` and `auth_issuer`,
+-- which the API holds no privilege on at all.
+
+REVOKE ALL ON ALL TABLES IN SCHEMA swiftterm FROM PUBLIC, swiftterm_api, swiftterm_resolver;
+
+-- The resolver reads and writes the credential tables in full. That is safe because it is NOLOGIN:
+-- the only way to act as it is through the fixed-search-path functions handed to the API below,
+-- each of which does one narrow lookup.
+GRANT SELECT, INSERT, UPDATE ON swiftterm.app_users TO swiftterm_resolver;
+GRANT SELECT, INSERT, UPDATE ON swiftterm.web_sessions TO swiftterm_resolver;
+GRANT SELECT, INSERT, UPDATE ON swiftterm.devices TO swiftterm_resolver;
+
+-- The API reads the account row it is already authenticated as, and can revoke a session or a
+-- device but not create one directly — creation goes through the resolver functions so the digest
+-- is written in one place.
+GRANT SELECT (id, display_name, created_at, deactivated_at)
+  ON swiftterm.app_users TO swiftterm_api;
+GRANT SELECT (id, owner_id, created_at, expires_at, revoked_at)
+  ON swiftterm.web_sessions TO swiftterm_api;
+GRANT UPDATE (revoked_at) ON swiftterm.web_sessions TO swiftterm_api;
+GRANT SELECT (id, owner_id, label, client_request_id, created_at, revoked_at)
+  ON swiftterm.devices TO swiftterm_api;
+GRANT UPDATE (revoked_at) ON swiftterm.devices TO swiftterm_api;
+
+-- Live sessions are ordinary owner-scoped data: the API creates, reads, updates and ends its own
+-- rows, and the `live_owner` policy above is what stops it touching anyone else's.
+GRANT SELECT, INSERT, UPDATE, DELETE ON swiftterm.live_sessions TO swiftterm_api;
+GRANT SELECT, INSERT, UPDATE, DELETE ON swiftterm.live_session_grants TO swiftterm_api;
+
+-- Snapshots are immutable, and that is enforced by grant rather than by discipline: there is no
+-- UPDATE privilege on block_snapshots for any role but the owner, so editing an export has to
+-- create a new snapshot. The same rule applies to a share's grants.
+GRANT SELECT, INSERT, DELETE ON swiftterm.block_snapshots TO swiftterm_api;
+GRANT SELECT, INSERT, UPDATE, DELETE ON swiftterm.share_links TO swiftterm_api;
+GRANT SELECT, INSERT, DELETE ON swiftterm.share_grants TO swiftterm_api;
+
+-- The owner context function is called by every policy expression above, so it is granted to the
+-- API explicitly and revoked from PUBLIC. The resolver is deliberately not granted it: the three
+-- resolver policies are `true`, so a resolver-owned body never evaluates an owner comparison.
+REVOKE ALL ON FUNCTION swiftterm.request_user_id() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION swiftterm.request_user_id() TO swiftterm_api;
 
 -- MARK: - Credential resolution, created as the resolver
 --

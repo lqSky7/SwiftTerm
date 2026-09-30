@@ -183,16 +183,27 @@ the direct `db.<ref>.supabase.co` host is IPv6-only and unreachable from this ne
 - [ ] Build website sign-in/download pages using same API/session.
 - [ ] Restore database backup and exercise migration recovery.
 
+## B2A — backend relay and control plane (implemented)
+
+- [x] Session idempotency, immutable owner/device/pane association and open-stream limits.
+- [x] Snapshot barriers, ordered replay, bounded ring/outbound queues and global admission budget.
+- [x] `viewer.count` notification pauses native encoding at zero viewers; no terminal data in DB.
+- [x] Relaying malformed data cannot allocate beyond admission limits.
+- [x] Slow viewers cannot block host; disconnect/resync policy and incomplete snapshots tested.
+- [x] Fake clock/socket tests: reconnect, stale publisher, lost lease renewal, end/revoke and DB outage.
+- [x] Gate: viewer-only relay. B3 input frames rejected until B3A is complete.
+- [ ] User acceptance of the deployed relay.
+
 ## B2 — selected-pane viewer
 
 - [ ] Allocate stable stream pane UUIDs; do not reuse local numeric IDs across installs.
 - [ ] Capture immutable bounded model state with watermark.
 - [ ] Encode dirty-row/block deltas and alternate/size snapshot barriers.
 - [ ] Keep capture/transport off PTY/parser path; allocate nothing while off.
-- [ ] Implement publisher lease/epoch and relay ticket admission.
+- [x] Implement publisher lease/epoch and relay ticket admission. *(B2A: the relay half. The native publisher is B2B.)*
 - [ ] Implement browser canvas + escaped block/editor rendering.
 - [ ] Verify snapshot/delta parity for nano/tmux/wide text/IME/draft/collapse.
-- [ ] Test replay gaps, interrupted snapshots, slow viewers and host sleep.
+- [x] Test replay gaps, interrupted snapshots, slow viewers and host sleep. *(B2A: relay-side. Host sleep is B2B.)*
 - [ ] End streams and revoke leases on pane close, shell exit, account logout and app shutdown.
 - [ ] Measure native CPU/RSS/network with zero/one/multiple viewers.
 

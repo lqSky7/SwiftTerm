@@ -11,7 +11,7 @@
     "start": "node src/http/main.ts",
     "migrate": "node src/db/migrate.ts",
     "provision-roles": "node scripts/provision-roles.ts",
-    "test": "node --test --test-force-exit test/",
+    "test": "node --test --test-force-exit --test-timeout=30000 test/",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

@@ -1170,7 +1170,7 @@ export function validateShareSnapshot(value: unknown): WireShareSnapshot {
  * no-op: the direction check is what stops one role writing on another's behalf. */
 export const FRAME_DIRECTIONS: Record<WireFrameType, readonly Direction[]> = {
   auth: ["host_to_relay", "viewer_to_relay"],
-  hello: ["relay_to_host", "relay_to_viewer"],
+  hello: ["host_to_relay", "relay_to_viewer"],
   resume: ["viewer_to_relay"],
   resync: ["viewer_to_relay", "relay_to_host"],
   "output.ack": ["viewer_to_relay", "relay_to_host"],

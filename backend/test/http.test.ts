@@ -22,8 +22,10 @@ import { loadConfig } from "../src/config.ts";
 import { createDatabase, type Database } from "../src/db/pool.ts";
 import { createWebSession, provisionAppUser } from "../src/db/resolvers.ts";
 import { sslConfig } from "../src/db/ssl.ts";
-import { buildRoutes } from "../src/http/routes.ts";
+import { buildRoutes, type RelayControl } from "../src/http/routes.ts";
 import { createHttpServer } from "../src/http/server.ts";
+import { SessionRegistry } from "../src/shared_session/sessions.ts";
+import { TicketStore } from "../src/shared_session/tickets.ts";
 
 const { Client } = pg;
 
@@ -36,9 +38,16 @@ const verifier = {
   verify: () => Promise.reject(new Error("the verifier is not used by these tests")),
 } as unknown as IdentityVerifier;
 
+// The live routes are not exercised here — `live.test.ts` owns them — but the router needs a relay.
+const relay: RelayControl = {
+  registry: new SessionRegistry(),
+  tickets: new TicketStore(),
+  closeSession: () => {},
+};
+
 const server = createHttpServer({
   config,
-  routes: buildRoutes({ config, db, verifier, limiter: new FailureRateLimiter(1000, 1000) }),
+  routes: buildRoutes({ config, db, verifier, limiter: new FailureRateLimiter(1000, 1000), relay }),
   onError: () => {},
 });
 

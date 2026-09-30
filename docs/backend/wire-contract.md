@@ -181,3 +181,25 @@ Where the two implementations and the fixtures live, and how to run both halves 
 
 No schema version or wire field changes. These corrections close validation holes in the frozen v1
 rules. Helpers are not an authenticated streaming service; B1/B2/B3 remain unimplemented.
+
+## B2A correction: the `hello` direction
+
+C0 froze `hello` as `relay_to_host` / `relay_to_viewer`. That is wrong, and B2A is where it showed:
+`hello` carries `mode`, `columns` and `rows`, which are the **host's** terminal geometry. A relay has
+never seen a terminal and cannot fill them, so a relay-originated hello could only ever be a guess.
+
+It now travels `host_to_relay` / `relay_to_viewer`, which is what protocol.md describes: the host
+sends it as the head of the stream and the relay forwards it verbatim. Three places changed together
+— `crates/shared_session/src/WireFrames.swift`, `contracts/ts/wire.ts` and the shared invalid
+fixtures — and both halves of the C0 gate were re-run (301 Swift checks, 94 TypeScript checks).
+
+Two consequences the relay relies on:
+
+- **The relay originates exactly one frame, `viewer.count`**, and it travels `relay_to_host`. That is
+  how the host learns to stop encoding at zero viewers.
+- **A viewer joining a live stream is handed the retained `hello`**, because it is the only frame
+  carrying the epoch and geometry the viewer needs before it can ask to resume. If the ring has
+  evicted it, the viewer waits for a snapshot rather than being shown a mid-stream tail.
+
+No other direction changed. The `auth` frame is still the only one a socket may send before it has
+presented a ticket.

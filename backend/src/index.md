@@ -5,6 +5,7 @@
 | `config.ts` | startup configuration: validated once, and it fails rather than defaulting |
 | `db/` | the pool, the transaction discipline and the credential resolvers |
 | `auth/` | OIDC verification, sessions, CSRF, device registration |
+| `shared_session/` | the relay: tickets, the session registry, the WebSocket endpoint and the live control plane |
 | `http/` | the server, the routes and the entrypoint |
 
 ## Configuration fails closed
@@ -19,7 +20,7 @@ JWKS that does not live under the issuer, and a session lifetime over 24 hours.
 
 ## Status
 
-B1A is implemented on the service side: 36 `node:test` checks pass against the live database,
-covering the role boundaries, row-level security, credential resolution, and the HTTP surface
-including both halves of the CSRF rule. The remaining B1A items are the rollback policy and the
-backup/restore drill; see `../../docs/backend/todo.md`.
+B1A and B2A are implemented on the service side, verified against the live database: the role
+boundaries, row-level security, credential resolution, both halves of the CSRF rule, the live
+control plane and the relay's socket rules. B2B (the native publisher) and B2C (the browser viewer)
+are next; see `../../docs/backend/todo.md`.

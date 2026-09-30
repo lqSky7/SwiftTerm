@@ -1,387 +1,374 @@
 /**
- * Relay session registry tests.
+ * The relay session registry.
  *
- * The clock is injected, so the replay window and the publisher lease are exercised by advancing
- * time rather than by sleeping. Every limit is tested at its boundary — one below the cap is
- * admitted, at the cap is refused — because an off-by-one in an admission check is the difference
- * between a limit and a suggestion.
+ * What this file covers is what is genuinely process-local: the replay ring, the viewer cap, the
+ * byte budgets, the lease staleness and the fact that an ended session stays ended. The admission
+ * limits that used to live here — one stream per pane, the per-account cap, request idempotency —
+ * now live in `swiftterm.create_live_session` and are covered against the real database in
+ * `live.test.ts`, because they have to hold across relay instances and a copy in memory would be
+ * wrong after a restart.
+ *
+ * The clock is injected everywhere, so the replay window and the lease expiry are exercised by
+ * advancing time rather than by sleeping for thirty seconds.
  */
 
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { describe, it } from "node:test";
 
 import {
   DEFAULT_LIMITS,
-  RelaySession,
   SessionRegistry,
   type OpenRequest,
   type SessionLimits,
 } from "../src/shared_session/sessions.ts";
 
-function clock(start = 1_700_000_000_000): { now: () => number; advance: (ms: number) => void } {
-  let value = start;
-  return {
-    now: () => value,
-    advance: (ms) => {
-      value += ms;
-    },
-  };
+function registry(
+  overrides: Partial<SessionLimits> = {},
+  now: () => number = () => 1_000,
+): SessionRegistry {
+  return new SessionRegistry({ ...DEFAULT_LIMITS, ...overrides }, now);
 }
 
 function request(overrides: Partial<OpenRequest> = {}): OpenRequest {
   return {
+    sessionId: randomUUID(),
     ownerId: "owner-a",
-    deviceId: "device-a",
-    localPaneId: "pane-a",
-    clientRequestId: crypto.randomUUID(),
-    requestDigest: "digest-1",
+    deviceId: "device-1",
+    localPaneId: randomUUID(),
+    publisherEpoch: 0,
     ...overrides,
   };
 }
 
-function registry(overrides: Partial<SessionLimits> = {}) {
-  const time = clock();
-  return {
-    time,
-    store: new SessionRegistry({ ...DEFAULT_LIMITS, ...overrides }, time.now),
-  };
+/** Open a session that is known to succeed, so the tests can work with the session itself. */
+function opened(store: SessionRegistry, overrides: Partial<OpenRequest> = {}) {
+  const result = store.open(request(overrides));
+  assert.equal(result.ok, true);
+  if (!result.ok) throw new Error("unreachable");
+  return result.session;
 }
 
-describe("opening a stream", () => {
-  it("creates a session at epoch 1", () => {
-    const { store } = registry();
-    const result = store.open(request());
-    assert.equal(result.ok, true);
-    if (!result.ok) return;
-    assert.equal(result.created, true);
-    assert.equal(result.session.epoch, 1);
-    assert.equal(result.session.ended, false);
-    assert.equal(result.session.viewerCount, 0);
+describe("opening", () => {
+  it("registers a session under its durable id", () => {
+    const store = registry();
+    const sessionId = randomUUID();
+    const session = opened(store, { sessionId });
+    assert.equal(session.id, sessionId);
+    assert.equal(store.get(sessionId), session);
   });
 
-  it("returns the same session for an identical retry", () => {
-    const { store } = registry();
-    const open = request();
-    const first = store.open(open);
-    const second = store.open(open);
-
-    assert.equal(first.ok, true);
+  it("is idempotent on the session id", () => {
+    const store = registry();
+    const sessionId = randomUUID();
+    const first = opened(store, { sessionId });
+    const second = store.open(request({ sessionId }));
     assert.equal(second.ok, true);
-    if (!first.ok || !second.ok) return;
-    assert.equal(second.created, false, "an identical retry must not open a second stream");
-    assert.equal(second.session.id, first.session.id);
+    if (!second.ok) return;
+    assert.equal(second.created, false, "a second registration must not create a second session");
+    assert.equal(second.session, first);
     assert.equal(store.size, 1);
   });
 
-  it("refuses a reused request id with a changed payload", () => {
-    const { store } = registry();
-    const open = request();
-    store.open(open);
-    const changed = store.open({ ...open, requestDigest: "digest-2" });
+  it("adopts a newer epoch but never goes backwards", () => {
+    const store = registry();
+    const sessionId = randomUUID();
+    const session = opened(store, { sessionId, publisherEpoch: 0 });
+    assert.equal(session.epoch, 0);
 
-    assert.equal(changed.ok, false);
-    if (changed.ok) return;
-    assert.equal(changed.reason, "request_conflict");
+    store.open(request({ sessionId, publisherEpoch: 4 }));
+    assert.equal(session.epoch, 4, "the database is the authority on the epoch");
+
+    // A stale registration must not re-admit a generation the database has already fenced out.
+    store.open(request({ sessionId, publisherEpoch: 2 }));
+    assert.equal(session.epoch, 4);
   });
 
-  it("refuses a second stream for the same pane", () => {
-    const { store } = registry();
-    store.open(request({ deviceId: "d1", localPaneId: "p1" }));
-    const again = store.open(request({ deviceId: "d1", localPaneId: "p1" }));
-
-    assert.equal(again.ok, false);
-    if (again.ok) return;
-    assert.equal(again.reason, "pane_already_shared");
-  });
-
-  it("allows the same pane id on a different device", () => {
-    const { store } = registry();
-    store.open(request({ deviceId: "d1", localPaneId: "p1" }));
-    const other = store.open(request({ deviceId: "d2", localPaneId: "p1" }));
-    assert.equal(other.ok, true);
-  });
-
-  it("refuses the sixth stream for one account, and admits the fifth", () => {
-    const { store } = registry();
-    for (let index = 0; index < DEFAULT_LIMITS.maxStreamsPerAccount; index += 1) {
-      const result = store.open(request({ localPaneId: `pane-${index}` }));
-      assert.equal(result.ok, true, `stream ${index + 1} should be admitted`);
-    }
-    const overflow = store.open(request({ localPaneId: "pane-overflow" }));
-    assert.equal(overflow.ok, false);
-    if (overflow.ok) return;
-    assert.equal(overflow.reason, "account_stream_limit");
-  });
-
-  it("counts accounts separately", () => {
-    const { store } = registry({ maxStreamsPerAccount: 1 });
-    // Distinct panes on purpose: one stream per pane is a separate rule, and a shared pane would
-    // trip it before the account cap was ever consulted.
-    assert.equal(store.open(request({ ownerId: "a", localPaneId: "pane-a" })).ok, true);
-    assert.equal(
-      store.open(request({ ownerId: "b", localPaneId: "pane-b" })).ok,
-      true,
-      "another account has its own cap",
-    );
-    assert.equal(store.open(request({ ownerId: "a", localPaneId: "pane-a2" })).ok, false);
-  });
-
-  it("refuses past the per-process publisher cap", () => {
-    const { store } = registry({ maxPublishersPerProcess: 3 });
-    for (let index = 0; index < 3; index += 1) {
-      // One pane each: sharing a pane would hit the per-pane rule first and the process cap would
-      // never be exercised.
-      assert.equal(store.open(request({ ownerId: `o${index}`, localPaneId: `pane-${index}` })).ok, true);
-    }
-    const overflow = store.open(request({ ownerId: "o9", localPaneId: "pane-9" }));
+  it("refuses past the process publisher budget", () => {
+    const store = registry({ maxPublishersPerProcess: 2 });
+    assert.equal(store.open(request({ sessionId: randomUUID() })).ok, true);
+    assert.equal(store.open(request({ sessionId: randomUUID() })).ok, true);
+    const overflow = store.open(request({ sessionId: randomUUID() }));
     assert.equal(overflow.ok, false);
     if (overflow.ok) return;
     assert.equal(overflow.reason, "process_publisher_limit");
   });
-});
 
-describe("ending a stream", () => {
-  it("frees the account's stream budget", () => {
-    const { store } = registry({ maxStreamsPerAccount: 1 });
-    const first = store.open(request());
-    assert.equal(first.ok, true);
-    if (!first.ok) return;
+  it("frees a slot when a session ends", () => {
+    const store = registry({ maxPublishersPerProcess: 1 });
+    const sessionId = randomUUID();
+    assert.equal(store.open(request({ sessionId })).ok, true);
+    assert.equal(store.open(request({ sessionId: randomUUID() })).ok, false);
 
-    assert.equal(store.end(first.session.id), true);
-    assert.equal(store.size, 0);
-    assert.equal(store.open(request()).ok, true, "the freed slot is usable again");
-  });
-
-  it("stays ended: no viewers, no frames", () => {
-    const { store } = registry();
-    const opened = store.open(request());
-    assert.equal(opened.ok, true);
-    if (!opened.ok) return;
-    const session = opened.session;
-    session.end();
-
-    assert.equal(session.ended, true);
-    assert.notEqual(session.endedAt, null);
-    assert.deepEqual(session.admitViewer("v1"), { ok: false, reason: "session_ended" });
-    assert.equal(session.publish(10), null, "an ended session emits nothing");
-    assert.equal(session.end(), undefined, "ending twice is safe");
+    store.end(sessionId);
+    assert.equal(store.open(request({ sessionId: randomUUID() })).ok, true);
   });
 });
 
 describe("viewers", () => {
-  it("admits up to the cap and refuses past it", () => {
-    const { store } = registry({ maxViewersPerStream: 2 });
-    const opened = store.open(request());
-    assert.equal(opened.ok, true);
-    if (!opened.ok) return;
-    const session = opened.session;
-
+  it("refuses before adding, so the set never exceeds the cap", () => {
+    const store = registry({ maxViewersPerStream: 1 });
+    const session = opened(store);
     assert.equal(session.admitViewer("v1").ok, true);
-    assert.equal(session.admitViewer("v2").ok, true);
-    const third = session.admitViewer("v3");
-    assert.equal(third.ok, false);
-    if (third.ok) return;
-    assert.equal(third.reason, "viewer_limit");
-    assert.equal(session.viewerCount, 2, "a refused viewer is never added");
+    const refused = session.admitViewer("v2");
+    assert.equal(refused.ok, false);
+    if (refused.ok) return;
+    assert.equal(refused.reason, "viewer_limit");
+    assert.equal(session.viewerCount, 1, "the refused viewer was never added");
   });
 
-  it("reports the count falling when a viewer leaves, which is what pauses encoding", () => {
-    const { store } = registry();
-    const opened = store.open(request());
-    assert.equal(opened.ok, true);
-    if (!opened.ok) return;
-    const session = opened.session;
-
+  it("reports the count as viewers come and go", () => {
+    const store = registry();
+    const session = opened(store);
     session.admitViewer("v1");
     session.admitViewer("v2");
     assert.equal(session.viewerCount, 2);
-    session.removeViewer("v1");
-    session.removeViewer("v2");
-    assert.equal(session.viewerCount, 0, "zero viewers is the signal to stop encoding");
+    assert.equal(session.removeViewer("v1"), true);
+    assert.equal(session.removeViewer("v1"), false, "removing twice is not a second removal");
+    assert.equal(session.viewerCount, 1);
   });
 
-  it("drops a slow viewer rather than buffering for it without limit", () => {
-    const { store } = registry({ maxPendingBytesPerSocket: 100 });
-    const opened = store.open(request());
-    assert.equal(opened.ok, true);
-    if (!opened.ok) return;
-    const session = opened.session;
-    session.admitViewer("slow");
-
-    assert.equal(session.queueFor("slow", 60), true);
-    assert.equal(session.queueFor("slow", 30), true);
-    // The next frame would exceed the socket's budget, so the viewer is dropped instead of being
-    // allowed to grow — a slow viewer must never stall the host.
-    assert.equal(session.queueFor("slow", 30), false);
-    assert.equal(session.viewerCount, 0);
-  });
-
-  it("frees a viewer's budget when it acknowledges", () => {
-    const { store } = registry({ maxPendingBytesPerSocket: 100 });
-    const opened = store.open(request());
-    assert.equal(opened.ok, true);
-    if (!opened.ok) return;
-    const session = opened.session;
-    session.admitViewer("v1");
-
-    session.queueFor("v1", 90);
-    session.acknowledge("v1", 90);
-    assert.equal(session.queueFor("v1", 90), true, "acknowledged bytes are no longer pending");
+  it("refuses a viewer on an ended session", () => {
+    const store = registry();
+    const session = opened(store);
+    session.end();
+    const refused = session.admitViewer("v1");
+    assert.equal(refused.ok, false);
+    if (refused.ok) return;
+    assert.equal(refused.reason, "session_ended");
   });
 });
 
-describe("frames and replay", () => {
-  it("numbers frames from 1 and reports the last seq", () => {
-    const { store } = registry();
-    const opened = store.open(request());
-    assert.equal(opened.ok, true);
-    if (!opened.ok) return;
-    const session = opened.session;
-
-    assert.equal(session.lastSeq, 0);
-    assert.equal(session.publish(10)?.seq, 1);
-    assert.equal(session.publish(10)?.seq, 2);
+describe("the replay ring", () => {
+  it("records a frame at the seq the publisher gave it", () => {
+    const store = registry();
+    const session = opened(store);
+    assert.equal(session.publish(1, 10, "one"), true);
+    assert.equal(session.publish(2, 10, "two"), true);
     assert.equal(session.lastSeq, 2);
+    assert.equal(session.replayBytes, 20);
   });
 
-  it("replays only what a viewer has not seen", () => {
-    const { store } = registry();
-    const opened = store.open(request());
-    assert.equal(opened.ok, true);
-    if (!opened.ok) return;
-    const session = opened.session;
-    for (let index = 0; index < 5; index += 1) session.publish(10);
-
-    const missed = session.replayFrom(2);
-    assert.notEqual(missed, null);
-    assert.deepEqual(missed?.map((frame) => frame.seq), [3, 4, 5]);
-    assert.deepEqual(session.replayFrom(5), [], "a viewer that is current has nothing to replay");
+  it("lets a snapshot's frames share one seq", () => {
+    const store = registry();
+    const session = opened(store);
+    // A snapshot's begin, its chunks and its end all belong to the position the begin established.
+    assert.equal(session.publish(0, 10, "hello"), true);
+    assert.equal(session.publish(1, 10, "begin"), true);
+    assert.equal(session.publish(1, 10, "chunk"), true);
+    assert.equal(session.publish(1, 10, "end"), true);
+    assert.equal(session.lastSeq, 1);
   });
 
-  it("asks for a snapshot when the gap has already been evicted", () => {
-    const { store } = registry({ replayBytesPerSession: 30 });
-    const opened = store.open(request());
-    assert.equal(opened.ok, true);
-    if (!opened.ok) return;
-    const session = opened.session;
-    for (let index = 0; index < 6; index += 1) session.publish(10);
+  it("refuses a seq that went backwards", () => {
+    const store = registry();
+    const session = opened(store);
+    session.publish(5, 10, "five");
+    assert.equal(session.publish(4, 10, "four"), false, "replaying it would deliver out of order");
+    assert.equal(session.lastSeq, 5);
+  });
 
-    // seq 1 is long gone, so a viewer at 0 cannot be caught up by replay and must resync.
+  it("refuses an oversized frame before storing it", () => {
+    const store = registry({ replayBytesPerSession: 100 });
+    const session = opened(store);
+    assert.equal(session.publish(1, 101, "too big"), false);
+    assert.equal(session.replayBytes, 0, "nothing was copied, so there is nothing to evict");
+  });
+
+  it("evicts by bytes once the ring is over budget", () => {
+    const store = registry({ replayBytesPerSession: 30 });
+    const session = opened(store);
+    for (let seq = 1; seq <= 4; seq += 1) session.publish(seq, 10, `frame-${seq}`);
+    assert.equal(session.replayBytes, 30, "trimmed to the budget rather than held above it");
+  });
+
+  it("evicts by age against the injected clock", () => {
+    let clock = 1_000;
+    const store = registry({ replayWindowMs: 30_000, replayBytesPerSession: 1_000 }, () => clock);
+    const session = opened(store);
+    session.publish(1, 10, "old");
+
+    clock += 40_000;
+    session.publish(2, 10, "new");
+    assert.equal(session.replayBytes, 10, "the frame older than the window is gone");
+  });
+});
+
+describe("replay", () => {
+  it("returns nothing when the viewer has seen everything", () => {
+    const store = registry();
+    const session = opened(store);
+    session.publish(1, 10, "one");
+    assert.deepEqual(session.replayFrom(1), []);
+    assert.deepEqual(session.replayFrom(9), [], "ahead of the stream is still nothing to send");
+  });
+
+  it("replays the tail a viewer is missing", () => {
+    const store = registry({ replayBytesPerSession: 1_000 });
+    const session = opened(store);
+    for (let seq = 1; seq <= 3; seq += 1) session.publish(seq, 10, `frame-${seq}`);
+    const frames = session.replayFrom(1);
+    assert.equal(frames?.length, 2);
+    assert.deepEqual(
+      frames?.map((frame) => frame.seq),
+      [2, 3],
+    );
+  });
+
+  it("returns the stream start to a viewer that has applied nothing", () => {
+    const store = registry({ replayBytesPerSession: 1_000 });
+    const session = opened(store);
+    session.publish(0, 10, "hello");
+    session.publish(1, 10, "one");
+
+    const frames = session.replayFrom(0);
+    assert.deepEqual(
+      frames?.map((frame) => frame.seq),
+      [0, 1],
+      "the hello sits at seq 0 and must not be filtered out by a `seq > 0` test",
+    );
+  });
+
+  it("asks for a resync when the gap has been evicted", () => {
+    const store = registry({ replayBytesPerSession: 20 });
+    const session = opened(store);
+    for (let seq = 1; seq <= 4; seq += 1) session.publish(seq, 10, `frame-${seq}`);
+    // The ring now starts at seq 3, so a viewer at 1 is missing 2 and can never be caught up.
+    assert.equal(session.replayFrom(1), null);
+  });
+
+  it("asks for a resync when the stream start is gone", () => {
+    const store = registry({ replayBytesPerSession: 20 });
+    const session = opened(store);
+    session.publish(0, 10, "hello");
+    for (let seq = 1; seq <= 3; seq += 1) session.publish(seq, 10, `frame-${seq}`);
+
+    assert.equal(session.streamStart(), null, "the hello has been evicted");
+    // A viewer with nothing applied cannot be handed deltas: there is no snapshot for them to
+    // apply to. A resync is the only honest answer.
     assert.equal(session.replayFrom(0), null);
   });
+});
 
-  it("refuses a frame larger than the whole ring", () => {
-    const { store } = registry({ replayBytesPerSession: 100 });
-    const opened = store.open(request());
-    assert.equal(opened.ok, true);
-    if (!opened.ok) return;
-    const session = opened.session;
-
-    assert.equal(session.publish(101), null, "refused before anything is stored");
-    assert.equal(session.lastSeq, 0);
-    assert.equal(session.replayBytes, 0);
+describe("slow viewers", () => {
+  it("drops a viewer that cannot keep up rather than buffering for it", () => {
+    const store = registry({ maxPendingBytesPerSocket: 100 });
+    const session = opened(store);
+    session.admitViewer("v1");
+    assert.equal(session.queueFor("v1", 60), true);
+    assert.equal(session.queueFor("v1", 60), false, "the budget is exceeded, so the socket goes");
+    assert.equal(session.viewerCount, 0, "and it is removed, not merely refused");
   });
 
-  it("evicts by age", () => {
-    const time = clock();
-    const store = new SessionRegistry({ ...DEFAULT_LIMITS, replayWindowMs: 1_000 }, time.now);
-    const opened = store.open(request());
-    assert.equal(opened.ok, true);
-    if (!opened.ok) return;
-    const session = opened.session;
-    session.publish(10);
-    session.publish(10);
-
-    time.advance(1_001);
-    session.publish(10);
-    // The two older frames are outside the window, so the ring holds only the newest.
-    assert.equal(session.replayBytes, 10);
-    assert.equal(session.replayFrom(0), null, "the older frames are gone");
+  it("frees budget as a viewer acknowledges", () => {
+    const store = registry({ maxPendingBytesPerSocket: 100 });
+    const session = opened(store);
+    session.admitViewer("v1");
+    session.queueFor("v1", 80);
+    session.acknowledge("v1", 80);
+    assert.equal(session.queueFor("v1", 80), true, "the acknowledged bytes are available again");
   });
 
-  it("bounds retained bytes across every session", () => {
-    const { store } = registry();
-    const a = store.open(request({ ownerId: "a", deviceId: "d-a", localPaneId: "p1" }));
-    const b = store.open(request({ ownerId: "b", deviceId: "d-b", localPaneId: "p1" }));
-    assert.equal(a.ok, true);
-    assert.equal(b.ok, true);
-    if (!a.ok || !b.ok) return;
-
-    a.session.publish(1_000);
-    b.session.publish(2_000);
-    assert.equal(store.retainedBytes, 3_000);
+  it("never drops the publisher's frames because a viewer is gone", () => {
+    const store = registry({ maxPendingBytesPerSocket: 10 });
+    const session = opened(store);
+    session.admitViewer("v1");
+    session.queueFor("v1", 10);
+    session.queueFor("v1", 10);
+    // The viewer was dropped; the publisher's own bookkeeping is untouched.
+    assert.equal(session.publish(1, 10, "one"), true);
+    assert.equal(session.lastSeq, 1);
   });
 });
 
-describe("publisher leases", () => {
-  it("goes stale once the publisher stops renewing", () => {
-    const time = clock();
-    const store = new SessionRegistry({ ...DEFAULT_LIMITS, publisherLeaseMs: 30_000 }, time.now);
-    const opened = store.open(request());
-    assert.equal(opened.ok, true);
-    if (!opened.ok) return;
+describe("the publisher lease", () => {
+  it("goes stale when the publisher stops renewing", () => {
+    let clock = 1_000;
+    const store = registry({ publisherLeaseMs: 30_000 }, () => clock);
+    const session = opened(store);
+    assert.equal(session.leaseIsStale, false);
 
-    assert.equal(opened.session.leaseIsStale, false);
-    time.advance(29_999);
-    assert.equal(opened.session.leaseIsStale, false, "still inside the lease");
-    time.advance(2);
-    assert.equal(opened.session.leaseIsStale, true);
-    assert.deepEqual(store.staleLeases().map((s) => s.id), [opened.session.id]);
+    clock += 30_001;
+    assert.equal(session.leaseIsStale, true, "the relay must fail closed before the database does");
   });
 
-  it("clears staleness on renewal", () => {
-    const time = clock();
-    const store = new SessionRegistry({ ...DEFAULT_LIMITS, publisherLeaseMs: 30_000 }, time.now);
-    const opened = store.open(request());
-    assert.equal(opened.ok, true);
-    if (!opened.ok) return;
-
-    time.advance(31_000);
-    assert.equal(opened.session.leaseIsStale, true);
-    opened.session.renewLease();
-    assert.equal(opened.session.leaseIsStale, false);
+  it("is renewed by the publisher", () => {
+    let clock = 1_000;
+    const store = registry({ publisherLeaseMs: 30_000 }, () => clock);
+    const session = opened(store);
+    clock += 30_001;
+    session.renewLease();
+    assert.equal(session.leaseIsStale, false);
   });
 
-  it("never renews an ended session back to life", () => {
-    const time = clock();
-    const store = new SessionRegistry({ ...DEFAULT_LIMITS, publisherLeaseMs: 30_000 }, time.now);
-    const opened = store.open(request());
-    assert.equal(opened.ok, true);
-    if (!opened.ok) return;
-    opened.session.end();
-
-    time.advance(31_000);
-    opened.session.renewLease();
-    assert.equal(opened.session.ended, true);
+  it("reports stale sessions to the caller rather than ending them itself", () => {
+    let clock = 1_000;
+    const store = registry({ publisherLeaseMs: 30_000 }, () => clock);
+    opened(store);
+    clock += 30_001;
+    assert.equal(store.staleLeases().length, 1);
   });
 });
 
-describe("owner's session list", () => {
-  it("lists only that account's sessions, newest first", () => {
-    const time = clock();
-    const store = new SessionRegistry(DEFAULT_LIMITS, time.now);
-    const older = store.open(request({ ownerId: "a", localPaneId: "p1" }));
-    time.advance(10);
-    const newer = store.open(request({ ownerId: "a", localPaneId: "p2" }));
-    store.open(request({ ownerId: "b", localPaneId: "p1" }));
-    assert.equal(older.ok, true);
-    assert.equal(newer.ok, true);
-    if (!older.ok || !newer.ok) return;
+describe("ending", () => {
+  it("stays ended, and there is no way back", () => {
+    const store = registry();
+    const session = opened(store);
+    session.admitViewer("v1");
+    session.publish(1, 10, "one");
+    session.end();
 
-    const listed = store.forAccount("a").map((session) => session.id);
-    assert.deepEqual(listed, [newer.session.id, older.session.id]);
+    assert.equal(session.ended, true);
+    assert.equal(session.viewerCount, 0, "viewers are cleared");
+    assert.equal(session.replayBytes, 0, "and so is everything retained");
+    assert.equal(session.publish(2, 10, "two"), false, "an ended session carries no more frames");
+    // Not `[]`: an ended session cannot be caught up by replay at all, because there is no host left
+    // to send a snapshot and nothing retained to replay.
+    assert.equal(session.replayFrom(0), null);
+
+    // A renewal cannot resurrect it, which is what stops a stale publisher bringing it back.
+    session.renewLease();
+    assert.equal(session.ended, true);
+    assert.equal(session.leaseIsStale, false, "an ended session has no lease to go stale");
+  });
+
+  it("is idempotent", () => {
+    const store = registry();
+    const session = opened(store);
+    session.end();
+    const endedAt = session.endedAt;
+    session.end();
+    assert.equal(session.endedAt, endedAt, "a second end must not move the timestamp");
+  });
+
+  it("drops the session from the registry", () => {
+    const store = registry();
+    const sessionId = randomUUID();
+    opened(store, { sessionId });
+    assert.equal(store.end(sessionId), true);
+    assert.equal(store.end(sessionId), false, "already gone");
+    assert.equal(store.get(sessionId), undefined);
   });
 });
 
-describe("session identity", () => {
-  it("is constructible directly, for a caller that needs a session without the registry", () => {
-    const time = clock();
-    const session = new RelaySession(
-      { ...request(), title: "build" },
-      DEFAULT_LIMITS,
-      time.now,
+describe("listing", () => {
+  it("returns one account's sessions, newest first", () => {
+    let clock = 1_000;
+    const store = registry({}, () => clock);
+    const older = opened(store, { ownerId: "a", sessionId: randomUUID() });
+    clock += 10;
+    const newer = opened(store, { ownerId: "a", sessionId: randomUUID() });
+    clock += 10;
+    opened(store, { ownerId: "b", sessionId: randomUUID() });
+
+    const listed = store.forAccount("a");
+    assert.deepEqual(
+      listed.map((session) => session.id),
+      [newer.id, older.id],
     );
-    assert.equal(session.title, "build");
-    assert.equal(session.epoch, 1);
+    assert.equal(
+      listed.every((session) => session.ownerId === "a"),
+      true,
+    );
   });
 });

@@ -1524,11 +1524,12 @@ func invalidCases() -> [InvalidCase] {
     // Frames: the envelope and the direction rule.
     add("frame-unknown-type", "frame", .invalidFrame, #"{"type":"teleport"}"#)
     add("frame-missing-type", "frame", .invalidFrame, #"{"epoch":"1"}"#)
-    // `hello` travels relay-to-peer, so the version is checked in a direction where it is legal —
-    // otherwise the direction rule would mask the rule this case is about.
+    // `hello` carries the host's geometry, so it travels host-to-relay and is relayed to viewers.
+    // The version is checked in a direction where the frame is legal, or the direction rule would
+    // mask the rule this case is about.
     add("frame-hello-version-0", "frame", .unsupportedVersion,
         #"{"type":"hello","version":0,"session_id":"\#(sessionID)","epoch":"1","mode":"blocks","columns":80,"rows":24}"#,
-        .relayToHost)
+        .hostToRelay)
     add("frame-rejected-ack-without-code", "frame", .invalidFrame,
         #"{"type":"input.ack","epoch":"1","control_lease":"\#(leaseID)","input_seq":"1","status":"rejected"}"#)
     add("frame-loose-timestamp", "frame", .invalidFrame,

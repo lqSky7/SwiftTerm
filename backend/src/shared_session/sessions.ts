@@ -1,28 +1,34 @@
 /**
- * The relay's session registry.
+ * The relay's live session state.
  *
- * This holds the live state the relay is allowed to keep: one publisher per session, a set of
- * viewers, and a bounded ring of recently emitted frames so a viewer that reconnects can catch up
+ * This holds the state the relay is allowed to keep in memory: who is publishing, which viewers are
+ * attached, and a bounded ring of recently emitted frames so a viewer that reconnects can catch up
  * without a fresh snapshot. **No terminal content is ever written to the database** — this is the
  * only place frames live, and they are dropped when the session ends or the ring evicts them.
  *
- * Every limit here is enforced *before* allocation rather than after. The handoff's rule is that
- * relaying malformed or oversized data cannot allocate beyond the admission limits, and the way to
- * honour that is to refuse at the door: a viewer beyond the cap is never added to the set, a frame
- * that would exceed the ring is rejected before it is copied, and an account at its stream cap
- * cannot open another.
+ * **Admission limits are not here.** One open stream per pane, the per-account stream cap and
+ * idempotency on `client_request_id` all live in `swiftterm.create_live_session`, because they have
+ * to hold across relay instances and across a relay restart. Keeping a second copy in memory would
+ * give the same rule two implementations and two answers, and the in-memory one would be wrong after
+ * a restart. What remains here is what is genuinely process-local: how many publishers *this* process
+ * will carry, how many bytes it will retain, and how many viewers one stream may attach.
  *
- * Time is injected. Every deadline in this file — the replay window, the lease expiry, the
- * heartbeat — is read from the clock the registry was built with, so the tests exercise staleness
- * without sleeping for it.
+ * A session is keyed by its **durable UUID** — the same value in the socket path `/live/<uuid>` and
+ * the primary key of `live_sessions`. One identity, so a reconnect after a relay restart lands on
+ * the same session rather than minting a parallel one.
+ *
+ * Every limit is enforced *before* allocation rather than after: a viewer beyond the cap is never
+ * added to the set, a frame that would exceed the ring is rejected before it is copied, and a
+ * process at its publisher cap cannot open another.
+ *
+ * Time is injected. Every deadline in this file — the replay window, the lease expiry — is read from
+ * the clock the registry was built with, so the tests exercise staleness without sleeping for it.
  */
 
 export interface SessionLimits {
-  /** Open streams one account may have. */
-  readonly maxStreamsPerAccount: number;
-  /** Viewers attached to one stream. */
+  /** Viewers attached to one stream. A process-local bound: each viewer is a socket it holds. */
   readonly maxViewersPerStream: number;
-  /** Publishers this process will hold. */
+  /** Publishers this process will carry. The relay's own memory budget, not an account's. */
   readonly maxPublishersPerProcess: number;
   /** How many bytes of recent frames one session retains. */
   readonly replayBytesPerSession: number;
@@ -37,7 +43,6 @@ export interface SessionLimits {
 }
 
 export const DEFAULT_LIMITS: SessionLimits = {
-  maxStreamsPerAccount: 5,
   maxViewersPerStream: 10,
   maxPublishersPerProcess: 25,
   replayBytesPerSession: 8 * 1024 * 1024,
@@ -49,32 +54,30 @@ export const DEFAULT_LIMITS: SessionLimits = {
 
 export type OpenResult =
   | { readonly ok: true; readonly session: RelaySession; readonly created: boolean }
-  | { readonly ok: false; readonly reason: OpenRefusal };
-
-export type OpenRefusal =
-  | "account_stream_limit"
-  | "pane_already_shared"
-  | "process_publisher_limit"
-  | "request_conflict";
+  | { readonly ok: false; readonly reason: "process_publisher_limit" };
 
 export type AdmitResult =
   | { readonly ok: true; readonly viewer: Viewer }
   | { readonly ok: false; readonly reason: "viewer_limit" | "session_ended" };
 
 export interface OpenRequest {
+  /** The durable session UUID. The socket path and the database row share this value. */
+  readonly sessionId: string;
   readonly ownerId: string;
   readonly deviceId: string;
   readonly localPaneId: string;
-  readonly clientRequestId: string;
-  /** Digest of the whole open request, so an identical retry is idempotent and a changed one is not. */
-  readonly requestDigest: string;
+  /** The publisher epoch the database currently holds. 0 until a publisher is first admitted. */
+  readonly publisherEpoch: number;
   readonly title?: string;
 }
 
 export interface RelayedFrame {
+  /** The publisher's own sequence number. Several frames may share one, as a snapshot's do. */
   readonly seq: number;
   readonly bytes: number;
   readonly at: number;
+  /** The frame exactly as the publisher sent it. Forwarded verbatim; never re-encoded. */
+  readonly payload: string;
 }
 
 export class Viewer {
@@ -98,36 +101,60 @@ export class RelaySession {
   readonly ownerId: string;
   readonly deviceId: string;
   readonly localPaneId: string;
-  readonly clientRequestId: string;
-  readonly requestDigest: string;
   readonly createdAt: number;
 
-  /** Starts at 1 and only ever increases. A publisher reconnect gets a new one, fencing the old. */
-  epoch = 1;
   title: string;
 
+  #epoch: number;
   #ended = false;
   #endedAt: number | null = null;
   #leaseRenewedAt: number;
   #seq = 0;
   #replay: RelayedFrame[] = [];
   #replayBytes = 0;
+  /**
+   * The `hello` at the head of the stream, kept while it is still retained.
+   *
+   * It is the only frame that carries the epoch and geometry, so it is what lets a joining viewer
+   * learn enough to ask for a resume. Once the ring evicts it the history no longer starts at the
+   * stream's beginning, and a viewer with nothing applied must be told to resync instead of being
+   * handed a mid-stream tail.
+   */
+  #streamStart: RelayedFrame | null = null;
   readonly #viewers = new Map<string, Viewer>();
   readonly #limits: SessionLimits;
   readonly #now: () => number;
 
   constructor(request: OpenRequest, limits: SessionLimits, now: () => number) {
-    this.id = request.clientRequestId;
+    this.id = request.sessionId;
     this.ownerId = request.ownerId;
     this.deviceId = request.deviceId;
     this.localPaneId = request.localPaneId;
-    this.clientRequestId = request.clientRequestId;
-    this.requestDigest = request.requestDigest;
     this.title = request.title ?? "";
     this.#limits = limits;
     this.#now = now;
     this.createdAt = now();
     this.#leaseRenewedAt = this.createdAt;
+    this.#epoch = request.publisherEpoch;
+  }
+
+  /**
+   * The publisher generation, which is the database's `publisher_epoch`.
+   *
+   * The two must be the same number: a ticket carries this value and the socket layer refuses a
+   * ticket whose epoch does not match, so a relay that counted independently would refuse its own
+   * publisher's ticket the first time the database incremented.
+   */
+  get epoch(): number {
+    return this.#epoch;
+  }
+
+  /**
+   * Move to a newer publisher generation. Only ever forward — an epoch that went backwards would
+   * re-admit a generation the database has already fenced out.
+   */
+  adoptEpoch(epoch: number): void {
+    if (epoch > this.#epoch) this.#epoch = epoch;
   }
 
   get ended(): boolean {
@@ -176,6 +203,7 @@ export class RelaySession {
     this.#viewers.clear();
     this.#replay = [];
     this.#replayBytes = 0;
+    this.#streamStart = null;
   }
 
   /**
@@ -197,32 +225,59 @@ export class RelaySession {
   }
 
   /**
-   * Record a frame the publisher emitted and give it its seq.
+   * Record a frame the publisher emitted, at the seq the publisher gave it.
    *
-   * The size is checked against the ring *before* anything is stored, so an oversized frame is
-   * refused rather than being copied and then evicted — the allocation the handoff forbids.
+   * Returns `false` when the frame is refused, and nothing is stored in that case — the size is
+   * checked against the ring *before* the frame is retained, which is the allocation the handoff
+   * forbids. `seq` is non-decreasing rather than strictly increasing because a snapshot's chunks and
+   * its end frame all belong to the same sequence position; a publisher that went backwards is
+   * refused, since replaying it would deliver frames out of order.
    */
-  publish(bytes: number): RelayedFrame | null {
-    if (this.#ended) return null;
-    if (bytes > this.#limits.replayBytesPerSession) return null;
+  publish(seq: number, bytes: number, payload: string): boolean {
+    if (this.#ended) return false;
+    if (bytes > this.#limits.replayBytesPerSession) return false;
+    if (seq < this.#seq) return false;
 
-    this.#seq += 1;
-    const frame: RelayedFrame = { seq: this.#seq, bytes, at: this.#now() };
+    const frame: RelayedFrame = { seq, bytes, at: this.#now(), payload };
     this.#replay.push(frame);
     this.#replayBytes += bytes;
+    if (seq > this.#seq) this.#seq = seq;
+    // The stream start is seq 0, which no snapshot or damage frame can use: a snapshot's seq is the
+    // position it establishes and a damage frame's seq is at least 1.
+    if (seq === 0 && this.#streamStart === null) this.#streamStart = frame;
     this.#evict();
-    return frame;
+    return true;
+  }
+
+  /** The retained `hello`, or `null` once the ring has evicted it. */
+  streamStart(): RelayedFrame | null {
+    return this.#streamStart;
   }
 
   /**
-   * The retained frames a viewer at `fromSeq` has not seen. Returns `null` when the gap has already
-   * been evicted, which is the relay's cue to ask the host for a fresh snapshot rather than to
-   * replay a hole.
+   * The retained frames a viewer at `fromSeq` has not seen, or `null` when a replay would be a lie.
+   *
+   * `null` means "ask the host for a fresh snapshot", and there are two ways to earn it: the gap has
+   * been evicted, or the viewer has applied nothing and the retained history no longer starts at the
+   * stream's beginning. A viewer that has never seen a snapshot cannot be handed deltas, because
+   * there is nothing for them to apply to.
    */
   replayFrom(fromSeq: number): readonly RelayedFrame[] | null {
+    // An ended session cannot be caught up: there is no host to send a snapshot and nothing left to
+    // replay. The socket layer refuses an ended session at admission, so this is the defensive
+    // answer rather than the reachable one — stated explicitly so it is a rule and not an accident
+    // of the ring having been cleared.
+    if (this.#ended) return null;
     if (fromSeq >= this.#seq) return [];
-    const oldest = this.#replay[0];
-    if (oldest !== undefined && oldest.seq > fromSeq + 1) return null;
+    const first = this.#replay[0];
+    if (first === undefined) return null;
+    if (fromSeq === 0) {
+      if (this.#streamStart === null) return null;
+      // Everything, including the stream start, which sits at seq 0 and would otherwise be filtered
+      // out by the `seq > fromSeq` test below.
+      return [...this.#replay];
+    }
+    if (first.seq > fromSeq + 1) return null;
     return this.#replay.filter((frame) => frame.seq > fromSeq);
   }
 
@@ -256,14 +311,15 @@ export class RelaySession {
       if (!tooOld && !tooBig) break;
       this.#replay.shift();
       this.#replayBytes -= oldest.bytes;
+      // Once the head is gone the history no longer begins at the stream's start, and a viewer with
+      // nothing applied can no longer be caught up by replay.
+      if (this.#streamStart === oldest) this.#streamStart = null;
     }
   }
 }
 
 export class SessionRegistry {
   readonly #sessions = new Map<string, RelaySession>();
-  /** client_request_id per account, so an identical retry finds the session it already made. */
-  readonly #byRequest = new Map<string, string>();
   readonly #limits: SessionLimits;
   readonly #now: () => number;
 
@@ -288,48 +344,30 @@ export class SessionRegistry {
   }
 
   /**
-   * Open a stream, or return the one an identical retry already made.
+   * Register a session this process will relay, or return the one already registered.
    *
-   * Every refusal is decided before a session is constructed, so a refused open leaves no partial
-   * state behind.
+   * Idempotent on the session id, so the caller can call it on every request that needs the session
+   * to exist in memory without tracking whether it already did. The only refusal is this process's
+   * own publisher budget: everything else was decided by the database before the caller got here.
    */
   open(request: OpenRequest): OpenResult {
-    const requestKey = `${request.ownerId}:${request.clientRequestId}`;
-    const existingId = this.#byRequest.get(requestKey);
-    if (existingId !== undefined) {
-      const existing = this.#sessions.get(existingId);
-      if (existing !== undefined) {
-        // Same request id, different payload: a retry is idempotent, a change is a conflict.
-        if (existing.requestDigest !== request.requestDigest) {
-          return { ok: false, reason: "request_conflict" };
-        }
-        return { ok: true, session: existing, created: false };
-      }
+    const existing = this.#sessions.get(request.sessionId);
+    if (existing !== undefined) {
+      // The epoch may have moved on in the database while this session sat in memory.
+      existing.adoptEpoch(request.publisherEpoch);
+      return { ok: true, session: existing, created: false };
     }
 
-    if (this.#countForAccount(request.ownerId) >= this.#limits.maxStreamsPerAccount) {
-      return { ok: false, reason: "account_stream_limit" };
-    }
-    for (const session of this.#sessions.values()) {
-      if (
-        !session.ended &&
-        session.deviceId === request.deviceId &&
-        session.localPaneId === request.localPaneId
-      ) {
-        return { ok: false, reason: "pane_already_shared" };
-      }
-    }
     if (this.#livePublisherCount() >= this.#limits.maxPublishersPerProcess) {
       return { ok: false, reason: "process_publisher_limit" };
     }
 
     const session = new RelaySession(request, this.#limits, this.#now);
     this.#sessions.set(session.id, session);
-    this.#byRequest.set(requestKey, session.id);
     return { ok: true, session, created: true };
   }
 
-  /** End a session and forget it. The entry is dropped so the account's stream count falls. */
+  /** End a session and forget it. The entry is dropped so the process's publisher count falls. */
   end(id: string): boolean {
     const session = this.#sessions.get(id);
     if (session === undefined) return false;
@@ -348,14 +386,6 @@ export class SessionRegistry {
     return [...this.#sessions.values()]
       .filter((session) => session.ownerId === ownerId)
       .sort((left, right) => right.createdAt - left.createdAt);
-  }
-
-  #countForAccount(ownerId: string): number {
-    let count = 0;
-    for (const session of this.#sessions.values()) {
-      if (session.ownerId === ownerId) count += 1;
-    }
-    return count;
   }
 
   #livePublisherCount(): number {

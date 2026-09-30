@@ -43,6 +43,13 @@ export interface TicketGrant {
   /** For a publisher, the device the pane belongs to. Absent for a viewer. */
   readonly deviceId?: string;
   /**
+   * For a publisher, the lease the route installed when it minted this ticket. The socket layer
+   * hands it back on disconnect so the caller can release the lease, and it travels with the ticket
+   * rather than being looked up because a publisher that reconnected between mint and connect must
+   * release the lease *it* holds, not whatever the database holds now.
+   */
+  readonly leaseToken?: string;
+  /**
    * The epoch the ticket was minted against. A ticket for a superseded epoch is refused even if it
    * is otherwise valid and unexpired, so a reconnect cannot resurrect a fenced publisher.
    */

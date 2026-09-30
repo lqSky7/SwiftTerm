@@ -18,6 +18,13 @@ export interface Config {
   readonly port: number;
   /** Absolute session lifetime. Capped at 24 hours, which the database CHECK also enforces. */
   readonly sessionTtlHours: number;
+  /**
+   * Open streams one account may have at once.
+   *
+   * Enforced in `swiftterm.create_live_session` rather than here, because it has to hold across
+   * relay instances and across a restart. This value is passed in so it is one number in one place.
+   */
+  readonly maxLiveStreamsPerAccount: number;
   readonly cookieName: string;
   readonly csrfCookieName: string;
   readonly csrfHeaderName: string;
@@ -113,6 +120,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     host: env.HOST?.trim() || "127.0.0.1",
     port: optionalNumber(env, "PORT", 8081),
     sessionTtlHours,
+    maxLiveStreamsPerAccount: optionalNumber(env, "MAX_LIVE_STREAMS_PER_ACCOUNT", 5),
     cookieName: env.SESSION_COOKIE_NAME?.trim() || "swiftterm_session",
     csrfCookieName: env.CSRF_COOKIE_NAME?.trim() || "swiftterm_csrf",
     csrfHeaderName: env.CSRF_HEADER_NAME?.trim() || "x-swiftterm-csrf",
