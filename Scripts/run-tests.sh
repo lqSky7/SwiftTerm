@@ -36,11 +36,23 @@ if [ "${1:-}" = "--exec" ]; then
     shift
     name=$1
     shift
-    if [ "$name" = "terminal-renderer-test" ]; then
+    if [ "$name" = "terminal-renderer-test" ] || [ "$name" = "block-collapse-test" ]; then
         SOURCES+=(
             crates/warpui_core/src/Theme.swift
             app/src/terminal/view/TerminalFont.swift
             app/src/terminal/view/TerminalRenderer.swift
+        )
+    fi
+    if [ "$name" = "block-collapse-test" ]; then
+        SOURCES+=(
+            crates/warpui_core/src/TextIntelligence.swift
+            app/src/workspace/Appearance.swift
+            app/src/terminal/view/TerminalSurfaceView.swift
+            app/src/terminal/view/TerminalCoordinator.swift
+            app/src/terminal/view/CommandEditorView.swift
+            app/src/terminal/view/BlockMenuPopover.swift
+            app/src/terminal/view/CompletionPopover.swift
+            app/src/terminal/view/TerminalFindBar.swift
         )
     fi
     : > "$BIN/$name.running"

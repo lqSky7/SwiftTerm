@@ -17,6 +17,7 @@ enum BlockLayoutTest {
         theGapBelowEachBlock(harness)
         thePinnedBlock(harness)
         chipRow(harness)
+        foldedViewport(harness)
 
         harness.finish()
     }
@@ -24,6 +25,47 @@ enum BlockLayoutTest {
     private static let header: CGFloat = 26
     private static let line: CGFloat = 17
     private static let chips: CGFloat = 24
+
+    private static func foldedViewport(_ harness: Harness) {
+        let viewport: CGFloat = 500
+        func layout(_ counts: [Int]) -> BlockLayout {
+            BlockLayout(contributions: counts.enumerated().map { ($0.element, $0.offset != counts.count - 1) },
+                chipRow: BlockLayout.ChipRow(blockIndex: counts.count - 1, height: chips),
+                headerHeight: header, lineHeight: line, bottomPadding: 12)
+        }
+        let expanded = layout([30, 90, 20, 1])
+        let folded = layout([30, 10, 20, 1])
+        let original = expanded.scrollPosition(
+            puttingTopAt: expanded.entries[1].headerTop - 70, viewportHeight: viewport)
+        let collapsed = folded.scrollPosition(
+            keepingHeaderOfBlock: 1, from: expanded, scrollPosition: original, viewportHeight: viewport)
+        harness.close(folded.entries[1].headerTop - folded.scrollableTop(
+            scrollPosition: collapsed, viewportHeight: viewport), 70, "collapse keeps the header's viewport offset")
+        harness.expect(collapsed >= 0 && collapsed <= folded.maximumScroll(viewportHeight: viewport),
+                       "collapse immediately fits the shorter scroll range")
+        let restored = expanded.scrollPosition(
+            keepingHeaderOfBlock: 1, from: folded, scrollPosition: collapsed, viewportHeight: viewport)
+        harness.close(restored, original, "expansion restores the offset without moving the header")
+        let atBottom = folded.scrollPosition(
+            keepingHeaderOfBlock: 1, from: expanded, scrollPosition: 0, viewportHeight: viewport)
+        harness.close(atBottom, 0, "collapse near the bottom clamps instead of overscrolling below it")
+        let short = layout([10, 1])
+        let long = layout([90, 1])
+        let top = long.maximumScroll(viewportHeight: viewport)
+        harness.close(short.scrollPosition(keepingHeaderOfBlock: 0, from: long,
+            scrollPosition: top, viewportHeight: viewport), 0, "a folded short document has no stale scroll offset")
+        let pinnedExpanded = layout([60, 90])
+        let pinnedFolded = layout([60, 10])
+        let pinned = pinnedFolded.scrollPosition(keepingHeaderOfBlock: 1, from: pinnedExpanded,
+            scrollPosition: pinnedExpanded.maximumScroll(viewportHeight: viewport), viewportHeight: viewport)
+        harness.close(pinned, pinnedFolded.maximumScroll(viewportHeight: viewport),
+                      "folding the pinned block clamps when its scroll viewport grows")
+        harness.close(pinnedFolded.pinnedEntry!.bottom - pinnedFolded.pinnedViewportTop(viewportHeight: viewport),
+                      viewport, "the pinned block stays bottom anchored")
+        let missing = short.scrollPosition(keepingHeaderOfBlock: 99, from: long,
+            scrollPosition: top, viewportHeight: viewport)
+        harness.close(missing, 0, "a missing anchor still clamps the current offset")
+    }
 
     private static func layout(_ contributions: [BlockLayout.Contribution]) -> BlockLayout {
         BlockLayout(contributions: contributions, headerHeight: header, lineHeight: line)

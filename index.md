@@ -38,3 +38,8 @@ pixel/output digests: renderer median 0.916 → 0.422 seconds, peak RSS 152.7 �
 ASCII parser median 0.708 → 0.342 seconds (RSS unchanged). These are workload measurements,
 not a whole-app resource claim. Build 103 installed unopened; 31 harnesses pass.
 Checklist and methodology: `docs/phase-resource-optimization-todo.md`.
+
+Current repair: header double-click collapse/expand and immediate viewport reconciliation,
+plus fullscreen TUI edge-to-edge drawing, PTY sizing and matching mouse/IME coordinates.
+Build 0.1.0 (105) installed unopened; 32 harnesses pass. Local checklists:
+`docs/phase-block-collapse-todo.md`, `docs/phase-fullscreen-edges-todo.md`.

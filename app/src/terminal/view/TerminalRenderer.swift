@@ -110,15 +110,20 @@ final class TerminalRenderer {
     /// exactly what neither of them is.
     private var contentInset: CGFloat { Theme.Size.terminalContentInset }
 
+    func gridContentInset(isAlternateScreen: Bool) -> CGFloat {
+        isAlternateScreen ? 0 : contentInset
+    }
+
     /// How many cells fit in a view of this size. Never zero: a zero divides by zero in every layout
     /// calculation downstream and the pty rejects it.
     ///
     /// **The content inset comes off the width.** The count has to be the number of columns that are
     /// actually drawn inside the inset; counting them across the full width is how the last column ends up
     /// past the edge the rest of the content respects.
-    func gridSize(fitting bounds: CGSize) -> (columns: Int, rows: Int) {
-        (
-            max(1, Int((bounds.width - contentInset * 2) / font.cellWidth)),
+    func gridSize(fitting bounds: CGSize, isAlternateScreen: Bool = false) -> (columns: Int, rows: Int) {
+        let inset = gridContentInset(isAlternateScreen: isAlternateScreen)
+        return (
+            max(1, Int((bounds.width - inset * 2) / font.cellWidth)),
             max(1, Int(bounds.height / font.cellHeight))
         )
     }
@@ -513,12 +518,16 @@ final class TerminalRenderer {
         for screenRow in 0..<grid.size.rows {
             let row = grid.historyLineCount + screenRow
             guard let line = grid.line(at: row) else { continue }
-            let originX = bounds.minX + contentInset
+            let originX = bounds.minX
             let originY = bounds.maxY - CGFloat(screenRow + 1) * font.cellHeight
+            let bottom = screenRow == grid.size.rows - 1 ? bounds.minY : originY
+            let backgroundBounds = CGRect(
+                x: bounds.minX, y: bottom, width: bounds.width, height: originY + font.cellHeight - bottom)
             drawRow(
                 row: row, line: line, grid: grid, isFinished: false,
                 originX: originX,
                 originY: originY,
+                backgroundBounds: backgroundBounds,
                 in: context)
             if let hoveredLink, hoveredLink.isAlternateScreen, hoveredLink.bodyLine == screenRow {
                 draw(linkUnderline: hoveredLink.colRange, originX: originX, originY: originY, in: context)
@@ -527,7 +536,7 @@ final class TerminalRenderer {
         guard showsCursor else { return }
         drawCursor(
             in: context, grid: grid,
-            originX: bounds.minX + contentInset + CGFloat(grid.cursorColumn) * font.cellWidth,
+            originX: bounds.minX + CGFloat(grid.cursorColumn) * font.cellWidth,
             originY: bounds.maxY - CGFloat(grid.cursorRow + 1) * font.cellHeight,
             markedText: markedText, blinkOn: !grid.cursorStyle.blinks || blinkOn)
     }
@@ -608,11 +617,14 @@ final class TerminalRenderer {
 
     private func drawRow(
         row: Int, line: TerminalLine, grid: TerminalGrid, isFinished: Bool, isCommand: Bool = false,
-        originX: CGFloat, originY: CGFloat, in context: CGContext
+        originX: CGFloat, originY: CGFloat, backgroundBounds: CGRect? = nil, in context: CGContext
     ) {
         let cached = cachedRow(
             row: row, line: line, grid: grid, isFinished: isFinished, isCommand: isCommand)
-        for run in cached.runs { draw(background: run, originX: originX, originY: originY, in: context) }
+        for run in cached.runs {
+            draw(background: run, originX: originX, originY: originY,
+                 columns: grid.size.columns, bounds: backgroundBounds, in: context)
+        }
         for run in cached.runs { draw(underline: run, originX: originX, originY: originY, in: context) }
         context.textMatrix = .identity
         for glyph in cached.glyphs {
@@ -720,16 +732,23 @@ final class TerminalRenderer {
             ])
     }
 
-    private func draw(background run: Run, originX: CGFloat, originY: CGFloat, in context: CGContext) {
+    private func draw(
+        background run: Run, originX: CGFloat, originY: CGFloat,
+        columns: Int, bounds: CGRect?, in context: CGContext
+    ) {
         let (_, background) = run.attributes.resolvedColors(using: palette)
         guard background != palette.background else { return }
+        var rect = CGRect(
+            x: originX + CGFloat(run.column) * font.cellWidth, y: originY,
+            width: CGFloat(run.columns) * font.cellWidth, height: font.cellHeight)
+        if let bounds {
+            // Fractional viewport strips inherit their nearest edge cell's background.
+            if run.column + run.columns == columns { rect.size.width = max(rect.width, bounds.maxX - rect.minX) }
+            rect.size.height += max(0, rect.minY - bounds.minY)
+            rect.origin.y = min(rect.minY, bounds.minY)
+        }
         context.setFillColor(background.nsColor.cgColor)
-        context.fill(
-            CGRect(
-                x: originX + CGFloat(run.column) * font.cellWidth,
-                y: originY,
-                width: CGFloat(run.columns) * font.cellWidth,
-                height: font.cellHeight))
+        context.fill(rect)
     }
 
     private func draw(underline run: Run, originX: CGFloat, originY: CGFloat, in context: CGContext) {

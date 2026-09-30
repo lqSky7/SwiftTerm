@@ -162,3 +162,7 @@ code, indentation, blank lines and trailing newlines. Shell command encoding rem
 Resource optimization: ASCII decoding bypasses buffering only when no UTF-8 bytes are pending.
 ASCII width and ASCII-pair boundaries avoid Unicode scans; Unicode prepend/combining behavior
 remains intact. Tab lookup uses lazy filtering without temporary collections.
+
+BlockLayout.scrollPosition(keepingHeaderOfBlock:from:scrollPosition:viewportHeight:) preserves
+the changed block header position when bounds allow it, clamps short documents immediately,
+and retains bottom anchoring for the pinned block.

@@ -3,12 +3,13 @@
 One harness per guarded decision. Each compiles the shipped sources directly with `swiftc`, so a
 harness that stops compiling means a decision leaked out of a pure layer. There is no XCTest target.
 
-31 harnesses. The count is not a goal — it is what the decisions cost to hold down.
+32 harnesses. The count is not a goal — it is what the decisions cost to hold down.
 
 ## The emulator
 
 | Harness | Guards |
 | --- | --- |
+| `block-collapse-test.swift` | undisplayed native header gestures/menu actions, viewport reconciliation and fullscreen mouse/PTY geometry |
 | `tui-compatibility-test.swift` | chunked emoji/CJK, fixed fullscreen resize, VT cursor/erase/edit rules, queries, modified keys |
 | `terminal-renderer-test.swift` | offscreen bitmap checks of cell alignment and fullscreen cursor focus/blink; no app launch |
 | `terminal-grid-test.swift` | wrapping, scrolling, the scrollback, wide glyphs, editing, resize and reflow, the alternate screen, line identity |
@@ -71,8 +72,8 @@ harness that stops compiling means a decision leaked out of a pure layer. There 
 | --- | --- |
 | `terminal-session-test.swift` | a real shell on a real pty, and that the integration scripts parse in the shells they claim to be for |
 
-`terminal-session-test` is the only one that runs anything real, and it is the one that found Phase
-2's boundary bug that every unit test had agreed with. Keep it end to end.
+`terminal-session-test` found Phase 2's boundary bug that every unit test had agreed with.
+It and `block-collapse-test` use real scratch-shell PTYs; keep their histories and homes isolated.
 
 `HarnessSupport.swift` is shared by all of them and is not itself a harness — it is the assertion
 helper plus the read-only extensions the harnesses use to look at a grid.
@@ -88,3 +89,8 @@ one completed command. Shell-script probes call the real prompt hook explicitly.
 Resource regressions: offscreen renderer checks exceed the glyph cache bound and compare warm
 versus fresh pixels after font/palette changes. Parser checks malformed UTF-8 followed by ASCII
 and Unicode combining/prepend boundaries. All 31 standalone harnesses pass.
+
+Block collapse regressions: `block-collapse-test.swift` tests real header click sequences, menu
+actions and immediate geometry in an undisplayed nested surface. It also checks fullscreen entry/exit
+PTY sizes and captures real SGR mouse reports. Block-layout checks cover anchoring/clamping;
+renderer checks cover left/right/bottom backgrounds and fractional edge strips. 32 harnesses pass.

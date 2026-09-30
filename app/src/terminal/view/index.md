@@ -52,3 +52,9 @@ Resource optimization: identical styled graphemes share immutable CTLines in a b
 cleared with row caches on font/palette changes. Attribute spans retain only geometry and styling.
 Cursor tasks exist only for a focused, visible blinking grid cursor. Directory listings expire
 on cache misses with the same two-second TTL. Editor positioning reuses the current draw layout.
+
+Collapse repair: a header double-click toggles once in either direction; single clicks select.
+Gesture/menu paths share viewport anchoring, immediate clamping and stale selection/link cleanup.
+Fullscreen repair: alternate screens use zero content inset; edge backgrounds fill fractional
+viewport strips without stretching glyphs. Sizing, mouse/link coordinates and IME cursor anchors
+use the same full-width policy. Ordinary command blocks retain the 12-point inset.

@@ -29,7 +29,7 @@ enum TerminalRendererTest {
                     }
                 }
             }
-            let start = Int(Theme.Size.terminalContentInset + CGFloat(column) * font.cellWidth)
+            let start = Int(CGFloat(column) * font.cellWidth)
             harness.expect(!redColumns.isEmpty, "the marker renders after \(prefix)")
             harness.expect(redColumns.allSatisfy { $0 >= start && $0 <= start + Int(font.cellWidth) },
                            "marker pixels stay in column \(column) after \(prefix)")
@@ -46,7 +46,36 @@ enum TerminalRendererTest {
         let steady = render(renderer, grid: cursor, font: font, blinkOn: false)
         harness.equal(steady.tiffRepresentation, visible.tiffRepresentation, "steady cursor ignores the blink phase")
         cacheInvalidation(harness)
+        fullscreenEdges(harness)
         harness.finish()
+    }
+
+    private static func fullscreenEdges(_ harness: Harness) {
+        let font = TerminalFont(pointSize: 14)
+        let renderer = TerminalRenderer(palette: .builtin, font: font)
+        let size = CGSize(width: 80 * font.cellWidth + 3, height: 2 * font.cellHeight + 5)
+        let normal = renderer.gridSize(fitting: size)
+        let full = renderer.gridSize(fitting: size, isAlternateScreen: true)
+        harness.equal(full.columns, 80, "fullscreen dimensions use the entire panel width")
+        harness.expect(normal.columns < full.columns, "command blocks retain their content padding")
+        harness.equal(full.rows, 2, "fractional viewport height does not hide part of a TUI row")
+        let grid = TerminalGrid(size: TerminalSize(columns: full.columns, rows: full.rows))
+        let vt = VTParser(grid: grid)
+        vt.feed("\u{1B}[?1049h\u{1B}[48;2;255;0;0m\u{1B}[2J")
+        vt.feed("\u{1B}[2;1H\u{1B}[48;2;0;0;255m" + String(repeating: " ", count: 80))
+        let bitmap = render(renderer, grid: grid, font: font, showsCursor: false, size: size)
+        func isColor(_ x: Int, _ y: Int, blue: Bool) -> Bool {
+            guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else { return false }
+            return blue ? color.blueComponent > 0.9 && color.redComponent < 0.1
+                : color.redComponent > 0.9 && color.blueComponent < 0.1
+        }
+        let right = bitmap.pixelsWide - 1
+        let bottom = bitmap.pixelsHigh - 1
+        // Bitmap y runs down, unlike the CGContext used to paint the terminal.
+        harness.expect(isColor(0, 1, blue: false), "first column starts at the left edge")
+        harness.expect(isColor(right, 1, blue: false), "right fractional strip uses its top-row background")
+        harness.expect(isColor(0, bottom, blue: true), "bottom strip uses its bottom-row background")
+        harness.expect(isColor(right, bottom, blue: true), "bottom-right corner has no unpainted gap")
     }
 
     private static func cacheInvalidation(_ harness: Harness) {
@@ -85,10 +114,10 @@ enum TerminalRendererTest {
 
     private static func render(
         _ renderer: TerminalRenderer, grid: TerminalGrid, font: TerminalFont,
-        showsCursor: Bool = true, blinkOn: Bool = true
+        showsCursor: Bool = true, blinkOn: Bool = true, size: CGSize? = nil
     ) -> NSBitmapImageRep {
-        let width = Int(80 * font.cellWidth + Theme.Size.terminalContentInset * 2)
-        let height = Int(2 * font.cellHeight)
+        let width = Int(size?.width ?? 80 * font.cellWidth)
+        let height = Int(size?.height ?? 2 * font.cellHeight)
         let bitmap = NSBitmapImageRep(
             bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height, bitsPerSample: 8,
             samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,

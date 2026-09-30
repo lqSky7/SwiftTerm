@@ -133,6 +133,21 @@ struct BlockLayout {
         max(0, scrollableHeight - scrollableViewportHeight(viewportHeight))
     }
 
+    // Folding changes document height; keep its header at the same viewport offset when possible.
+    func scrollPosition(
+        keepingHeaderOfBlock index: Int, from previous: BlockLayout,
+        scrollPosition: CGFloat, viewportHeight: CGFloat
+    ) -> CGFloat {
+        var position = scrollPosition
+        if index != pinnedEntry?.blockIndex,
+            let oldHeader = previous.headerTop(ofBlock: index), let newHeader = headerTop(ofBlock: index) {
+            let offset = oldHeader - previous.scrollableTop(
+                scrollPosition: scrollPosition, viewportHeight: viewportHeight)
+            position = self.scrollPosition(puttingTopAt: newHeader - offset, viewportHeight: viewportHeight)
+        }
+        return min(max(position, 0), maximumScroll(viewportHeight: viewportHeight))
+    }
+
     /// The viewport top that puts the pinned block's bottom on the view's bottom.
     ///
     /// A constant for a given viewport size, which is the whole point: the pinned block does not move.

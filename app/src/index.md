@@ -18,3 +18,5 @@ TUI compatibility is owned by `terminal/`; no new application feature or cross-f
 Raw-program paste uses `TerminalInput.paste`; prompt pastes retain native editor handling.
 
 Resource optimization is confined to terminal rendering, decoding and cache/task lifetimes.
+
+Block collapse transitions and fullscreen viewport geometry stay within the terminal feature.

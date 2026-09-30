@@ -15,3 +15,5 @@ TUI regressions are covered by `Tests/tui-compatibility-test.swift` and offscree
 `TerminalInput.paste` protects nano from Ctrl-J; bootstrap prompt hooks emit one startup prompt.
 
 ASCII paths avoid temporary decoding arrays and Unicode segmentation; Unicode behavior is retained.
+
+BlockLayout preserves a folding header viewport offset and immediately clamps the shorter document.

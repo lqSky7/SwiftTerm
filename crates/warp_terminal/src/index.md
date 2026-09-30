@@ -15,3 +15,5 @@ The split is Warp's: `model` is the emulator proper, `local_tty` is the operatin
 Paste payload encoding lives in `model/TerminalInput.swift`; first-prompt setup in `bootstrap/`.
 
 Resource optimization only touches model decoding, cell width, grapheme joining and tab lookup.
+
+BlockLayout owns collapse/expand viewport reconciliation; no new model subsystem.

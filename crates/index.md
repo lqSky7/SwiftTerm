@@ -17,3 +17,5 @@ TUI repair stays in `warp_terminal`: grapheme cells, VT movement, fixed-coordina
 Paste/startup follow-up is shared terminal input encoding plus shell bootstrap hooks.
 
 Resource optimization stays in existing Swift models; no new dependencies or subsystems.
+
+Block collapse scroll anchoring/clamping is pure geometry in the existing terminal model.

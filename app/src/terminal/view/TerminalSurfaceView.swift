@@ -256,7 +256,7 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
     /// change cannot disagree about what size the shell was told.
     private func updateGridForBounds() {
         guard bounds.width > 0, bounds.height > 0 else { return }
-        let (columns, rows) = renderer.gridSize(fitting: bounds.size)
+        let (columns, rows) = renderer.gridSize(fitting: bounds.size, isAlternateScreen: session.isAlternateScreen)
         let scale = window?.backingScaleFactor ?? 2
         session.resize(
             columns: columns,
@@ -453,6 +453,7 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
     }
 
     private func sessionDidUpdate() {
+        updateGridForBounds()
         // New output must never fight a reader who has scrolled back, so the position is kept and
         // only clamped to what still exists.
         if scrollPosition > maximumScroll { scrollPosition = maximumScroll }
@@ -935,7 +936,8 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
         let point = convert(event.locationInWindow, from: nil)
         guard bounds.contains(point) else { return nil }
         let font = renderer.font
-        let column = Int((point.x - bounds.minX - Theme.Size.terminalContentInset) / font.cellWidth) + 1
+        let inset = renderer.gridContentInset(isAlternateScreen: session.isAlternateScreen)
+        let column = Int((point.x - bounds.minX - inset) / font.cellWidth) + 1
         // The grid is drawn downward from the top of the viewport and the view is y-up.
         let row = Int((bounds.maxY - point.y) / font.cellHeight) + 1
         return (
@@ -1169,36 +1171,32 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
                 blockIndex: point.blockIndex, bodyLine: point.bodyLine, column: range.upperBound))
     }
 
-    /// Fold on a double-click, unfold on a click. Answers whether the click was this.
-    ///
-    /// **Only a single click expands.** Collapsing needs the double-click, because a single click is also how a block
-    /// is selected, and a block that folded every time somebody selected it would be unusable. The cost is that a
-    /// double-click on an already-folded block ends up folded again — the first click of the pair unfolds it and the
-    /// second folds it — which is the direction the user was going in anyway.
+    // Single clicks select; the second click toggles once in either direction.
     private func collapseIfAsked(atBlockIndex index: Int, event: NSEvent) -> Bool {
         let block = session.blocks[index]
-        // **Only on the header.** A double-click in the body is the platform's "select this word", and a terminal
-        // that folded a block instead would be a terminal whose text could not be selected the way every other text
-        // on the system is. The header is the block's own chrome and has no text worth selecting.
-        if let entry = layout.entries.first(where: { $0.blockIndex == index }) {
-            // `locationInWindow` is not a coordinate in this view — the surface sits inside a panel inside a window —
-            // and `documentY(atViewPoint:)` is the one conversion that knows which viewport a point belongs to. Using
-            // the raw window y here meant the header test failed for every double-click, so collapsing stopped
-            // working from the body as well as from the header.
-            let documentY = documentY(atViewPoint: convert(event.locationInWindow, from: nil))
-            guard documentY < entry.contentTop else { return false }
-        }
-        if block.isCollapsed, event.clickCount == 1 {
-            block.toggleCollapsed()
-            needsDisplay = true
-            return true
-        }
-        if event.clickCount == 2, block.isCollapsible, !block.isCollapsed {
-            block.toggleCollapsed()
-            needsDisplay = true
-            return true
-        }
-        return false
+        guard event.clickCount == 2, block.isCollapsed || block.isCollapsible,
+            let entry = layout.entries.first(where: { $0.blockIndex == index }) else { return false }
+        let y = documentY(atViewPoint: convert(event.locationInWindow, from: nil))
+        // Body double-clicks retain native word selection.
+        guard y >= entry.headerTop, y < entry.headerTop + entry.headerHeight else { return false }
+        selectBlock(at: index)
+        toggleBlockCollapsed(at: index)
+        return true
+    }
+
+    private func toggleBlockCollapsed(at index: Int) {
+        let previous = layout
+        let block = session.blocks[index]
+        let wasCollapsed = block.isCollapsed
+        block.toggleCollapsed()
+        guard block.isCollapsed != wasCollapsed else { return }
+        scrollPosition = layout.scrollPosition(
+            keepingHeaderOfBlock: index, from: previous,
+            scrollPosition: scrollPosition, viewportHeight: bounds.height)
+        selection = nil
+        clearHoveredLink()
+        hoveredBlock = nil
+        needsDisplay = true
     }
 
     /// Where a block's hover control is, in this view's coordinates — the one place the two coordinate systems
@@ -1302,8 +1300,7 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
         guard let selectedBlockID,
             let index = session.blocks.firstIndex(where: { $0.id == selectedBlockID })
         else { return }
-        session.blocks[index].toggleCollapsed()
-        needsDisplay = true
+        toggleBlockCollapsed(at: index)
     }
 
     var selectedBlock: Block? {
@@ -1863,7 +1860,8 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
     private var cursorRect: NSRect {
         let font = renderer.font
         return NSRect(
-            x: Theme.Size.terminalContentInset + CGFloat(session.activeGrid.cursorColumn) * font.cellWidth,
+            x: renderer.gridContentInset(isAlternateScreen: session.isAlternateScreen)
+                + CGFloat(session.activeGrid.cursorColumn) * font.cellWidth,
             y: bounds.maxY - CGFloat(session.activeGrid.cursorRow + 1) * font.cellHeight,
             width: font.cellWidth,
             height: font.cellHeight)
@@ -1874,7 +1872,7 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
     private func updateHoveredLink(at point: CGPoint) {
         if session.isAlternateScreen {
             let grid = session.activeGrid
-            let col = Int((point.x - bounds.minX - Theme.Size.terminalContentInset) / renderer.font.cellWidth)
+            let col = Int((point.x - bounds.minX) / renderer.font.cellWidth)
             let row = Int((bounds.maxY - point.y) / renderer.font.cellHeight)
             guard row >= 0, row < grid.size.rows, col >= 0, col < grid.size.columns else {
                 clearHoveredLink()

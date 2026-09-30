@@ -21,3 +21,5 @@ The TUI repair uses the existing native terminal surface; build/install leaves t
 Paste/startup follow-up uses the existing terminal surface and shell bootstrap.
 
 Resource optimization build 103 keeps the native presentation and existing features unchanged.
+
+Block collapse and fullscreen edge repair: build 105 installed without launching.
