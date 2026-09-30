@@ -155,20 +155,10 @@ struct WorkspaceSidebar: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Spacer(minLength: 0)
-                // The cross appears on hover rather than always, so a list of tabs reads as a list of names
-                // until the pointer says which one it is about.
-                if workspace.hoveredTab == tab.id {
-                    Button {
-                        workspace.closeTab(tab.id)
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(Color(nsColor: .secondaryLabelColor))
-                            .frame(width: 16, height: 16)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .help("Close tab")
+                // The cross appears on hover for unselected tabs, and always on the active tab — the
+                // standard macOS sidebar convention, so the active tab's close is always reachable.
+                if selected || workspace.hoveredTab == tab.id {
+                    TabCloseButton { workspace.closeTab(tab.id) }
                 }
             }
             .padding(.horizontal, Theme.Spacing.md)
@@ -328,3 +318,51 @@ struct NewTabButton: View {
     }
 }
 
+/// The cross that closes a tab.
+///
+/// **Its own view so the sidebar itself stays stateless.** `WorkspaceSidebar` holds no `@State` by
+/// design — see its own note — and hover is the one thing here that is genuinely local: which row the
+/// pointer is over is `AppCore`'s, because the row needs it to decide whether to draw this button at
+/// all, but whether the *button* is hovered is nobody else's business and routing it through `AppCore`
+/// would mean a whole-app invalidation per pointer move over a 18-point square.
+///
+/// **The hover treatment is the platform's, not an invention.** AppKit's own close affordances — the
+/// Safari tab cross, the Xcode navigator's — put a soft rounded fill behind the glyph and lift the
+/// glyph a step in emphasis, rather than changing size or colour. That is what this does: a
+/// continuous-corner rounded rect at 18 points, a fill of a tenth of the label colour, and the glyph
+/// moving from `secondaryLabel` to `label`. Nothing moves and nothing resizes, so the pointer can
+/// rest on it and the target cannot slide out from under a click.
+///
+/// **The drawn area and the clickable area are the same rectangle.** The previous version drew a
+/// 16-point glyph in a 16-point frame, which left a target smaller than the thing it looked like and
+/// smaller than the 28-point controls beside it. The frame here is 18 and the `contentShape` is on the
+/// frame, so what is highlighted is exactly what is hit.
+private struct TabCloseButton: View {
+    let action: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "xmark")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(Color(nsColor: isHovered ? .labelColor : .secondaryLabelColor))
+                .frame(width: Theme.Size.tabCloseSize, height: Theme.Size.tabCloseSize)
+                .background {
+                    RoundedRectangle(cornerRadius: Theme.Radius.tabClose, style: .continuous)
+                        .fill(Color.primary.opacity(isHovered ? Theme.Size.tabCloseHoverFill : 0))
+                }
+                .contentShape(RoundedRectangle(
+                    cornerRadius: Theme.Radius.tabClose, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .onHover { inside in
+            isHovered = inside
+        }
+        // Fast, because this is feedback for a pointer that has already arrived: a fade long enough to
+        // watch is a fade that makes the button feel late.
+        .animation(.easeOut(duration: Theme.Motion.tabCloseHover), value: isHovered)
+        .help("Close tab")
+        .accessibilityLabel("Close tab")
+    }
+}

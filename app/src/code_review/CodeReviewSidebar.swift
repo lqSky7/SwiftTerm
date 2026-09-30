@@ -54,21 +54,15 @@ struct CodeReviewSidebar: View {
             ScrollView {
                 LazyVStack(spacing: 2) {
                     ForEach(coordinator.summary.files) { file in
-                        Button { coordinator.select(file) } label: {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(file.path).lineLimit(1).truncationMode(.middle)
-                                    Text(file.scope.rawValue.capitalized).font(.caption2).foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                Text(file.binary ? "Binary" : "+\(file.added) −\(file.removed)")
-                                    .font(.system(.caption, design: .monospaced))
-                            }
-                            .padding(.horizontal, Theme.Spacing.lg).padding(.vertical, Theme.Spacing.sm)
-                            .background(coordinator.selected?.id == file.id ? Color.primary.opacity(0.08) : .clear)
-                        }.buttonStyle(.plain)
+                        CodeReviewFileRow(
+                            file: file,
+                            isSelected: coordinator.selected?.id == file.id
+                        ) {
+                            coordinator.select(file)
+                        }
                     }
                 }
+                .padding(.vertical, Theme.Spacing.xxs)
             }
             if coordinator.summary.files.isEmpty {
                 Text(coordinator.root == nil ? "This pane is not in a local Git repository." : "No changes")
@@ -116,6 +110,47 @@ struct CodeReviewSidebar: View {
             }
             Spacer(minLength: 0)
         }
+    }
+}
+
+private struct CodeReviewFileRow: View {
+    let file: GitFileChange
+    let isSelected: Bool
+    let onSelect: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: onSelect) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(file.path).lineLimit(1).truncationMode(.middle)
+                    Text(file.scope.rawValue.capitalized).font(.caption2).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: Theme.Spacing.md)
+                Text(file.binary ? "Binary" : "+\(file.added) −\(file.removed)")
+                    .font(.system(.caption, design: .monospaced))
+            }
+            .padding(.horizontal, Theme.Spacing.md)
+            .padding(.vertical, Theme.Spacing.sm)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
+                        .fill(Color.primary.opacity(isHovered ? 0.14 : 0.10))
+                } else if isHovered {
+                    RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
+                        .fill(Color.primary.opacity(0.06))
+                }
+            }
+            .padding(.horizontal, Theme.Size.sidebarRowInset)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .contentShape(Rectangle())
+        .onHover { inside in
+            isHovered = inside
+        }
+        .animation(.easeInOut(duration: 0.12), value: isHovered)
     }
 }
 

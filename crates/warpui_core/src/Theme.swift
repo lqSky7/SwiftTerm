@@ -24,6 +24,12 @@ enum Theme {
         /// is: the reference's corners are a *ratio* of the highlight's height rather than a fixed
         /// radius, and at `sidebarRowHeight` that ratio is this.
         static let sidebarRow: CGFloat = 8
+        /// The tab close button's hover fill.
+        ///
+        /// Smaller than `control`, because it sits inside a row whose own highlight is
+        /// `sidebarRow`: a fill at the same radius reads as a second, smaller row inside the row.
+        static let tabClose: CGFloat = 4
+
         /// Where two rounded corners sit adjacent, `inner = outer - gap`.
         static let inset: CGFloat = 4
     }
@@ -67,6 +73,21 @@ enum Theme {
         /// The sidebar's width and the material's opacity are not here: they are preferences, and they
         /// live in `ChromeSettings`, which is a model a harness can hold.
         static let sidebarHeaderHeight: CGFloat = 54
+        /// The cross that closes a tab, drawn and hit.
+        ///
+        /// **One number for both, and it is why this token exists.** The drawn area and the
+        /// clickable area have to be the same rectangle — a glyph that looks 18 points and hits 12
+        /// is a button that misses — and the previous inline 16 was smaller than the 28-point
+        /// controls it sits beside, so it read as a smaller class of control than it is.
+        static let tabCloseSize: CGFloat = 18
+        /// How much of the label colour sits behind the tab cross on hover.
+        ///
+        /// An opacity rather than a `Color`, in `Size` rather than in `Colors`, for the same reason
+        /// `sidebarRowGlowFloor` is: it is a fraction of a colour the system already resolves per
+        /// appearance, and naming it here is what stops the row highlight and the button highlight
+        /// from drifting apart. A tenth is the weight AppKit's own close affordances use — enough to
+        /// find the target, not enough to read as selected.
+        static let tabCloseHoverFill: Double = 0.10
         /// The placeholder avatar in the sidebar's first row, and how tall that row is. Taller than a tab
         /// row on purpose: it is not a tab, and the one row that says whose window this is should not look
         /// like the things you can click to switch.
@@ -252,6 +273,13 @@ enum Theme {
     enum Motion {
         /// Long enough to read as a fade, short enough that a keystroke never waits on it.
         static let chromeFade: TimeInterval = 0.18
+
+        /// The tab cross's hover feedback.
+        ///
+        /// Fast on purpose, and faster than `chromeFade`: that one transitions between two states
+        /// of the window, while this is feedback for a pointer that has already arrived. A fade
+        /// long enough to watch is a fade that makes the button feel late.
+        static let tabCloseHover: TimeInterval = 0.10
 
         /// The colour bloom that plays over the window when a tab opens — one pass of the loop the
         /// reference's hero background runs, and then nothing.
