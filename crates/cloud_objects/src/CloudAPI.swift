@@ -137,6 +137,21 @@ enum CloudRoutes {
         )
     }
 
+    /// Renew the publisher lease.
+    ///
+    /// Over HTTP rather than over the socket, because the relay holds no database credential and so
+    /// a `renew` frame could only ever renew an in-memory lease. The durable lease is what fences a
+    /// stale publisher, so it is renewed by the client that holds the credential. Every ten seconds
+    /// against a thirty-second expiry; a `409` means stop publishing rather than retry.
+    static func renewLease(sessionID: String, epoch: String, leaseToken: String) -> CloudRequest {
+        CloudRequest(
+            method: "POST",
+            path: "/live/\(sessionID)/lease",
+            body: body(["epoch": epoch, "lease_token": leaseToken]),
+            requiresCSRF: true,
+        )
+    }
+
     static func endStream(id: String) -> CloudRequest {
         CloudRequest(method: "POST", path: "/live/\(id)/end", requiresCSRF: true)
     }
@@ -175,6 +190,9 @@ struct CloudTicket: Decodable, Equatable, Sendable {
     let ticket: String
     let role: String
     let epoch: String
+    /// Present only for a publisher. It is the client's capability to renew, and a renewal that does
+    /// not match it is refused.
+    let leaseToken: String?
 }
 
 /// The HTTP client.

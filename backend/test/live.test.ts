@@ -420,6 +420,67 @@ describe("tickets", () => {
     assert.equal(response.status, 404, "not 403: the endpoint must not confirm the id exists");
   });
 
+  it("renews the publisher lease, and refuses a superseded one", async () => {
+    const tenant = await newTenant("lease");
+    const sessionId = await openedStream(tenant);
+
+    const admitted = await call(`/live/${sessionId}/tickets`, {
+      method: "POST",
+      session: tenant.session,
+      body: { role: "publisher" },
+    });
+    assert.equal(admitted.status, 201);
+    const body = (await admitted.json()) as { epoch: string; lease_token: string };
+    // The token has to come back, or the client can publish but never prove it still may.
+    assert.equal(typeof body.lease_token, "string");
+
+    const renewed = await call(`/live/${sessionId}/lease`, {
+      method: "POST",
+      session: tenant.session,
+      body: { epoch: body.epoch, lease_token: body.lease_token },
+    });
+    assert.equal(renewed.status, 204);
+
+    // A renewal that does not match the installed token is a publisher that has been superseded.
+    const wrong = await call(`/live/${sessionId}/lease`, {
+      method: "POST",
+      session: tenant.session,
+      body: { epoch: body.epoch, lease_token: randomUUID() },
+    });
+    assert.equal(wrong.status, 409);
+
+    // And so is one carrying a different epoch, even with the right token. A *plausible* epoch:
+    // epoch 0 is refused as malformed rather than as superseded, because a publisher epoch is
+    // never 0 — the database's own CHECK says so.
+    const stale = await call(`/live/${sessionId}/lease`, {
+      method: "POST",
+      session: tenant.session,
+      body: { epoch: String(Number(body.epoch) + 1), lease_token: body.lease_token },
+    });
+    assert.equal(stale.status, 409);
+  });
+
+  it("refuses a lease renewal for another tenant's stream", async () => {
+    const tenantA = await newTenant("lease-owner");
+    const sessionId = await openedStream(tenantA);
+    const admitted = await call(`/live/${sessionId}/tickets`, {
+      method: "POST",
+      session: tenantA.session,
+      body: { role: "publisher" },
+    });
+    const body = (await admitted.json()) as { epoch: string; lease_token: string };
+
+    const tenantB = await newTenant("lease-thief");
+    const response = await call(`/live/${sessionId}/lease`, {
+      method: "POST",
+      session: tenantB.session,
+      body: { epoch: body.epoch, lease_token: body.lease_token },
+    });
+    // Row-level security scopes the update to the caller's own rows, so another tenant's lease is
+    // simply not there to renew.
+    assert.equal(response.status, 409);
+  });
+
   it("refuses an unknown role", async () => {
     const tenant = await newTenant("bad-role");
     const sessionId = await openedStream(tenant);

@@ -374,11 +374,6 @@ export function attachRelay(server: Server, dependencies: RelayDependencies): Re
     const session = connection.session;
     if (session === null) return;
 
-    if (message.type === "renew") {
-      session.renewLease();
-      return;
-    }
-
     if (typeof message.type !== "string" || !PUBLISHER_OUTPUT_FRAMES.has(message.type)) {
       connection.socket.close(4400, "invalid_frame");
       return;

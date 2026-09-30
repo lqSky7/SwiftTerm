@@ -39,6 +39,7 @@ import {
   listLiveSessions,
   newLeaseToken,
   readLiveSession,
+  renewPublisherLease,
   type LiveSessionRow,
 } from "../shared_session/live.ts";
 import { mintTicket } from "../shared_session/socket.ts";
@@ -589,8 +590,48 @@ export function buildRoutes(dependencies: RouteDependencies): Route[] {
             expires_at: new Date(minted.expiresAt).toISOString(),
             role: "publisher",
             epoch: String(admitted.publisherEpoch),
+            // The lease token travels back so the client can renew. It is the client's own
+            // capability — the server generated it, but only the holder can present it, and a
+            // renewal that does not match is refused. Without this the client could publish but
+            // never prove it still may.
+            lease_token: leaseToken,
           },
         };
+      },
+    },
+
+    {
+      method: "POST",
+      path: "/live/:id/lease",
+      handler: async (context, params): Promise<HttpResponse> => {
+        const session = await requireSession(context, dependencies);
+        requireCsrf(context, session, config);
+        const sessionId = requireUuid(params.id ?? "", "session id");
+        const body = asObject(context.body);
+
+        const epoch = Number(body.epoch);
+        const leaseToken = body.lease_token;
+        if (!Number.isSafeInteger(epoch) || epoch < 1) {
+          throw HttpError.invalid("epoch must be a positive integer");
+        }
+        if (typeof leaseToken !== "string" || leaseToken === "") {
+          throw HttpError.invalid("lease_token is required");
+        }
+
+        // Renewal is over HTTP rather than over the socket, and that is deliberate: the relay holds
+        // no database credential — by design, it never has — so a `renew` frame on the socket could
+        // only ever renew an in-memory lease. The durable lease is what fences a stale publisher, so
+        // it is renewed by the client that holds the credential, every ten seconds, against a
+        // thirty-second expiry.
+        const renewed = await renewPublisherLease(db, session.ownerId, {
+          sessionId,
+          epoch,
+          leaseToken,
+        });
+        // `false` is not a conflict to be retried: it means this publisher's epoch or token has been
+        // superseded, and the only correct answer is to stop publishing.
+        if (!renewed) throw new HttpError(409, "stale_lease", "this publisher no longer holds the lease");
+        return { status: 204 };
       },
     },
 

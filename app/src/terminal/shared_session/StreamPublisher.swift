@@ -1,0 +1,315 @@
+import Foundation
+
+/// Publishes one pane's already-captured state to the relay.
+///
+/// The split here is the handoff's, and it is the reason typing never waits: **capture happens on the
+/// main actor, everything else happens off it.** This type never reads a grid. It takes a
+/// `WireSnapshot` or a `WireDamage` — both value types, both `Sendable` — and owns the encoding, the
+/// socket and the lease from there. A publisher that reached back into the model from its own task
+/// would be racing the shell, and a slow relay would show up as a stuttering prompt.
+///
+/// Three things it will not do:
+///
+///   * **It will not allocate while off.** `stop()` cancels the tasks, closes the socket and clears
+///     the encoder; a pane that is not sharing costs nothing.
+///   * **It will not keep publishing past the lease.** The renewal runs every ten seconds against a
+///     thirty-second lease, and a renewal that fails stops the stream rather than continuing to write
+///     with a credential the server has already fenced out.
+///   * **It will not encode for nobody.** At zero viewers the relay says so, and the pane is told to
+///     stop capturing — a stream nobody is watching should cost the host nothing.
+@MainActor
+@Observable
+final class StreamPublisher {
+    enum State: Equatable {
+        case idle
+        case starting
+        /// Connected, with the number of browsers the relay reports.
+        case live(viewers: Int)
+        case failed(String)
+    }
+
+    private(set) var state: State = .idle
+    /// The session the relay knows this pane by, once it exists.
+    private(set) var sessionID: String?
+    /// The publisher generation. A ticket carries it, and a renewal must match it.
+    private(set) var epoch: String?
+
+    @ObservationIgnored private let api: CloudAPI
+    @ObservationIgnored private let identity: PaneExportIdentity
+    @ObservationIgnored private let deviceID: String
+    @ObservationIgnored private let socketURL: URL
+    @ObservationIgnored private let origin: String
+
+    @ObservationIgnored private var socket: URLSessionWebSocketTask?
+    @ObservationIgnored private var leaseToken: String?
+    @ObservationIgnored private var renewTask: Task<Void, Never>?
+    @ObservationIgnored private var sendTask: Task<Void, Never>?
+    /// Frames waiting to go out, drained by one task so two captures cannot interleave mid-frame.
+    @ObservationIgnored private var outbox: [String] = []
+    @ObservationIgnored private var hasSentHello = false
+    /// The sequence the host has published. The relay orders by this and the viewer resumes by it.
+    @ObservationIgnored private var seq = 0
+
+    init(
+        api: CloudAPI,
+        identity: PaneExportIdentity,
+        deviceID: String,
+        socketBaseURL: URL,
+        origin: String
+    ) {
+        self.api = api
+        self.identity = identity
+        self.deviceID = deviceID
+        self.socketBaseURL = socketBaseURL
+        self.origin = origin
+    }
+
+    var isLive: Bool {
+        if case .live = state { return true }
+        return false
+    }
+
+    // MARK: - Start and stop
+
+    /// The one explicit action that starts sharing. Nothing here runs until someone asks.
+    func start(title: String) {
+        guard case .idle = state else { return }
+        state = .starting
+
+        Task { [api, identity, deviceID] in
+            do {
+                // Creating the stream is idempotent on the client request id, so a retry after a
+                // dropped response returns the stream that already exists rather than a second one.
+                let created = try await api.send(
+                    CloudRoutes.createStream(
+                        deviceID: deviceID,
+                        localPaneID: identity.uuid,
+                        clientRequestID: identity.clientRequestID,
+                        title: title),
+                    as: StreamCreation.self)
+                sessionID = created.sessionId
+
+                // A publisher ticket is also the fence: minting one advances the epoch, so any
+                // earlier publisher of this stream is refused from here on.
+                let ticket = try await api.send(
+                    CloudRoutes.mintTicket(sessionID: created.sessionId, role: .publisher),
+                    as: CloudTicket.self)
+                epoch = ticket.epoch
+                leaseToken = ticket.leaseToken
+                connect(ticket: ticket.ticket, sessionID: created.sessionId)
+            } catch let error as CloudError {
+                state = .failed(error.messageForUser)
+            } catch {
+                state = .failed(CloudError.malformedResponse.messageForUser)
+            }
+        }
+    }
+
+    /// Stop sharing. Idempotent, and safe to call from a pane close, a shell exit or app teardown.
+    func stop() {
+        renewTask?.cancel()
+        renewTask = nil
+        sendTask?.cancel()
+        sendTask = nil
+        socket?.cancel(with: .normalClosure, reason: nil)
+        socket = nil
+        outbox.removeAll()
+        hasSentHello = false
+        leaseToken = nil
+        seq = 0
+        state = .idle
+        // The stream is ended server-side rather than merely abandoned: an abandoned stream keeps a
+        // slot against the account's cap and a lease that has to expire before anyone can publish it.
+        if let sessionID {
+            let id = sessionID
+            self.sessionID = nil
+            Task { [api] in _ = try? await api.send(CloudRoutes.endStream(id: id)) }
+        }
+    }
+
+    // MARK: - Publishing
+
+    /// Send a whole snapshot. The first one opens the stream; a later one is a barrier the host
+    /// decided it needed.
+    func publish(_ snapshot: WireSnapshot) {
+        seq = max(seq, Int(snapshot.seq) ?? 0)
+        enqueue { try Self.frames(for: snapshot) }
+    }
+
+    /// Send a delta. Refused unless a snapshot has already opened the stream, because the contract
+    /// says the stream begins with one even when the host already has output.
+    func publish(_ damage: WireDamage) {
+        guard hasSentHello else { return }
+        seq = max(seq, Int(damage.seq) ?? 0)
+        enqueue { [try WireCanonicalJSON.encode(WireFrame.damage(damage))] }
+    }
+
+    /// The next sequence number. The host assigns it, not the relay — the relay orders by what it is
+    /// given and never invents a position.
+    func nextSeq() -> Int {
+        seq + 1
+    }
+
+    private func enqueue(_ build: @escaping () throws -> [String]) {
+        // Encoding is the expensive part and it happens on the send task, never on the caller's.
+        // The caller is the main actor, and the main actor is where typing is.
+        sendTask = Task { [previous = sendTask] in
+            await previous?.value
+            guard let frames = try? build() else { return }
+            outbox.append(contentsOf: frames)
+            await drain()
+        }
+    }
+
+    private func drain() async {
+        while !outbox.isEmpty {
+            let frame = outbox.removeFirst()
+            guard let socket else { return }
+            do {
+                try await socket.send(.string(frame))
+            } catch {
+                // A send that fails is a socket that is gone. `receive` reports it; retrying here
+                // would spin.
+                return
+            }
+        }
+    }
+
+    // MARK: - The socket
+
+    private func connect(ticket: String, sessionID: String) {
+        var request = URLRequest(url: socketBaseURL.appendingPathComponent("live/\(sessionID)"))
+        // The relay selects this subprotocol; a browser that is not granted one fails the handshake,
+        // and the native client is held to the same contract.
+        request.setValue("swiftterm.live.v1", forHTTPHeaderField: "Sec-WebSocket-Protocol")
+        request.setValue(origin, forHTTPHeaderField: "Origin")
+
+        let task = URLSession.shared.webSocketTask(with: request)
+        socket = task
+        task.resume()
+
+        let auth = WireAuth(ticket: ticket, clientID: identity.clientRequestID)
+        if let frame = try? WireCanonicalJSON.encode(WireFrame.auth(auth)) {
+            outbox.append(frame)
+        }
+        Task { await drain() }
+
+        receive(on: task)
+        startRenewing()
+    }
+
+    private func receive(on task: URLSessionWebSocketTask) {
+        task.receive { [weak self] result in
+            Task { @MainActor in
+                guard let self else { return }
+                switch result {
+                case .failure:
+                    // The relay is gone. Fail closed: the lease is not renewed from here, so it
+                    // expires server-side rather than being kept alive by a host that cannot write.
+                    if self.isLive { self.state = .failed("The relay connection dropped.") }
+                    self.stopRenewing()
+                case .success(let message):
+                    self.handle(message)
+                    self.receive(on: task)
+                }
+            }
+        }
+    }
+
+    private func handle(_ message: URLSessionWebSocketTask.Message) {
+        guard case .string(let text) = message, let data = text.data(using: .utf8) else { return }
+        guard let frame = try? WireFrame.decode(data) else { return }
+
+        switch frame {
+        case .viewerCount(let count):
+            // At zero viewers the host stops capturing. That is the whole reason the relay sends
+            // this frame: a stream nobody is watching should cost nothing.
+            state = .live(viewers: count.count)
+        case .error(let error):
+            if error.code == "capacity" { state = .failed("The relay refused that frame.") }
+        case .resync:
+            // The relay could not supply a gap, so it is asking for a fresh snapshot. The pane is
+            // told through `state`; the next capture is a snapshot rather than a delta.
+            needsSnapshot = true
+        default:
+            break
+        }
+    }
+
+    /// Set when the relay asks for a snapshot. The pane's next capture is a full one.
+    private(set) var needsSnapshot = false
+
+    // MARK: - The lease
+
+    private func startRenewing() {
+        renewTask?.cancel()
+        renewTask = Task { [api] in
+            while !Task.isCancelled {
+                // Ten seconds against a thirty-second lease: three chances to be late before the
+                // server fences this publisher out.
+                try? await Task.sleep(for: .seconds(10))
+                guard !Task.isCancelled, let sessionID, let epoch, let leaseToken else { return }
+                do {
+                    _ = try await api.send(
+                        CloudRoutes.renewLease(sessionID: sessionID, epoch: epoch, leaseToken: leaseToken))
+                } catch {
+                    // Fail closed. A publisher that cannot prove it still holds the lease must stop
+                    // writing rather than keep sending frames the relay will drop anyway — and a
+                    // `409` here means the epoch or the token has already been superseded.
+                    await MainActor.run { self.state = .failed("This stream is no longer yours.") }
+                    return
+                }
+            }
+        }
+    }
+
+    private func stopRenewing() {
+        renewTask?.cancel()
+        renewTask = nil
+    }
+
+    // MARK: - Frames
+
+    /// The frames that carry a snapshot: a hello if the stream has not opened, then begin, chunks and
+    /// end. The chunks are bounded by the contract, and the digest is over the raw bytes so the
+    /// browser can verify before it adopts anything.
+    static func frames(for snapshot: WireSnapshot) throws -> [String] {
+        let bytes = try WireCanonicalJSON.encode(snapshot)
+        let snapshotID = UUID().uuidString.lowercased()
+        let chunkSize = WireLimits.maxRawChunkBytes
+        let chunks = stride(from: 0, to: max(bytes.count, 1), by: chunkSize).map { offset in
+            bytes.subdata(in: offset..<min(offset + chunkSize, bytes.count))
+        }
+
+        var frames: [String] = []
+        frames.append(
+            try WireCanonicalJSON.encode(
+                WireFrame.snapshotBegin(
+                    WireSnapshotBegin(
+                        epoch: snapshot.epoch,
+                        seq: snapshot.seq,
+                        snapshotID: snapshotID,
+                        bytes: bytes.count,
+                        chunks: chunks.count,
+                        sha256: WireSHA256.hex(of: bytes)))))
+        for (index, chunk) in chunks.enumerated() {
+            frames.append(
+                try WireCanonicalJSON.encode(
+                    WireFrame.snapshotChunk(
+                        WireSnapshotChunk(
+                            epoch: snapshot.epoch,
+                            snapshotID: snapshotID,
+                            index: index,
+                            data: chunk))))
+        }
+        frames.append(
+            try WireCanonicalJSON.encode(
+                WireFrame.snapshotEnd(
+                    WireSnapshotEnd(epoch: snapshot.epoch, snapshotID: snapshotID))))
+        return frames
+    }
+}
+
+private struct StreamCreation: Decodable, Sendable {
+    let sessionId: String
+}
