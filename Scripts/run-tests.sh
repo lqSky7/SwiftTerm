@@ -56,6 +56,7 @@ if [ "${1:-}" = "--exec" ]; then
             app/src/terminal/view/TerminalFindBar.swift
         )
     fi
+    if [ "$name" = "git-review-test" ]; then SOURCES+=(crates/git/src/*.swift); fi
     : > "$BIN/$name.running"
     trap 'rm -f "$BIN/$name.running"' EXIT
     fail() {
