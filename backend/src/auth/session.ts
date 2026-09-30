@@ -166,13 +166,13 @@ export function sessionCookies(
       maxAgeSeconds: maxAge,
       httpOnly: true,
       secure,
-      sameSite: "Lax",
+      sameSite: config.cookieSameSite,
     }),
     serializeCookie(names.csrf, session.csrfToken, {
       maxAgeSeconds: maxAge,
       httpOnly: false,
       secure,
-      sameSite: "Lax",
+      sameSite: config.cookieSameSite,
     }),
   ];
 }
@@ -180,7 +180,7 @@ export function sessionCookies(
 export function clearedSessionCookies(names: SessionCookieNames, config: Config): string[] {
   const secure = config.secureCookies;
   return [
-    clearCookie(names.session, { httpOnly: true, secure }),
-    clearCookie(names.csrf, { httpOnly: false, secure }),
+    clearCookie(names.session, { httpOnly: true, secure, sameSite: config.cookieSameSite }),
+    clearCookie(names.csrf, { httpOnly: false, secure, sameSite: config.cookieSameSite }),
   ];
 }

@@ -21,6 +21,14 @@ export interface Config {
   readonly cookieName: string;
   readonly csrfCookieName: string;
   readonly csrfHeaderName: string;
+  /**
+   * `Lax` when the website and the API share an origin — which is the design the handoff
+   * specifies. `None` is required when they do not, because a `Lax` cookie is not sent on a
+   * cross-site request at all, so the session would silently never arrive. It is not a
+   * weakening of CSRF defence: the primary controls are the Origin allowlist and the CSRF
+   * header digest, both of which are checked on every write regardless of this value.
+   */
+  readonly cookieSameSite: "Lax" | "Strict" | "None";
   /** Secure cookies require HTTPS. Off only for plain-HTTP local development. */
   readonly secureCookies: boolean;
   /** True only when the operator explicitly opted into test fixtures. */
@@ -108,7 +116,20 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     cookieName: env.SESSION_COOKIE_NAME?.trim() || "swiftterm_session",
     csrfCookieName: env.CSRF_COOKIE_NAME?.trim() || "swiftterm_csrf",
     csrfHeaderName: env.CSRF_HEADER_NAME?.trim() || "x-swiftterm-csrf",
+    cookieSameSite: parseSameSite(env.COOKIE_SAME_SITE),
     secureCookies: env.SECURE_COOKIES === "0" ? false : true,
     testFixtures,
   };
+}
+
+/** Defaults to `Lax`, which is correct whenever the site and the API share an origin. */
+function parseSameSite(value: string | undefined): "Lax" | "Strict" | "None" {
+  switch ((value ?? "Lax").trim().toLowerCase()) {
+    case "none":
+      return "None";
+    case "strict":
+      return "Strict";
+    default:
+      return "Lax";
+  }
 }

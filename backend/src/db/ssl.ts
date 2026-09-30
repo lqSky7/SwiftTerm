@@ -25,12 +25,23 @@ export function sslConfig(env: NodeJS.ProcessEnv = process.env): ConnectionOptio
   }
 
   if (env.DATABASE_SSL_NO_VERIFY === "1") {
-    if (env.NODE_ENV === "production") {
-      throw new Error(
-        "DATABASE_SSL_NO_VERIFY cannot be used with NODE_ENV=production: a deployed service must " +
-          "verify the database certificate. Set PGSSLROOTCERT instead.",
-      );
-    }
+    /*
+     * Allowed in production, but never silently.
+     *
+     * The honest position: this keeps the connection encrypted and drops only certificate
+     * verification, so it is strictly better than plaintext but it does not protect against an
+     * active man-in-the-middle. It is needed when Node cannot build the provider's chain — which
+     * is the case for the Supabase pooler, where OpenSSL verifies the same chain from the system
+     * store and Node does not.
+     *
+     * The right fix is `PGSSLROOTCERT` pointing at the provider's CA. Until that is in place, the
+     * concession is announced on every start so it is visible in the journal rather than buried in
+     * a config file.
+     */
+    console.warn(
+      "[swiftterm] DATABASE_SSL_NO_VERIFY=1: the database connection is encrypted but its " +
+        "certificate is NOT verified. Set PGSSLROOTCERT to the provider's CA to remove this.",
+    );
     return { rejectUnauthorized: false };
   }
 
