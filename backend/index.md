@@ -41,6 +41,10 @@ nothing rather than everything.
 
 ## Status
 
-B1A's database foundation is implemented and verified against a live PostgreSQL 17 (Supabase). The
-service layer — OIDC verification, session cookies, CSRF, the HTTP endpoints — is **not written
-yet**; `src/auth/` and `src/http/` do not exist. See `../docs/backend/todo.md`.
+B1A is implemented end to end and verified against a live PostgreSQL 17 (Supabase): the database
+foundation, and the service layer in `src/auth/` and `src/http/`. 36 `node:test` checks pass,
+covering the role boundaries, row-level security, credential resolution, and the HTTP surface
+including both halves of the CSRF rule.
+
+Remaining B1A items are the rollback policy and a backup/restore drill. See
+`../docs/backend/todo.md`.

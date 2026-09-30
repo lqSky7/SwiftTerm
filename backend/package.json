@@ -8,7 +8,7 @@
     "node": ">=24"
   },
   "scripts": {
-    "start": "node src/http/server.ts",
+    "start": "node src/http/main.ts",
     "migrate": "node src/db/migrate.ts",
     "provision-roles": "node scripts/provision-roles.ts",
     "test": "node --test --test-force-exit test/",

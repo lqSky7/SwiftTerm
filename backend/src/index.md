@@ -4,6 +4,8 @@
 | --- | --- |
 | `config.ts` | startup configuration: validated once, and it fails rather than defaulting |
 | `db/` | the pool, the transaction discipline and the credential resolvers |
+| `auth/` | OIDC verification, sessions, CSRF, device registration |
+| `http/` | the server, the routes and the entrypoint |
 
 ## Configuration fails closed
 
@@ -15,7 +17,9 @@ JWKS that does not live under the issuer, and a session lifetime over 24 hours.
 `SWIFTTERM_TEST_FIXTURES` exists for local work and is refused outright when
 `NODE_ENV=production`: test fixtures are not an authentication bypass for a deployed service.
 
-## Not written yet
+## Status
 
-`auth/` and `http/` do not exist. OIDC token verification, session cookies, CSRF, device endpoints
-and the server itself are the remaining half of B1A.
+B1A is implemented on the service side: 36 `node:test` checks pass against the live database,
+covering the role boundaries, row-level security, credential resolution, and the HTTP surface
+including both halves of the CSRF rule. The remaining B1A items are the rollback policy and the
+backup/restore drill; see `../../docs/backend/todo.md`.

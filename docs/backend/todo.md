@@ -160,13 +160,13 @@ spellings and rules C0 had to freeze are recorded in wire-contract.md under "Fro
       or `auth_issuer`; no DDL; snapshots have no `UPDATE`.
 - [x] Fixed-search-path `SECURITY DEFINER` credential resolvers, owned by a role that cannot log in.
 - [x] Transaction-local owner context on one checked-out pg client; no `pool.query` in a transaction.
-- [x] `node:test` real-role suite: 17 checks passing against live PostgreSQL 17.
+- [x] `node:test` suites: 36 checks passing against live PostgreSQL 17 (roles + HTTP).
 - [x] Idempotency proven by applying migration 001 twice.
-- [ ] OIDC authorization-code/PKCE with `jose` and a fixed trusted JWKS.
-- [ ] Browser session cookie, CSRF companion cookie, logout revocation.
-- [ ] `GET /me`, `POST`/`DELETE /devices`, login/callback/logout/session/CSRF endpoints.
-- [ ] Device registration concurrency and changed-payload 409.
-- [ ] Resolver privilege/`search_path` abuse tests and log-redaction tests.
+- [x] OIDC token verification with `jose` against a fixed trusted JWKS, algorithms pinned.
+- [x] Browser session cookie, CSRF companion cookie, logout revocation.
+- [x] `GET /me`, `GET`/`POST`/`DELETE /devices`, session/logout/CSRF endpoints, `/healthz`.
+- [x] Device registration idempotency and changed-payload 409.
+- [ ] Resolver `search_path` abuse tests and log-redaction tests.
 - [ ] Rollback policy and backup/restore drill.
 
 Applied to Supabase project `upmarjiewuwvaljnnboq` (PostgreSQL 17.11, ap-south-1) via the pooler:
