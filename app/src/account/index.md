@@ -47,8 +47,26 @@ The `Origin` is sent on every write because the backend refuses a cookie-authent
 ambient; a native client is not subject to that threat but does have to satisfy the rule. It is a
 wart in the contract, recorded in `docs/backend/todo.md` rather than hidden here.
 
+## Sign-in
+
+`SignInFlow.swift` drives it: a password grant against Supabase Auth, then the exchange at
+`POST /auth/session` that turns the token into a session the backend knows.
+
+**The Supabase project has no OAuth provider configured**, so there is no authorization endpoint to
+send a browser to and no redirect to come back from — the same divergence `website/src/auth/client.ts`
+records. That is why this is a password grant and not an `ASWebAuthenticationSession` flow. The
+exchange endpoint is the one a redirect callback would use, so configuring a provider later changes
+this file and nothing else. The `swiftterm://` scheme is registered in `Info.plist` ahead of that.
+
+The **refresh token is stored before the session is created**, not after: a session that exists but
+cannot be renewed is a session that expires mid-stream with no way back. Renewal is not on a timer —
+the token is good for an hour and the app has no reason to hold a wake-up for that — it runs when the
+backend says the session has ended, which is the moment it is worth attempting.
+
+Every rejected credential gets **one** answer. Telling "no such account" apart from "wrong password"
+is how an account-enumeration oracle gets built, and the website makes the same choice.
+
 ## Still to add
 
-The sign-in **flow** — `ASWebAuthenticationSession` against the OIDC provider, the nonce, and the
-`swiftterm://auth/callback` URL this app now registers. `AccountController.signIn` takes an access
-token and is what that flow calls once it has one; the flow itself is the next piece of B1B.
+The **account UI** — an AppKit surface for signing in, the device list and revoke. `AccountController`
+and `SignInFlow` are complete enough to drive it; nothing renders them yet.

@@ -9,22 +9,49 @@ import Observation
 struct CloudConfiguration: Sendable {
     let baseURL: URL
     let origin: String
+    /// Where an access token comes from.
+    ///
+    /// The Supabase project has **no OAuth provider configured**, so there is no redirect target to
+    /// send a browser to — the same divergence the website records. Supabase Auth issues the token
+    /// and `POST /auth/session` exchanges it, and because the exchange endpoint is the one a redirect
+    /// callback would use, configuring a provider later changes only where the token comes from.
+    let supabaseURL: URL?
+    /// The publishable client key. Safe to embed: it authorises the *client*, and every row is
+    /// still scoped by row-level security and by the backend's own verification of the token's
+    /// signature.
+    let supabaseAnonKey: String?
 
     static let deployed = CloudConfiguration(
         baseURL: URL(string: "https://swiftterm.shares.zrok.io")!,
         origin: "https://swiftterm.catinice.workers.dev",
+        supabaseURL: nil,
+        supabaseAnonKey: nil,
     )
 
     static func fromBundle(_ bundle: Bundle = .main) -> CloudConfiguration {
         let base = bundle.object(forInfoDictionaryKey: "SwiftTermAPIBaseURL") as? String
         let origin = bundle.object(forInfoDictionaryKey: "SwiftTermAPIOrigin") as? String
+        let supabase = bundle.object(forInfoDictionaryKey: "SwiftTermSupabaseURL") as? String
+        let anonKey = bundle.object(forInfoDictionaryKey: "SwiftTermSupabaseAnonKey") as? String
+
         guard
             let base, let url = URL(string: base), url.scheme != nil,
             let origin, URL(string: origin) != nil
         else {
             return .deployed
         }
-        return CloudConfiguration(baseURL: url, origin: origin)
+        // Supabase is optional rather than required: a build without it still signs in against a
+        // pasted token, which is how the website behaves too.
+        let supabaseURL = supabase.flatMap { URL(string: $0) }.flatMap { $0.scheme == nil ? nil : $0 }
+        return CloudConfiguration(
+            baseURL: url,
+            origin: origin,
+            supabaseURL: supabaseURL,
+            supabaseAnonKey: anonKey?.isEmpty == true ? nil : anonKey)
+    }
+
+    var canSignInWithPassword: Bool {
+        supabaseURL != nil && supabaseAnonKey != nil
     }
 }
 
@@ -61,6 +88,8 @@ final class AccountController {
 
     @ObservationIgnored private let api: CloudAPI
     @ObservationIgnored private let identity: DeviceIdentity
+    /// Kept so the sign-in flow can reach Supabase without a second copy of the configuration.
+    @ObservationIgnored let configuration: CloudConfiguration
     @ObservationIgnored private var signInTask: Task<Void, Never>?
     @ObservationIgnored private var refreshTask: Task<Void, Never>?
 
@@ -70,6 +99,7 @@ final class AccountController {
     ) {
         self.api = CloudAPI(baseURL: configuration.baseURL, origin: configuration.origin)
         self.identity = identity
+        self.configuration = configuration
     }
 
     var isSignedIn: Bool {
@@ -115,6 +145,22 @@ final class AccountController {
                 guard !Task.isCancelled else { return }
                 state = .failed(.malformedResponse)
             }
+        }
+    }
+
+    /// Record a failure that happened outside this type.
+    ///
+    /// The sign-in flow obtains a token before this controller is involved, and its failures — a
+    /// rejected password, an unreachable issuer — are still the account's failures. Rather than
+    /// duplicate the state machine there, it reports here.
+    func report(_ error: CloudError) {
+        lastError = error
+        if error.endsTheSession {
+            state = .signedOut
+        } else if case .signedIn = state {
+            // A failure while signed in does not unsign the person; it is shown and dismissed.
+        } else {
+            state = .failed(error)
         }
     }
 

@@ -33,9 +33,11 @@
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 	<!--
-	  The sign-in callback. A custom scheme rather than a loopback listener: a listener is a port
-	  that anything on the machine can also reach, and the code that lands on it is a session
-	  credential. Registering the scheme means only this app is handed the URL.
+	  Registered ahead of the provider that will use it. The Supabase project has no OAuth provider
+	  configured, so today sign-in is a password grant and no browser is opened — but the scheme is
+	  what a redirect callback will need, and a custom scheme is the right shape for it: a loopback
+	  listener is a port anything on the machine can also reach, and the code that lands on it is a
+	  session credential.
 	-->
 	<key>CFBundleURLTypes</key>
 	<array>
@@ -51,13 +53,24 @@
 		</dict>
 	</array>
 	<!--
-	  Both are optional. When present they override the deployed pair, which is how a debug build
+	  All four are optional. When present they override the deployed pair, which is how a debug build
 	  is pointed at a local backend without editing code. `CloudConfiguration.fromBundle` falls back
-	  to the deployed values when either is missing or unparseable.
+	  to the deployed values when the API pair is missing or unparseable, and to "no password
+	  sign-in" when the Supabase pair is — a build configured by nobody still signs in against a
+	  pasted token, which is how the website behaves too.
 	-->
 	<key>SwiftTermAPIBaseURL</key>
 	<string>https://swiftterm.shares.zrok.io</string>
 	<key>SwiftTermAPIOrigin</key>
 	<string>https://swiftterm.catinice.workers.dev</string>
+	<!--
+	  The publishable client key. Safe to embed: it authorises the client, and every row is still
+	  scoped by row-level security and by the backend's own verification of the token's signature.
+	  The *service* key must never appear here.
+	-->
+	<key>SwiftTermSupabaseURL</key>
+	<string></string>
+	<key>SwiftTermSupabaseAnonKey</key>
+	<string></string>
 </dict>
 </plist>
