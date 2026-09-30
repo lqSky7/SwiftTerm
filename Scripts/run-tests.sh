@@ -78,6 +78,12 @@ if [ "${1:-}" = "--exec" ]; then
             crates/cloud_objects/src/*.swift
         )
     fi
+    if [ "$name" = "control-lease-test" ]; then
+        # The control lease is a pure state machine over the wire's own counters. It needs the
+        # contract and nothing else — no terminal, no socket, no view — which is the property that
+        # makes it testable at all.
+        SOURCES+=(crates/shared_session/src/*.swift)
+    fi
     : > "$BIN/$name.running"
     trap 'rm -f "$BIN/$name.running"' EXIT
     fail() {
