@@ -19,7 +19,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { WireBlock, WireGrid, WireInputOperation, WireStyle } from "../../../contracts/ts/wire.ts";
-import { apiFetch } from "@/lib/api";
+import { currentAccount } from "@/auth/client";
+import { ApiError, apiFetch } from "@/lib/api";
 import { initialControlState, ViewerConnection, type ControlState } from "./connection.ts";
 import { chordFrom, inputOperationFor } from "./keys.ts";
 import { drawGrid, gridText, measureCells, rowText, type CellMetrics } from "./render.ts";
@@ -30,6 +31,7 @@ const FONT_SIZE = 13;
 
 export function LiveViewer({ sessionId }: { readonly sessionId: string | null }) {
   const [state, setState] = useState<ViewerState>(initialState);
+  const [accessError, setAccessError] = useState<number | null>(null);
   const [notice, setNotice] = useState<string>("");
   const [focusedBlock, setFocusedBlock] = useState<string | null>(null);
   const [control, setControl] = useState<ControlState>(initialControlState);
@@ -40,15 +42,22 @@ export function LiveViewer({ sessionId }: { readonly sessionId: string | null })
 
   const requestTicket = useCallback(async (): Promise<string> => {
     if (sessionId === null) throw new Error("no session");
-    const response = await apiFetch<{ ticket: string }>(`/live/${sessionId}/tickets`, {
-      method: "POST",
-      body: { role: "viewer" },
-    });
-    return response.ticket;
+    try {
+      const response = await apiFetch<{ ticket: string }>(`/live/${sessionId}/tickets`, {
+        method: "POST",
+        body: { role: "viewer" },
+      });
+      return response.ticket;
+    } catch (error) {
+      if (error instanceof ApiError && [401, 404, 409].includes(error.status)) {
+        setAccessError(error.status);
+      }
+      throw error;
+    }
   }, [sessionId]);
 
   useEffect(() => {
-    if (sessionId === null) return;
+    if (sessionId === null || accessError !== null) return;
     const connection = new ViewerConnection({
       apiBaseUrl: new URL(API_BASE_URL, window.location.origin).toString(),
       sessionId,
@@ -63,7 +72,7 @@ export function LiveViewer({ sessionId }: { readonly sessionId: string | null })
       connection.stop();
       connectionRef.current = null;
     };
-  }, [sessionId, requestTicket]);
+  }, [sessionId, requestTicket, accessError]);
 
   if (sessionId === null) {
     return (
@@ -74,6 +83,15 @@ export function LiveViewer({ sessionId }: { readonly sessionId: string | null })
         </p>
       </Frame>
     );
+  }
+
+  if (accessError !== null) {
+    return <Frame status="Access required">
+      <StreamAccess status={accessError} sessionId={sessionId} onRedeemed={() => {
+        setNotice("");
+        setAccessError(null);
+      }} />
+    </Frame>;
   }
 
   const live = state.live;
@@ -104,6 +122,64 @@ export function LiveViewer({ sessionId }: { readonly sessionId: string | null })
       )}
     </Frame>
   );
+}
+
+function StreamAccess({ status, sessionId, onRedeemed }: {
+  readonly status: number;
+  readonly sessionId: string;
+  readonly onRedeemed: () => void;
+}) {
+  const [accountId, setAccountId] = useState<string | null>(null);
+  const [code, setCode] = useState("");
+  const [signInHref, setSignInHref] = useState("/sign-in/");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    setCode(new URLSearchParams(window.location.hash.slice(1)).get("invite") ?? "");
+    setSignInHref(`/sign-in/?next=${encodeURIComponent(`/live/?s=${sessionId}${window.location.hash}`)}`);
+    void currentAccount().then((account) => {
+      if (!cancelled) setAccountId(account?.id ?? null);
+    });
+    return () => { cancelled = true; };
+  }, [sessionId]);
+
+  async function redeem(event: React.FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      const result = await apiFetch<{ session_id: string }>("/live/invitations/redeem", {
+        method: "POST", body: { code: code.trim() },
+      });
+      window.history.replaceState(null, "", `/live/?s=${result.session_id}`);
+      if (result.session_id === sessionId) onRedeemed();
+      else window.location.assign(`/live/?s=${result.session_id}`);
+    } catch (cause) {
+      setError(cause instanceof ApiError && cause.status === 401
+        ? "Sign in before accepting this invitation."
+        : "This invitation is unavailable or belongs to another account. Ask the host for a new one.");
+    } finally { setBusy(false); }
+  }
+
+  if (status === 409) return <p>This stream has ended. Ask the host for a new share link.</p>;
+  if (status === 401) return <p>Sign in to watch this stream. <a className="underline" href={signInHref}>Sign in</a></p>;
+  return <div className="max-w-xl space-y-4 text-sm">
+    <p>This account does not have access, or the stream is no longer available. Sign in with the Mac’s account, or ask the host for an invitation.</p>
+    <p>Anonymous sign-in creates a separate account on each device.</p>
+    {accountId && <label className="block space-y-2">
+      <span>Send this account ID to the host to enter in Share → Invite a Browser:</span>
+      <input aria-label="Your account ID" readOnly value={accountId} onFocus={(event) => event.target.select()} className="w-full rounded border px-3 py-2 font-mono" />
+    </label>}
+    <form onSubmit={(event) => void redeem(event)} className="space-y-3">
+      <label className="block">Invitation code
+        <input value={code} onChange={(event) => setCode(event.target.value)} className="mt-2 w-full rounded border px-3 py-2" autoComplete="off" />
+      </label>
+      <button disabled={busy || !code.trim()} className="rounded border px-3 py-2 disabled:opacity-40">{busy ? "Accepting…" : "Accept invitation"}</button>
+      {error && <p role="alert">{error}</p>}
+    </form>
+    <a href={signInHref} className="underline">Sign in with another account</a>
+  </div>;
 }
 
 /**

@@ -1,6 +1,6 @@
 # website/test — index
 
-Two files, run with `node --test --test-force-exit --test-timeout=30000 test/`. No browser, no
+Tests run with `node --test --test-force-exit --test-timeout=30000 test/`. No browser, no
 network, no database: the reducer is pure and the socket is driven through a fake.
 
 | File | Covers |
@@ -50,3 +50,5 @@ reconnect-under-load case. Those need a browser, which this environment does not
 proxy.test.ts verifies fixed-upstream routing, CSRF/cookie/Origin forwarding, Set-Cookie retention, manual redirects and WebSocket headers. Socket URL tests retain `/api`.
 
 The proxy regression also checks that the zrok interstitial header is present on HTTP and socket forwarding.
+
+access.test.ts verifies invitation preservation through sign-in and rejection of external/unrelated redirect destinations.

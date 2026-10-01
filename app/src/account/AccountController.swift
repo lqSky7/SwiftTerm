@@ -273,6 +273,14 @@ final class AccountController {
         lastError = nil
     }
 
+    func invite(sessionID: String, recipientID: String, permission: String) async throws -> CloudInvitation {
+        guard isSignedIn, UUID(uuidString: recipientID) != nil,
+            ["viewer", "controller"].contains(permission) else { throw CloudError.malformedResponse }
+        return try await api.send(
+            CloudRoutes.invite(sessionID: sessionID, recipientID: recipientID.lowercased(), permission: permission),
+            as: CloudInvitation.self)
+    }
+
     // MARK: - Devices
 
     func refreshDevices() async {

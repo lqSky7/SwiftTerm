@@ -112,6 +112,12 @@ enum CloudRoutes {
         )
     }
 
+    static func invite(sessionID: String, recipientID: String, permission: String) -> CloudRequest {
+        CloudRequest(method: "POST", path: "/live/\(sessionID)/invitations",
+                     body: body(["recipient_user_id": recipientID, "permission": permission]),
+                     requiresCSRF: true)
+    }
+
     static func listStreams(limit: Int, before: String?) -> CloudRequest {
         var query = "?limit=\(limit)"
         if let before, let escaped = before.addingPercentEncoding(
@@ -163,6 +169,13 @@ enum CloudTicketRole: String, Sendable {
 }
 
 // MARK: - Responses
+
+struct CloudInvitation: Decodable, Sendable {
+    let code: String
+    let invitationId: String
+    let expiresAt: String?
+    let permission: String
+}
 
 struct CloudAccountSummary: Decodable, Equatable, Sendable {
     let id: String

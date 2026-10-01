@@ -50,7 +50,10 @@ final class StreamPublisher {
     @ObservationIgnored private var sendTask: Task<Void, Never>?
     /// Frames waiting to go out, drained by one task so two captures cannot interleave mid-frame.
     @ObservationIgnored private var outbox: [String] = []
+    @ObservationIgnored private var isDraining = false
     @ObservationIgnored private var hasSentHello = false
+    @ObservationIgnored private var pendingSnapshot: WireSnapshot?
+    @ObservationIgnored private var startTask: Task<Void, Never>?
     /// The sequence the host has published. The relay orders by this and the viewer resumes by it.
     @ObservationIgnored private var seq = 0
 
@@ -80,7 +83,7 @@ final class StreamPublisher {
         guard case .idle = state else { return }
         state = .starting
 
-        Task { [api, identity, deviceID] in
+        startTask = Task { [api, identity, deviceID] in
             do {
                 // Creating the stream is idempotent on the client request id, so a retry after a
                 // dropped response returns the stream that already exists rather than a second one.
@@ -91,6 +94,10 @@ final class StreamPublisher {
                         clientRequestID: identity.clientRequestID,
                         title: title),
                     as: StreamCreation.self)
+                guard !Task.isCancelled else {
+                    _ = try? await api.send(CloudRoutes.endStream(id: created.sessionId))
+                    return
+                }
                 sessionID = created.sessionId
 
                 // A publisher ticket is also the fence: minting one advances the epoch, so any
@@ -98,12 +105,15 @@ final class StreamPublisher {
                 let ticket = try await api.send(
                     CloudRoutes.mintTicket(sessionID: created.sessionId, role: .publisher),
                     as: CloudTicket.self)
+                guard !Task.isCancelled else { return }
                 epoch = ticket.epoch
                 leaseToken = ticket.leaseToken
                 connect(ticket: ticket.ticket, sessionID: created.sessionId)
             } catch let error as CloudError {
+                guard !Task.isCancelled else { return }
                 state = .failed(error.messageForUser)
             } catch {
+                guard !Task.isCancelled else { return }
                 state = .failed(CloudError.malformedResponse.messageForUser)
             }
         }
@@ -111,6 +121,9 @@ final class StreamPublisher {
 
     /// Stop sharing. Idempotent, and safe to call from a pane close, a shell exit or app teardown.
     func stop() {
+        startTask?.cancel()
+        startTask = nil
+        pendingSnapshot = nil
         renewTask?.cancel()
         renewTask = nil
         sendTask?.cancel()
@@ -136,8 +149,25 @@ final class StreamPublisher {
     /// Send a whole snapshot. The first one opens the stream; a later one is a barrier the host
     /// decided it needed.
     func publish(_ snapshot: WireSnapshot) {
+        guard state != .idle else { return }
         seq = max(seq, Int(snapshot.seq) ?? 0)
-        enqueue { try Self.frames(for: snapshot) }
+        guard let sessionID, let epoch, socket != nil else {
+            pendingSnapshot = snapshot
+            return
+        }
+        var current = snapshot
+        current.epoch = epoch
+        let opening: WireHello? = hasSentHello ? nil : WireHello(
+            sessionID: sessionID, epoch: epoch, mode: current.mode,
+            columns: current.columns, rows: current.rows)
+        hasSentHello = true
+        let captured = current
+        enqueue {
+            var frames: [String] = []
+            if let opening { frames.append(Self.text(try WireCanonicalJSON.encode(WireFrame.hello(opening)))) }
+            frames.append(contentsOf: try Self.frames(for: captured))
+            return frames
+        }
     }
 
     /// Send a delta. Refused unless a snapshot has already opened the stream, because the contract
@@ -174,9 +204,11 @@ final class StreamPublisher {
     }
 
     private func drain() async {
+        guard !isDraining, let socket else { return }
+        isDraining = true
+        defer { isDraining = false }
         while !outbox.isEmpty {
             let frame = outbox.removeFirst()
-            guard let socket else { return }
             do {
                 try await socket.send(.string(frame))
             } catch {
@@ -202,10 +234,17 @@ final class StreamPublisher {
 
         let auth = WireAuth(ticket: ticket, clientID: identity.clientRequestID)
         if let frame = try? WireCanonicalJSON.encode(WireFrame.auth(auth)) {
-            outbox.append(Self.text(frame))
+            outbox.insert(Self.text(frame), at: 0)
         }
-        Task { await drain() }
+        sendTask = Task { [previous = sendTask] in
+            await previous?.value
+            await drain()
+        }
 
+        if let pendingSnapshot {
+            self.pendingSnapshot = nil
+            publish(pendingSnapshot)
+        }
         receive(on: task)
         startRenewing()
     }
@@ -218,7 +257,7 @@ final class StreamPublisher {
                 case .failure:
                     // The relay is gone. Fail closed: the lease is not renewed from here, so it
                     // expires server-side rather than being kept alive by a host that cannot write.
-                    if self.isLive { self.state = .failed("The relay connection dropped.") }
+                    if self.state != .idle { self.state = .failed("The relay connection dropped.") }
                     self.stopRenewing()
                 case .success(let message):
                     self.handle(message)

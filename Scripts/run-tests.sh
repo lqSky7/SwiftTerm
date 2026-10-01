@@ -46,6 +46,10 @@ if [ "${1:-}" = "--exec" ]; then
             crates/cloud_objects/src/*.swift
         )
     fi
+    if [ "$name" = "stream-publisher-test" ]; then
+        SOURCES=(crates/shared_session/src/*.swift crates/cloud_objects/src/*.swift
+                 app/src/terminal/shared_session/StreamPublisher.swift)
+    fi
     if [ "$name" = "terminal-renderer-test" ] || [ "$name" = "block-collapse-test" ] \
         || [ "$name" = "command-editor-undo-test" ]; then
         SOURCES+=(

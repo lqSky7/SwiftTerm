@@ -16,3 +16,5 @@ ends sharing through AppCore, and leaves local shells running.
 Device secrets and stable registration request IDs are scoped to cloud account IDs. A revoked
 registration rotates its secret and request ID; failed device lookup preserves the existing secret.
 `Tests/sign-in-test.swift` covers issuer responses without network or real Keychain mutations.
+
+Share → Invite a Browser creates an existing backend B4 invitation bound to the viewer account ID, with viewer/controller permission. The resulting link carries its redemption code in the URL fragment.

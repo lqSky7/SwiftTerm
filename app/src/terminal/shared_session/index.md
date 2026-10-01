@@ -114,3 +114,5 @@ a socket that is still open.
 - **A harness.** These read the terminal model, so their harness would have to compile the model
   layer — except `RemoteKey.swift`, which is deliberately dependency-free enough to have one
   (`Tests/remote-key-test.swift`, 35 checks).
+
+Publisher startup retains the latest pre-connect snapshot and sends auth, hello and snapshot in order. The opening snapshot uses the ticket epoch; one drain owns socket sends. Startup is cancelled on stop and a failed startup socket is visible in Share.

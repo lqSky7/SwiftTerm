@@ -13,6 +13,8 @@ import {
   startSession,
 } from "@/auth/client";
 
+import { signInDestination } from "@/shared_session/access";
+
 type Mode = "signIn" | "signUp";
 
 /** The Supabase project this deployment is built against, for the link an operator needs. */
@@ -89,7 +91,7 @@ export default function SignInPage() {
       if (usingToken) {
         if (token.trim() === "") throw new Error("Paste an access token to continue");
         await startSession(token.trim());
-        router.push("/account");
+        router.push(signInDestination(window.location.search));
         return;
       }
       if (mode === "signUp") {
@@ -100,14 +102,14 @@ export default function SignInPage() {
         // confirmation panel would tell them to check an inbox for a message that does not exist.
         if (result.accessToken !== null) {
           await startSession(result.accessToken);
-          router.push("/account");
+          router.push(signInDestination(window.location.search));
           return;
         }
         setAwaitingConfirmation(true);
         return;
       }
       await signInWithPassword(email, password);
-      router.push("/account");
+      router.push(signInDestination(window.location.search));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Sign-in failed");
     } finally {
@@ -249,7 +251,7 @@ export default function SignInPage() {
               setBusy(true);
               try {
                 await signInAnonymously();
-                router.push("/account");
+                router.push(signInDestination(window.location.search));
               } catch (cause) {
                 setError(
                   cause instanceof Error ? cause.message : "Could not start an anonymous session",

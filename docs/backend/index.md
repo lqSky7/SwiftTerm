@@ -42,3 +42,5 @@ Anonymous sign-in regression: URLSession’s own ephemeral store must be retaine
 HTTPCookieStorage() loses the session cookies on this Mac. Website upstream requests must set
 skip_zrok_interstitial or browser user-agents get HTML and the client reports invalid_frame.
 Both paths passed real session exchange, account read and CSRF logout after repair.
+
+Live-stream repair is tracked in phase-live-access-todo.md: native auth/hello/snapshot startup, ticket epoch and recipient-bound invitations. Build 134 replaces build 132. Production HTTP and WebSocket proxy invitation checks passed; temporary probe identities were removed.

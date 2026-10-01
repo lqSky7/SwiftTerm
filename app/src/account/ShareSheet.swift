@@ -344,7 +344,54 @@ private struct LiveSection: View {
                 }
             }
 
+            if let sessionID = sharing.publisher?.sessionID {
+                InvitationSection(account: workspace.account, sessionID: sessionID)
+            }
+            if case .failed(let reason) = sharing.publisher?.state {
+                Text(reason).font(.caption).foregroundStyle(.secondary)
+            }
             Button("Stop Sharing") { workspace.stopSharing(paneID) }
+        }
+    }
+}
+
+private struct InvitationSection: View {
+    let account: AccountController
+    let sessionID: String
+    @State private var recipientID = ""
+    @State private var permission = "viewer"
+    @State private var link: String?
+    @State private var error: String?
+    @State private var isWorking = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            Text("Invite a Browser").font(.headline)
+            Text("Ask the viewer for the account ID shown on the stream page. Anonymous accounts are separate on each device.")
+                .font(.caption).foregroundStyle(.secondary)
+            TextField("Viewer account ID", text: $recipientID)
+            Picker("Access", selection: $permission) {
+                Text("Watch").tag("viewer")
+                Text("Watch and request control").tag("controller")
+            }
+            Button(isWorking ? "Creating…" : "Create Invitation") {
+                isWorking = true
+                error = nil
+                link = nil
+                Task {
+                    defer { isWorking = false }
+                    do {
+                        let invite = try await account.invite(
+                            sessionID: sessionID, recipientID: recipientID, permission: permission)
+                        link = "\(account.configuration.origin)/live/?s=\(sessionID)#invite=\(invite.code)"
+                    } catch {
+                        self.error = "Could not create the invitation. Check the viewer’s account ID and try again."
+                    }
+                }
+            }
+            .disabled(UUID(uuidString: recipientID) == nil || isWorking)
+            if let link { ShareLinkField(link: link) }
+            if let error { Text(error).font(.caption).foregroundStyle(.secondary) }
         }
     }
 }

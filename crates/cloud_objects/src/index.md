@@ -59,3 +59,5 @@ does have to satisfy the rule, so it declares the website's origin. Recorded in
 CloudCredentials.swift stores per-account device credentials and persistent registration request IDs for lost-response retries.
 
 CloudAPI retains URLSessionConfiguration.ephemeral’s built-in cookie store; constructing HTTPCookieStorage directly discarded authentication cookies on this Mac.
+
+CloudRoutes.invite and CloudInvitation carry recipient-bound live-stream invitations; the account layer validates recipient UUID and permission before sending.
