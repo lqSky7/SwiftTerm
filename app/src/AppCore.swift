@@ -79,7 +79,7 @@ final class AppCore {
         sharing[paneID] = nil
     }
 
-    /// The `File` menu's one item, on the focused pane.
+    /// The pane the `File` menu's one item acts on.
     @discardableResult
     func toggleSharingOnActivePane() -> Bool {
         guard let paneID = activePane else { return false }
@@ -88,6 +88,18 @@ final class AppCore {
             return true
         }
         return startSharing(paneID)
+    }
+
+    /// Sign out, and end every stream first.
+    ///
+    /// The order is the whole content of this method. A stream that outlived the account would be a
+    /// publisher renewing a lease with a credential that has just been revoked, and a browser
+    /// watching a terminal whose owner has left. Ending the streams first means there is nothing left
+    /// to fail — and it is here rather than in `AccountController` because that type deliberately
+    /// cannot reach terminal state, so signing out can never lose a shell.
+    func signOut() async {
+        stopAllSharing()
+        await account.signOut()
     }
 
     /// Stop every stream. Sign-out and app teardown both call this.
@@ -298,6 +310,10 @@ final class AppCore {
     /// `tabs` through `closeIfEmpty()`, and the window closing itself calls this again on its way out.
     func terminate() {
         codeReview.stop()
+        // Before the coordinators go. A stream whose publisher is torn down without ending it leaves
+        // the relay holding a session and the account holding a slot until the lease expires, and
+        // the browser watching it is told nothing at all.
+        stopAllSharing()
         if persistTask != nil {
             persistTask?.cancel()
             persistTask = nil
@@ -961,6 +977,15 @@ final class AppCore {
         }
         // The window is named after the tab that is showing, not after whichever shell spoke last.
         coordinator.onTitleChange = { [weak self] _ in self?.syncActivePane() }
+        // A shell that exits takes its stream with it. Looked up by identity rather than by a
+        // captured pane id, because a coordinator is built before the caller has assigned it one —
+        // and the scan is over a handful of panes, once, at the end of a shell.
+        coordinator.onShellExit = { [weak self, weak coordinator] in
+            guard let self, let coordinator,
+                let pane = self.coordinators.first(where: { $0.value === coordinator })?.key
+            else { return }
+            self.stopSharing(pane)
+        }
         coordinator.onPromptReady = { [weak self, weak coordinator] in
             guard let self, let coordinator, activeCoordinator === coordinator else { return }
             refreshCodeReview()
@@ -1021,6 +1046,10 @@ final class AppCore {
         let live = Set(tabs.tabs.compactMap(\.panes).flatMap { $0.panes })
         let orphans = coordinators.filter { !live.contains($0.key) }
         for (pane, coordinator) in orphans {
+            // Sharing first, and before the coordinator goes: a pane that has been closed cannot be
+            // publishing. Left running it would hold a slot against the account's cap and keep a
+            // browser watching a terminal that is no longer on screen or even alive.
+            stopSharing(pane)
             coordinator.shutdown()
             coordinators.removeValue(forKey: pane)
         }

@@ -241,7 +241,12 @@ final class StreamPublisher {
             // this frame: a stream nobody is watching should cost nothing.
             state = .live(viewers: count.count)
         case .error(let error):
-            if error.code == "capacity" { state = .failed("The relay refused that frame.") }
+            // The only error the relay sends a *publisher* is `capacity`: a frame it refused to
+            // store because it was too large. That is a bug in this side's sizing rather than
+            // something to retry, so it stops the stream. The other codes are answers to a viewer —
+            // `stale_lease`, `rate_limited`, `stale_epoch` — and a host that saw one would be
+            // reading traffic that was never addressed to it.
+            if error.code == .capacity { state = .failed("The relay refused that frame.") }
         case .resync:
             // The relay could not supply a gap, so it is asking for a fresh snapshot. The pane is
             // told through `needsSnapshot`; the next capture is a full one.

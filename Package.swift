@@ -26,6 +26,7 @@ let package = Package(
                 // glob, so each one is named — which is also the honest list of what is not code.
                 "app/index.md",
                 "app/src/index.md",
+                "app/src/account/index.md",
                 "app/src/workspace/index.md",
                 "app/src/code_review/index.md",
                 "crates/git/index.md",
@@ -33,6 +34,7 @@ let package = Package(
                 "app/src/terminal/index.md",
                 "app/src/terminal/model/index.md",
                 "app/src/terminal/view/index.md",
+                "app/src/terminal/shared_session/index.md",
                 "crates/index.md",
                 "crates/shared_session/index.md",
                 "crates/shared_session/src/index.md",

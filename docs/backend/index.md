@@ -20,16 +20,22 @@ live terminal output to browser + browser input back to the host PTY. No AI.
 | `feature-status.md` | source-audited catalogue status |
 | `roadmap.md` / `todo.md` | remaining phases and implementation checklists |
 | `../../contracts/index.md` | the two contract implementations, the fixtures, and how to run both halves of the C0 gate |
-| `../../backend/index.md` | the deployed service: what runs, how to run it, and the three decisions to know before editing |
+| `../../backend/index.md` | the deployed service — **note: the backend is no longer in this repository.** It is versioned at `gitlab.com:lqSky7/swiftterm-backend`, and this path is a local working copy that nothing here tracks |
 
-Start B2B (the native publisher) for the app, or B2C (the browser viewer) for the website. Both have
-their predecessors in place. Remaining packages wait for their named predecessors. Do not provision
-infrastructure, expand protocols or implement deferred features silently. Each package stops after
-validation/signed commit for user acceptance. Node 24 LTS + TypeScript backend; TypeScript
-DOM/canvas website, managed PostgreSQL, OIDC and outbound WSS. No PTY/shell execution on backend and
-no durable live input/output queue.
+B2A, B2B, B2C and B3A now have implementations; B1B has its client and sign-in flow but no UI. The
+next things to do are the ones that need a machine this environment does not have: compile the app,
+run it against the deployed relay, and check the control path end to end. Remaining packages wait for
+their named predecessors. Do not provision infrastructure, expand protocols or implement deferred
+features silently. Each package stops after validation/signed commit for user acceptance. Node 24 LTS
++ TypeScript backend; TypeScript DOM/canvas website, managed PostgreSQL, OIDC and outbound WSS. No
+PTY/shell execution on backend and no durable live input/output queue.
 
 The database is real now, so the old caveat about `pglast` no longer applies: `000`–`002` are applied
-and the role, transaction and control-plane tests run against it as the actual service role. What
-remains unproven is anything the native side owns — B2B's capture parity and B3A's input fencing
-have no implementation to test.
+and the role, transaction and control-plane tests run against it as the actual service role — 32 relay
+tests among them, nine of them new for browser control.
+
+**What is still unproven, stated plainly.** The Swift compiles for the first time on someone else's
+machine: the environment here cannot run `@Observable`'s macro plugin, so three harnesses cannot build
+and nothing in `app/` has been typechecked. The website's control half is built and tested but **not
+deployed**, so the affordance is not reachable. And B2B publishes only whole snapshots — deltas are
+the item left undone, and every capture re-encodes the visible window until they exist.

@@ -191,21 +191,28 @@ the direct `db.<ref>.supabase.co` host is IPv6-only and unreachable from this ne
 - [x] Relaying malformed data cannot allocate beyond admission limits.
 - [x] Slow viewers cannot block host; disconnect/resync policy and incomplete snapshots tested.
 - [x] Fake clock/socket tests: reconnect, stale publisher, lost lease renewal, end/revoke and DB outage.
-- [x] Gate: viewer-only relay. B3 input frames rejected until B3A is complete.
+- [x] Gate: viewer-only relay. B3 input frames rejected until B3A is complete. *(Superseded by B3A: the relay now forwards `control.request` and `input` from the granted connection and refuses everything else.)*
 - [ ] User acceptance of the deployed relay.
 
 ## B2 — selected-pane viewer
 
-- [ ] Allocate stable stream pane UUIDs; do not reuse local numeric IDs across installs.
-- [ ] Capture immutable bounded model state with watermark.
-- [ ] Encode dirty-row/block deltas and alternate/size snapshot barriers.
-- [ ] Keep capture/transport off PTY/parser path; allocate nothing while off.
-- [x] Implement publisher lease/epoch and relay ticket admission. *(B2A: the relay half. The native publisher is B2B.)*
-- [x] Implement browser canvas + escaped block/editor rendering. *(B2C. The native publisher is B2B.)*
-- [ ] Verify snapshot/delta parity for nano/tmux/wide text/IME/draft/collapse.
-- [x] Test replay gaps, interrupted snapshots, slow viewers and host sleep. *(B2A: relay-side. Host sleep is B2B.)*
-- [ ] End streams and revoke leases on pane close, shell exit, account logout and app shutdown.
-- [ ] Measure native CPU/RSS/network with zero/one/multiple viewers.
+- [x] Allocate stable stream pane UUIDs; do not reuse local numeric IDs across installs. *(B2B: `ExportIdentity`. A `BlockID` is a `UInt64` reused after a close, so a block gets a UUID once and keeps it.)*
+- [x] Capture immutable bounded model state with watermark. *(B2B: `PaneExporter`, a pure function on the main actor, bounded to the recent window.)*
+- [ ] Encode dirty-row/block deltas and alternate/size snapshot barriers. **Only whole snapshots are
+      sent.** Correct but wasteful: every capture re-encodes the visible window. Deltas are the
+      optimisation this item is for.
+- [x] Keep capture/transport off PTY/parser path; allocate nothing while off. *(The encoding, the
+      hashing and the send run on a detached task. It was a comment rather than a fact until the
+      first compile: a `Task { }` inside a `@MainActor` class inherits the actor.)*
+- [x] Implement publisher lease/epoch and relay ticket admission. *(B2A: the relay half. B2B: the publisher and its ten-second renewal against a thirty-second lease.)*
+- [x] Implement browser canvas + escaped block/editor rendering. *(B2C.)*
+- [ ] Verify snapshot/delta parity for nano/tmux/wide text/IME/draft/collapse. Needs a running app and
+      a browser.
+- [x] Test replay gaps, interrupted snapshots, slow viewers and host sleep. *(B2A: relay-side.)*
+- [x] End streams and revoke leases on pane close, shell exit, account logout and app shutdown.
+      *(`AppCore.stopSharing` on the pane closing and on the shell exiting, `signOut()` ending every
+      stream before the account, and `terminate()` before the coordinators are torn down.)*
+- [ ] Measure native CPU/RSS/network with zero/one/multiple viewers. Needs a running app.
 
 ## B2C — website live viewer (implemented)
 
@@ -216,20 +223,34 @@ the direct `db.<ref>.supabase.co` host is IPv6-only and unreachable from this ne
 - [x] Golden-cell equivalence against the Swift-written fixture, replay gaps, malformed frames,
       Unicode, XSS strings and a huge snapshot.
 - [x] Accessible connection status, keyboard navigation and local copy usable without input rights.
+- [x] Control: ask, type, and see what the lease is. *(B3A's website half — a text area funnelling
+      composed text and named keys into the contract's input union, `keys.ts` translating a
+      keystroke as a pure function.)*
 - [ ] Screenshot equivalence for the canvas, a slow-consumer case and reconnect-under-load. These
       need a browser, which the build environment does not have.
-- [ ] User acceptance against a real publisher — blocked on B2B.
+- [ ] User acceptance against a real publisher.
 
 ## B3 — owner browser control
 
-- [ ] Native visible opt-in and current controller indicator.
-- [ ] One controller lease; local input revokes it first.
-- [ ] Reuse prompt editor actions and raw TerminalInput translation.
-- [ ] Bound input bytes/rate, preserve paste line endings and IME commits.
-- [ ] Reject stale epoch/lease, duplicate/gapped sequences and viewer input.
-- [ ] Ack admitted input without claiming command completion.
-- [ ] Mark uncertain input on disconnect; never replay it automatically.
-- [ ] Test reconnect/relay loss during Enter, Ctrl-C and paste.
+- [x] Native visible opt-in and current controller indicator. *(The pane's sharing bar: a browser
+      asking with Allow/Deny, a browser holding control with the way to take it back, and sharing
+      with nobody driving.)*
+- [x] One controller lease; local input revokes it first. *(`ControlLease`, and the revocation is
+      wired to the two funnels a local byte passes through plus the editor's own change hook.)*
+- [x] Reuse prompt editor actions and raw TerminalInput translation. *(`RemoteKeyBytes` builds on
+      `TerminalInput`, so the escape grammar stays in one place.)*
+- [ ] Bound input bytes/rate, preserve paste line endings and IME commits. The contract bounds a
+      single operation at 64 KiB; there is no rate limit on how many a browser may send.
+- [x] Reject stale epoch/lease, duplicate/gapped sequences and viewer input. *(Epoch before sequence,
+      because a stale frame must never be applied rather than deduplicated. The relay refuses input
+      from a connection it did not grant.)*
+- [x] Ack admitted input without claiming command completion.
+- [x] Mark uncertain input on disconnect; never replay it automatically. *(The browser drops the
+      lease on a gap and on a disconnect and says so; the sequence is advanced before the frame is
+      sent and never reused.)*
+- [ ] Test reconnect/relay loss during Enter, Ctrl-C and paste. Needs a running app and a browser.
+- [ ] **Deploy the website half.** It is built and tested but not deployed, so the control UI is not
+      reachable yet.
 
 ## B4 — invitations and grants
 

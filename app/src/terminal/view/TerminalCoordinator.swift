@@ -106,6 +106,14 @@ final class TerminalCoordinator {
         onLocalInput?()
     }
 
+    /// Called when the shell exits. The pane is over, so anything it was publishing is over too.
+    ///
+    /// A separate hook from `onLocalInput` because the consequences are different: local input takes
+    /// control away from a browser, and this ends the stream. Leaving a stream alive on a pane whose
+    /// shell has exited would keep a slot against the account's cap and leave a browser watching a
+    /// terminal that can never change again.
+    @ObservationIgnored var onShellExit: (() -> Void)?
+
     /// The pane's editor and shell paths, as `PaneSharing` needs them.
     ///
     /// Supplied here because this is the layer that owns the surface, and `nil` rather than a set of
@@ -201,6 +209,7 @@ final class TerminalCoordinator {
         lastExitStatus = status
         title = "swiftTerm — shell exited (\(status))"
         onTitleChange?(title)
+        onShellExit?()
     }
 
     /// A shell that sets no title still deserves a useful one, and the directory it is in is the

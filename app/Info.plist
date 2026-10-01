@@ -20,8 +20,21 @@
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
 	<string>0.1.0</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.swiftterm.app.auth</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>swiftterm</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
-	<string>123</string>
+	<string>124</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.developer-tools</string>
 	<key>LSMinimumSystemVersion</key>
@@ -32,45 +45,13 @@
 	<string>swiftTerm</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
-	<!--
-	  Registered ahead of the provider that will use it. The Supabase project has no OAuth provider
-	  configured, so today sign-in is a password grant and no browser is opened — but the scheme is
-	  what a redirect callback will need, and a custom scheme is the right shape for it: a loopback
-	  listener is a port anything on the machine can also reach, and the code that lands on it is a
-	  session credential.
-	-->
-	<key>CFBundleURLTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleURLName</key>
-			<string>com.swiftterm.app.auth</string>
-			<key>CFBundleTypeRole</key>
-			<string>Editor</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>swiftterm</string>
-			</array>
-		</dict>
-	</array>
-	<!--
-	  All four are optional. When present they override the deployed pair, which is how a debug build
-	  is pointed at a local backend without editing code. `CloudConfiguration.fromBundle` falls back
-	  to the deployed values when the API pair is missing or unparseable, and to "no password
-	  sign-in" when the Supabase pair is — a build configured by nobody still signs in against a
-	  pasted token, which is how the website behaves too.
-	-->
 	<key>SwiftTermAPIBaseURL</key>
 	<string>https://swiftterm.shares.zrok.io</string>
 	<key>SwiftTermAPIOrigin</key>
 	<string>https://swiftterm.catinice.workers.dev</string>
-	<!--
-	  The publishable client key. Safe to embed: it authorises the client, and every row is still
-	  scoped by row-level security and by the backend's own verification of the token's signature.
-	  The *service* key must never appear here.
-	-->
-	<key>SwiftTermSupabaseURL</key>
-	<string></string>
 	<key>SwiftTermSupabaseAnonKey</key>
+	<string></string>
+	<key>SwiftTermSupabaseURL</key>
 	<string></string>
 </dict>
 </plist>
