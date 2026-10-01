@@ -147,6 +147,52 @@ Do not retry timed-out/unacknowledged input automatically; surface uncertainty a
 new lease. Relay restart, host reconnect or local keyboard takeover makes old input unusable.
 No durable input queue, no speculative exactly-once effects, no keyboard replay after host sleep.
 
+## Invitations and grants
+
+A live session is visible to its owner and to nobody else until the owner grants access. A grant is
+created by redeeming an **invitation**, which is the only way in: there is no directory, no search
+and no way to ask whether an account exists.
+
+```json
+{"type":"live.invitation","session_id":"uuid","recipient_user_id":"uuid","permission":"viewer","expires_in_hours":168,"code":"base64url-43"}
+```
+
+The code is 32 random bytes, base64url without padding, and the server stores **only its SHA-256**.
+It is returned exactly once, in the response that creates it, and is never recoverable afterwards —
+a lost response means minting another, which is cheaper than a recoverable capability.
+
+**Recipient verification, committed here because the alternative is a bearer token.** An invitation
+is minted *for a specific account*, and redeeming it requires being signed in **as that account**.
+Possession of the code is not sufficient and is not intended to be: a code that leaks to a third
+party grants nothing, because the third party is not the recipient. This is what makes an invitation
+safe to send over a channel the server does not control.
+
+**Expiry, committed here for the same reason.** Seven days by default, thirty maximum, and the
+deadline is **absolute** — redeeming never extends it. A capability with no deadline is a capability
+nobody can withdraw; a deadline that moves with use is one that never arrives.
+
+**One redemption.** `redeemed_at` is set once. A second redemption of the same code by the same
+recipient returns the grant that already exists rather than failing, because the first response may
+have been lost in transit and "already redeemed" is not an error the recipient can act on.
+
+**Permission is a ceiling, never control.** `viewer` or `controller`. A `controller` grant does not
+grant *current* control: the host still approves each browser, the lease is still bound to one
+connection, and local input still revokes it first. The grant says what may be asked for; the person
+in front of the machine says what is given.
+
+**Only the owner creates and revokes.** The one exception is that a recipient may revoke **their own**
+grant — leaving is a reduction of access, and requiring the owner to do it would mean access that
+cannot be given up without asking.
+
+**Revocation fences before it answers.** Revoking a grant closes that recipient's sockets and ends
+their control lease *before* the response is sent, so a caller who has been told the access is gone
+cannot still be watching. A revocation that answered first and disconnected afterwards would leave a
+window in which the answer and the state disagree.
+
+**No enumeration.** An invitation names a recipient by account id and the API never accepts an email,
+a display name or a search term. Minting for an account that does not exist fails the foreign key,
+which is reported as the same generic refusal as any other bad request.
+
 ## Static sharing DTO
 
 ```json
@@ -161,6 +207,34 @@ creates a new snapshot/link. Delete cascades links/grants; UI must identify affe
 Capability compare uses constant-time digest comparison. Restricted share owner may resolve
 through authenticated management routes without a capability; anonymous resolve always needs it.
 All resolve responses are private/no-store. Revoked/expired/denied/missing returns the same 404.
+
+### Resolving a share
+
+```json
+{"locator":"uuid","read_secret":"base64url-43"}
+```
+
+The link a person receives carries the locator in the **path** and the secret in the **fragment**:
+
+```
+https://…/s/<locator>#<read_secret>
+```
+
+The fragment is not sent to the server, which is the whole reason it is there. The page reads it,
+posts it once to resolve, then **removes it with `replaceState`** and keeps it in memory only — never
+`localStorage`, never a service worker cache, never the URL bar of the next person who looks over a
+shoulder. The server never sees a fragment, so a secret cannot appear in an access log, a `Referer`
+or a reverse proxy's request line.
+
+`access_mode` decides what else is needed. `link` resolves on the capability alone. `restricted`
+needs the capability **and** an approved account named in `share_grants` — an account alone is not
+enough, and a capability alone is not enough. The owner may resolve their own share through an
+authenticated management route without the capability, because the alternative is an owner locked
+out of their own export.
+
+Every resolve answers `404` when it cannot succeed — revoked, expired, denied, missing, or a
+capability that does not match. One answer for all of them, because distinguishing them is an oracle
+for which locators exist. The comparison is constant-time over the digest.
 
 ## Database and protocol acceptance gates
 

@@ -85,6 +85,31 @@ CREATE TABLE swiftterm.live_session_grants (
 );
 CREATE INDEX live_grants_recipient ON swiftterm.live_session_grants(recipient_user_id) WHERE revoked_at IS NULL;
 
+-- An invitation to a named account, created by the owner and redeemed by the recipient.
+--
+-- Added by 003, which is the file to read for the reasoning. The two things worth knowing here:
+-- `code_sha256` is the *only* form of the code that exists anywhere, and `expires_at` is NOT NULL
+-- because an invitation with no deadline is a capability nobody can withdraw.
+CREATE TABLE swiftterm.live_session_invitations (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_id uuid NOT NULL,
+  session_id uuid NOT NULL,
+  recipient_user_id uuid NOT NULL REFERENCES swiftterm.app_users(id) ON DELETE CASCADE,
+  permission text NOT NULL CHECK (permission IN ('viewer', 'controller')),
+  code_sha256 bytea NOT NULL UNIQUE CHECK (octet_length(code_sha256) = 32),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL,
+  redeemed_at timestamptz,
+  revoked_at timestamptz,
+  CHECK (expires_at > created_at),
+  FOREIGN KEY (owner_id, session_id) REFERENCES swiftterm.live_sessions(owner_id, id) ON DELETE CASCADE,
+  UNIQUE (owner_id, id)
+);
+CREATE INDEX invitations_session
+  ON swiftterm.live_session_invitations(session_id) WHERE revoked_at IS NULL;
+CREATE INDEX invitations_recipient
+  ON swiftterm.live_session_invitations(recipient_user_id) WHERE redeemed_at IS NULL AND revoked_at IS NULL;
+
 CREATE TABLE swiftterm.block_snapshots (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   owner_id uuid NOT NULL REFERENCES swiftterm.app_users(id) ON DELETE CASCADE,

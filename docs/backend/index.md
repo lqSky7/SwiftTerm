@@ -22,20 +22,24 @@ live terminal output to browser + browser input back to the host PTY. No AI.
 | `../../contracts/index.md` | the two contract implementations, the fixtures, and how to run both halves of the C0 gate |
 | `../../backend/index.md` | the deployed service — **note: the backend is no longer in this repository.** It is versioned at `gitlab.com:lqSky7/swiftterm-backend`, and this path is a local working copy that nothing here tracks |
 
-B2A, B2B, B2C and B3A now have implementations; B1B has its client and sign-in flow but no UI. The
-next things to do are the ones that need a machine this environment does not have: compile the app,
-run it against the deployed relay, and check the control path end to end. Remaining packages wait for
-their named predecessors. Do not provision infrastructure, expand protocols or implement deferred
-features silently. Each package stops after validation/signed commit for user acceptance. Node 24 LTS
-+ TypeScript backend; TypeScript DOM/canvas website, managed PostgreSQL, OIDC and outbound WSS. No
+B2A, B2B, B2C, B3A and B4 have implementations, and B5B does; B1B has its client, sign-in flow and
+share sheet but no account page, and B5A — the native export — has none at all. The next things to do
+are the ones that need a machine this environment does not have: compile the app, run it against the
+deployed relay, and check the control path end to end. Remaining packages wait for their named
+predecessors. Do not provision infrastructure, expand protocols or implement deferred features
+silently. Each package stops after validation/signed commit for user acceptance. Node 24 LTS +
+TypeScript backend; TypeScript DOM/canvas website, managed PostgreSQL, OIDC and outbound WSS. No
 PTY/shell execution on backend and no durable live input/output queue.
 
-The database is real now, so the old caveat about `pglast` no longer applies: `000`–`002` are applied
-and the role, transaction and control-plane tests run against it as the actual service role — 32 relay
-tests among them, nine of them new for browser control.
+The database is real now, so the old caveat about `pglast` no longer applies: `000`–`004` are applied
+and the role, transaction and control-plane tests run against it as the actual service role — 177
+backend tests, including the nine relay control cases, the twenty-one invitation and grant cases and
+the eighteen share cases.
 
 **What is still unproven, stated plainly.** The Swift compiles for the first time on someone else's
 machine: the environment here cannot run `@Observable`'s macro plugin, so three harnesses cannot build
 and nothing in `app/` has been typechecked. The website's control half is built and tested but **not
-deployed**, so the affordance is not reachable. And B2B publishes only whole snapshots — deltas are
-the item left undone, and every capture re-encodes the visible window until they exist.
+deployed**, so the affordance is not reachable. B2B publishes only whole snapshots — deltas are the
+item left undone, and every capture re-encodes the visible window until they exist. And B5 has no
+producer: the API accepts a share document and nothing yet builds one, so the share feature has no
+route in from the app.

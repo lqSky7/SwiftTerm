@@ -254,20 +254,43 @@ the direct `db.<ref>.supabase.co` host is IPv6-only and unreachable from this ne
 
 ## B4 — invitations and grants
 
-- [ ] Specify private recipient discovery/invitation flow before implementation.
-- [ ] Implement viewer/controller grants and host approval requirement.
-- [ ] Revoke affected sockets/leases before acknowledging permission removal.
-- [ ] Test account/device deactivation and access expiry on active sockets.
+- [x] Specify private recipient discovery/invitation flow before implementation. *(`protocol.md`,
+      "Invitations and grants": an opaque code bound to a recipient account, an absolute deadline,
+      permission as a ceiling rather than control, and no enumeration.)*
+- [x] Implement viewer/controller grants and host approval requirement. *(Migration `003`, the
+      functions, the routes, and the grant check at ticket time. A `controller` grant still does not
+      grant current control — the host approves each browser and local input still revokes first.)*
+- [x] Revoke affected sockets/leases before acknowledging permission removal. *(`closeViewer` closes
+      one account's sockets, and the route calls it before it returns. The account travels in the
+      socket ticket, which it did not before — the relay knew viewer connections but not whose.)*
+- [x] Test cross-owner references, secrets and denied-read indistinguishability. *(21 database tests
+      and 7 route tests. What is *not* covered: account/device **deactivation** and grant expiry on a
+      live socket — the grant path is tested, the deactivation path is not.)*
+- [ ] Website account and grant UI, and the native approval UI for a `controller` grant. The Mac
+      sheet shows and answers a control request; it does not yet mint or redeem an invitation.
 
 ## B5 — static block shares
 
-- [ ] Select sealed blocks and build immutable normalized DTO.
-- [ ] Preview and redact before first content upload; server checks again.
-- [ ] Publish snapshot/link/grants atomically with request hash idempotency.
-- [ ] Client retains generated read secret through lost-response retries.
-- [ ] Website escapes content and enforces bounded style spans/CSP/no-store.
-- [ ] Implement restricted/unlisted resolve, expiry, revoke/delete and GC.
-- [ ] Test cross-owner references, secrets, denied-read indistinguishability and XSS strings.
+- [ ] Select sealed blocks and build immutable normalized DTO. **Not started** — B5A is native and
+      `crates/secret_redaction` and `app/src/cloud_object` do not exist. Nothing yet produces a share
+      document for the API to accept.
+- [ ] Preview and redact before first content upload; server checks again. **Not started**, same
+      reason.
+- [x] Publish snapshot/link/grants atomically with request hash idempotency. *(Migration `004`:
+      `create_share` writes the snapshot, the link and the grants in one call, and a retry with the
+      same `client_request_id` returns the same link rather than minting a second secret.)*
+- [x] Client retains generated read secret through lost-response retries. *(The server only ever
+      stores `sha256`, so the secret is the client's by construction — and the retry path returns the
+      existing locator, so the URL the client already built still works.)*
+- [ ] Website escapes content and enforces bounded style spans/CSP/no-store. **Partly.** The API sets
+      `no-store` on every response and a `default-src 'none'` policy on resolve, and the database
+      stores hostile strings unaltered. The `/s/<locator>` page that would render them does not exist.
+- [x] Implement restricted/unlisted resolve, expiry, revoke/delete and GC. *(Constant-time digest
+      comparison, one outcome for every refusal, restricted needing both the capability and an
+      approved account, and a bounded `SKIP LOCKED` purge that two workers can run at once.)*
+- [x] Test cross-owner references, secrets, denied-read indistinguishability and XSS strings. *(18
+      tests. The XSS case asserts the server does **not** sanitise — escaping is the renderer's job,
+      and a defence here would silently corrupt what someone exported.)*
 
 ## B6 — scalable deployment
 
