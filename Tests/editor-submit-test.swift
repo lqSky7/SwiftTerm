@@ -51,5 +51,21 @@ enum EditorSubmitTest {
             CommandSubmission.escaped("for f in *; do\n  echo $f\ndone"),
             "for f in *; do\\\n  echo $f\\\ndone",
             "and every newline in a multi-line buffer is escaped, not just the first")
+        harness.equal(
+            CommandSubmission.escaped("echo a \\\necho b"), "echo a \\\necho b",
+            "an existing continuation backslash is preserved rather than doubled")
+        harness.equal(
+            CommandSubmission.escaped("echo a \\   \necho b"), "echo a \\\necho b",
+            "trailing whitespace after a continuation backslash is trimmed before the newline")
+        harness.equal(
+            CommandSubmission.escaped("echo a\\\\\necho b"), "echo a\\\\\\\necho b",
+            "an escaped literal backslash still receives a continuation backslash")
+
+        let userCommand = "bash ~/Desktop/AMX_Paper_Revision_2026-10-01/tools/measure_power.sh \\\n"
+            + "  ~/Projects/AMX_IM2COL/build/speed_characterize \\\n"
+            + "  ~/Desktop/AMX_Paper_Revision_2026-10-01/results/power"
+        harness.equal(
+            CommandSubmission.escaped(userCommand), userCommand,
+            "a multiline command with existing backslash continuations is submitted as one command")
     }
 }

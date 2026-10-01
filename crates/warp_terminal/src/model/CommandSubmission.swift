@@ -42,10 +42,42 @@ enum CommandSubmission {
     /// buffer over. Note the order: `\r\n` is a *single* `Character` in Swift — one extended grapheme
     /// cluster — so stripping trailing newlines before normalising would not match the CRLF case at
     /// all, and the buffer would end with a continuation and nothing after it.
+    ///
+    /// If a line already ends with an unescaped backslash continuation (`\`), it must not be doubled:
+    /// turning `\` into `\\` escapes the backslash rather than the newline, leaving the newline unescaped
+    /// so the shell runs each line separately. Trailing horizontal whitespace after the continuation is
+    /// trimmed so the backslash sits directly before the newline.
     static func escaped(_ buffer: String) -> String {
         var text = buffer.replacingOccurrences(of: "\r\n", with: "\n")
         text = text.replacingOccurrences(of: "\r", with: "\n")
         while text.hasSuffix("\n") { text.removeLast() }
-        return text.replacingOccurrences(of: "\n", with: "\\\n")
+        guard text.contains("\n") else { return text }
+
+        let lines = text.components(separatedBy: "\n")
+        var result: [String] = []
+        for (index, line) in lines.enumerated() {
+            if index == lines.count - 1 {
+                result.append(line)
+            } else {
+                var trimmed = line
+                while trimmed.hasSuffix(" ") || trimmed.hasSuffix("\t") {
+                    trimmed.removeLast()
+                }
+                var backslashCount = 0
+                for char in trimmed.reversed() {
+                    if char == "\\" {
+                        backslashCount += 1
+                    } else {
+                        break
+                    }
+                }
+                if backslashCount % 2 == 1 {
+                    result.append(trimmed)
+                } else {
+                    result.append(line + "\\")
+                }
+            }
+        }
+        return result.joined(separator: "\n")
     }
 }
