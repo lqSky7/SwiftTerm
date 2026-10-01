@@ -74,10 +74,16 @@ export default function SignInPage() {
         return;
       }
       if (mode === "signUp") {
-        // Deliberately not followed by a sign-in. This project requires email confirmation, so a
-        // fresh account cannot authenticate yet — calling `startSession` here would fail with
-        // "invalid credentials" and read as a broken sign-up.
-        await signUpWithPassword(email, password);
+        const result = await signUpWithPassword(email, password);
+        // **Two outcomes, and which one applies is the project's setting rather than ours.** With
+        // confirmation required there is no session and the person has to go and confirm; with it
+        // disabled GoTrue signs them up *and* in, and no email is sent — so sending them to the
+        // confirmation panel would tell them to check an inbox for a message that does not exist.
+        if (result.accessToken !== null) {
+          await startSession(result.accessToken);
+          router.push("/account");
+          return;
+        }
         setAwaitingConfirmation(true);
         return;
       }
@@ -99,8 +105,9 @@ export default function SignInPage() {
           come back and sign in.
         </p>
         <p className="mt-4 text-sm text-muted-foreground">
-          Nothing within a few minutes? The project may have no mail service configured, in which
-          case an operator can confirm the account from the{" "}
+          Nothing within a few minutes? Supabase&apos;s built-in mail service sends only a handful of
+          messages an hour and is not meant for production, so the email may simply never have gone
+          out. An operator can confirm the account from the{" "}
           <a
             href={`https://supabase.com/dashboard/project/${PROJECT_REF}/auth/users`}
             target="_blank"

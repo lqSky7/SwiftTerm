@@ -107,24 +107,36 @@ export function isSupabaseConfigured(): boolean {
   );
 }
 
+/** Whether a fresh account can be used immediately, and the session if so. */
+export interface SignUpResult {
+  /**
+   * The access token, present only when the project auto-confirms.
+   *
+   * `null` means the project requires email confirmation and there is nothing to sign in with yet.
+   * The caller has to distinguish these two, because telling somebody to check an email that was
+   * never sent is a worse failure than the sign-up failing outright.
+   */
+  readonly accessToken: string | null;
+}
+
 /**
- * Create an account, then tell the caller to go and confirm it.
+ * Create an account.
  *
- * **This is the half that was missing, and it is why "how does a user get in" had no good answer.**
- * The backend provisions its own account automatically from the verified token — but a Supabase Auth
- * account has to exist first, and nothing in this repository created one. So the only way in was an
- * operator adding a row in the dashboard, which is not a product.
+ * **The return value is the whole point.** This project has `mailer_autoconfirm: false`, so signup
+ * returns a user and no session, and the caller must say "check your email". But that setting is a
+ * dashboard toggle an operator can flip, and with it on GoTrue returns a **session** from the same
+ * call — the account is usable immediately and no email is sent. An earlier version of this discarded
+ * the response and always showed the confirmation panel, which would have told people to check an
+ * inbox for a message that does not exist.
  *
- * It does **not** sign the person in, and that is not an oversight: this project has
- * `mailer_autoconfirm: false`, so a fresh account cannot authenticate until the address is
- * confirmed. Calling `startSession` here would fail with "Invalid login credentials" and look like
- * a broken sign-up. The caller shows the confirmation message instead.
+ * It does not sign in either way. `startSession` is the caller's, so the two outcomes stay visible
+ * where the redirect happens.
  *
  * A weak password is reported as the service describes it, because that is the one failure a person
  * can act on. Everything else is one sentence — "already registered" and "that address is invalid"
  * are the same shape of answer to somebody who cannot see the user table.
  */
-export async function signUpWithPassword(email: string, password: string): Promise<void> {
+export async function signUpWithPassword(email: string, password: string): Promise<SignUpResult> {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (supabaseUrl === undefined || anonKey === undefined) {
@@ -145,6 +157,20 @@ export async function signUpWithPassword(email: string, password: string): Promi
     }
     throw new Error("That address could not be registered. It may already have an account.");
   }
+
+  // Both shapes are checked rather than one assumed: GoTrue has returned the session at the top
+  // level and nested under `session` depending on version, and guessing wrong here means either
+  // signing nobody in or telling somebody to check an email that was never sent.
+  const payload = (await response.json().catch(() => ({}))) as {
+    access_token?: unknown;
+    session?: { access_token?: unknown } | null;
+  };
+  const top = typeof payload.access_token === "string" ? payload.access_token : null;
+  const nested =
+    payload.session !== null && typeof payload.session?.access_token === "string"
+      ? payload.session.access_token
+      : null;
+  return { accessToken: top ?? nested };
 }
 
 /**
