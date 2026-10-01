@@ -6,6 +6,7 @@
 | `ChromeSettings.swift` | the window chrome's numbers — sidebar width, panel margin, glass opacity, materials (including `.none`), chip background material (`.thinMaterial`, `.glass`) — with the range each is clamped to, and their tolerant decoding |
 | `Keymap.swift` | shortcut definitions, key equivalents, modifier sets, action mappings, and default bindings |
 | `SettingsStore.swift` | the versioned settings document (chrome, themes, custom keymaps, saved custom commands) and the `UserDefaults` it is kept in |
+| `HoverState.swift` | a macro-free per-control hover flag (`@StateObject`), for views that cannot use `@State` |
 | `VisualEffectView.swift` | behind-window blur, which SwiftUI's own materials cannot express |
 | `TextIntelligence.swift` | turning macOS's text intelligence — autocorrection, substitutions, completion, prediction, Writing Tools, and the AutoFill service behind them — off on the app's text views |
 

@@ -5,6 +5,7 @@
 | `run-tests.sh` | compiles and runs every harness in `Tests/` in parallel; no XCTest |
 | `lint.sh` | swiftlint, then the pure-model import gate |
 | `build-app.sh` | `swift build`, assembles the `.app`, advances the build number, installs it |
+| `fallback-icon.swift` | draws a flat icon PNG from the icon package's SVG; `build-app.sh` uses it when `actool` (Xcode-only) is missing |
 | `run.sh` | build, install, launch |
 | `banner.py` | prints the logo as truecolor half-block art, filling the window — for a screenshot, not for the app |
 
