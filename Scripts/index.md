@@ -23,3 +23,5 @@ and history file; no app launch or window presentation. Other model harnesses re
 all other harnesses retain the pure compilation boundary.
 
 Git review harness adds shared Git sources + Foundation-only review coordinator. SwiftLint now scans actual app/src and crates paths rather than the removed SwiftTerm folder.
+
+run-tests.sh includes the sign-in harness and remote-input contract sources required by the collapse/undo view harnesses.

@@ -32,3 +32,5 @@ Apple text assistance is disabled for terminal, Settings, Profile, rename and fi
 Startup crash repair: window field-editor lookup never mutates NSTextField, because its content-type
 setter re-enters the lookup. Regression fields are attached to a window; user authorized app launch
 for crash diagnosis and installed-build verification.
+
+Account now has a native grouped window, anonymous sign-in, cancellable authentication and explicit refresh-token restore.

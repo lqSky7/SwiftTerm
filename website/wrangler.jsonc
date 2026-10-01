@@ -3,11 +3,13 @@
   "name": "swiftterm",
   "compatibility_date": "2025-09-30",
 
-  // The site is a static export. Cloudflare serves `out/` directly and there is no Worker script:
-  // every authenticated call goes from the browser to the API, so there is nothing to run at the
-  // edge. `404-page` serves our own 404 rather than Cloudflare's default.
+  "main": "worker.ts",
+  "vars": { "API_UPSTREAM": "https://swiftterm.shares.zrok.io" },
+
   "assets": {
     "directory": "./out",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*"],
     "not_found_handling": "404-page"
   },
 

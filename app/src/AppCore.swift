@@ -36,6 +36,23 @@ final class AppCore {
         tabs.activeTab?.focusedPane
     }
 
+    @ObservationIgnored private var accountWindow: AccountWindowController?
+
+    func openAccount() {
+        account.restoreSignIn()
+        if accountWindow == nil {
+            accountWindow = AccountWindowController(account: account, signOut: { [weak self] in
+                await self?.signOut()
+            }, revoke: { [weak self] id in
+                guard let self else { return }
+                if id == account.deviceID { stopAllSharing() }
+                await account.revokeDevice(id: id)
+            })
+        }
+        accountWindow?.showWindow(nil)
+        accountWindow?.window?.makeKeyAndOrderFront(nil)
+    }
+
     // MARK: - The share sheet
 
     /// Whether the share sheet is up, and which pane it is about.
@@ -57,6 +74,7 @@ final class AppCore {
     func openShareSheet() -> Bool {
         guard let paneID = activePane else { return false }
         sharingFailure = nil
+        account.restoreSignIn()
         shareSheetPane = paneID
         return true
     }
@@ -347,6 +365,8 @@ final class AppCore {
     /// Safe to call more than once: closing this window's last tab already empties `coordinators` and
     /// `tabs` through `closeIfEmpty()`, and the window closing itself calls this again on its way out.
     func terminate() {
+        accountWindow?.close()
+        account.cancelSignIn()
         codeReview.stop()
         // Before the coordinators go. A stream whose publisher is torn down without ending it leaves
         // the relay holding a session and the account holding a slot until the lease expires, and

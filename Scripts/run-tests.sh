@@ -56,6 +56,11 @@ if [ "${1:-}" = "--exec" ]; then
     fi
     if [ "$name" = "block-collapse-test" ] || [ "$name" = "command-editor-undo-test" ]; then
         SOURCES+=(
+            crates/shared_session/src/*.swift
+            crates/cloud_objects/src/*.swift
+            app/src/terminal/shared_session/*.swift
+            app/src/account/AccountController.swift
+            app/src/account/SignInFlow.swift
             crates/warpui_core/src/TextIntelligence.swift
             app/src/workspace/Appearance.swift
             app/src/terminal/view/TerminalSurfaceView.swift
@@ -68,6 +73,10 @@ if [ "${1:-}" = "--exec" ]; then
     fi
     if [ "$name" = "git-review-test" ]; then
         SOURCES+=(crates/git/src/*.swift app/src/code_review/CodeReviewCoordinator.swift)
+    fi
+    if [ "$name" = "sign-in-test" ]; then
+        SOURCES+=(crates/shared_session/src/*.swift crates/cloud_objects/src/*.swift
+                  app/src/account/AccountController.swift app/src/account/SignInFlow.swift)
     fi
     if [ "$name" = "cloud-objects-test" ]; then
         # The cloud client builds on the wire DTOs, so it needs both — and it needs them *without*

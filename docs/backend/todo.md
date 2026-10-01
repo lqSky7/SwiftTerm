@@ -172,6 +172,13 @@ spellings and rules C0 had to freeze are recorded in wire-contract.md under "Fro
 Applied to Supabase project `upmarjiewuwvaljnnboq` (PostgreSQL 17.11, ap-south-1) via the pooler:
 the direct `db.<ref>.supabase.co` host is IPv6-only and unreachable from this network.
 
+## B1B completion — current phase
+
+Native anonymous sign-in and Account window are implemented. Website HTTP and sockets now use
+same-origin `/api` forwarding; production health/auth refusals and WebSocket upgrade are verified.
+The detailed current gate and human test checklist is `phase-b1b-completion-todo.md`.
+B5A remains unimplemented and starts only after this phase is tested.
+
 ## B1 — account/API/website foundation
 
 - [ ] Select hosting/domain/OIDC provider and pin runtime/dependencies.
@@ -184,17 +191,10 @@ the direct `db.<ref>.supabase.co` host is IPv6-only and unreachable from this ne
 - [ ] Implement input byte limits, auth/CSRF/Origin checks and idempotency.
 - [ ] Build website sign-in/download pages using same API/session.
 - [ ] Restore database backup and exercise migration recovery.
-- [ ] **There is no sign-up, and that is the real gap behind "how does a user get in".** The backend
-      creates an `app_users` row on first verified sign-in, so the *application* account is automatic
-      — but the **Supabase Auth** account has to exist first, and nothing in this repository creates
-      one. Today that means an operator adds a user in the dashboard. Anything that expects a
-      stranger to be able to sign up needs a sign-up flow, and a decision about whether the project
-      requires email confirmation. Neither exists.
-- [ ] **Two configuration values are missing, and until they are set nobody can sign in.** The
-      Supabase URL is set; the publishable `anon` key is not, in either the app or the website. This
-      is not a code defect — the key is deliberately not in the repository — but it means a fresh
-      checkout cannot sign in, and both sign-in screens say so rather than offering a token field.
-      `README.md` has the table and the dashboard link.
+- [x] Website email sign-up handles immediate sessions and confirmation-required responses.
+- [x] Anonymous sign-in is offered from the project's current settings, in browser and native app.
+- [x] Supabase publishable client key is configured in Info.plist and website/.env.local.
+- [x] Native Account window lists and revokes devices, with explicit anonymous recovery copy.
 
 ## B2A — backend relay and control plane (implemented)
 
@@ -262,8 +262,7 @@ the direct `db.<ref>.supabase.co` host is IPv6-only and unreachable from this ne
       lease on a gap and on a disconnect and says so; the sequence is advanced before the frame is
       sent and never reused.)*
 - [ ] Test reconnect/relay loss during Enter, Ctrl-C and paste. Needs a running app and a browser.
-- [ ] **Deploy the website half.** It is built and tested but not deployed, so the control UI is not
-      reachable yet.
+- [x] Deploy the website control UI; the live viewer now uses same-origin HTTP and WebSockets.
 
 ## B4 — invitations and grants
 

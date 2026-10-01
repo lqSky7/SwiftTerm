@@ -80,3 +80,5 @@ and Writing Tools; all native field editors also receive the shared window polic
 WorkspaceScreen narrows the terminal once for native review, animates only the right sidebar, and strokes its continuous outline at one physical pixel.
 
 Both sidebar resize edges have 16-point hit areas. Global-coordinate drags use a fixed starting width.
+
+Settings exposes Account via the composition root; the account feature owns its own native window.

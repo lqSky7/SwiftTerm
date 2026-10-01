@@ -87,8 +87,8 @@ export interface ViewerConnectionOptions {
 export function socketUrlFor(apiBaseUrl: string, sessionId: string): string {
   const url = new URL(apiBaseUrl);
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-  // The API base may carry a path; the relay lives at the root of the same origin.
-  url.pathname = `/live/${encodeURIComponent(sessionId)}`;
+  // Keep the same proxy prefix for HTTP tickets and the socket.
+  url.pathname = `${url.pathname.replace(/\/$/, "")}/live/${encodeURIComponent(sessionId)}`;
   url.search = "";
   return url.toString();
 }

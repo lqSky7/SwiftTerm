@@ -49,17 +49,20 @@ npm run check                  # typecheck + tests + production build
 The backend must be running and must list this origin in `ALLOWED_ORIGINS`, because every write is
 checked against it. In production the website and the API share an origin.
 
-The site is a **static export** (`output: "export"`), so there is no server at runtime. That is why
+The site is a **static export** (`output: "export"`), served by Cloudflare with a small API proxy. That is why
 the live viewer's session id is a query parameter rather than a path segment: a dynamic route would
 need every id enumerated at build time.
 
-## Status
+## Deployment
 
-B1A's website scope and B2C: sign-in, account, device list, and the live viewer. 46 `node:test`
-checks cover the reducer and the socket, including golden-cell equivalence against the fixture the
-Swift harness writes.
+`worker.ts` proxies `/api/*` to the fixed `API_UPSTREAM` zrok origin, with the prefix removed.
+Cookies, Origin, CSRF headers and WebSocket upgrades pass through; redirects are not followed.
+The browser contacts the website origin for HTTP and WebSockets. The backend remains behind zrok.
+Cloudflare serves the static Next.js export through the ASSETS binding for all other routes.
+This repairs the cross-origin browser path without adding a Next.js server or another deployment.
 
-What is missing is a **publisher**: B2B, the native side, does not exist, so a `/live` link has
-nothing to show yet. The viewer is complete and tested against fixtures and a fake socket; it is
-waiting for a host.
+`npm run check` passes 65 tests, typechecking and static export. `npx wrangler deploy` publishes
+both the proxy and assets. For local Next.js development set NEXT_PUBLIC_API_BASE_URL to the local
+backend; in production omit it or set `/api`. Supabase Auth remains its own issuer origin.
 
+The Worker sets skip_zrok_interstitial for upstream API/socket requests: browser user-agents otherwise receive zrok HTML instead of API JSON.

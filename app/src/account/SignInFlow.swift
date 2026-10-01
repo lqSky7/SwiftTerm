@@ -39,6 +39,37 @@ actor SupabaseAuth {
         try await grant(["grant_type": "password", "email": email, "password": password])
     }
 
+    func anonymousAvailable() async -> Bool {
+        var request = URLRequest(url: url.appendingPathComponent("auth/v1/settings"))
+        request.setValue(anonKey, forHTTPHeaderField: "apikey")
+        guard let (data, response) = try? await session.data(for: request),
+            let http = response as? HTTPURLResponse, http.statusCode == 200,
+            let settings = try? JSONDecoder().decode(Settings.self, from: data) else { return false }
+        return settings.external.anonymousUsers == true
+    }
+
+    private struct Settings: Decodable {
+        let external: External
+        struct External: Decodable {
+            let anonymousUsers: Bool?
+            enum CodingKeys: String, CodingKey { case anonymousUsers = "anonymous_users" }
+        }
+    }
+
+    func signInAnonymously() async throws -> Granted {
+        var request = URLRequest(url: url.appendingPathComponent("auth/v1/signup"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "content-type")
+        request.setValue(anonKey, forHTTPHeaderField: "apikey")
+        request.httpBody = Data("{}".utf8)
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw CloudError.malformedResponse }
+        guard (200..<300).contains(http.statusCode) else {
+            throw CloudError.refused(status: http.statusCode, code: "credentials_rejected")
+        }
+        return try JSONDecoder().decode(Granted.self, from: data)
+    }
+
     func refresh(refreshToken: String) async throws -> Granted {
         try await grant(["grant_type": "refresh_token", "refresh_token": refreshToken])
     }
@@ -104,14 +135,17 @@ struct SignInFlow {
         let auth = SupabaseAuth(url: url, anonKey: key)
         do {
             let granted = try await auth.signIn(email: email, password: password)
+            try Task.checkCancellation()
             if let refreshToken = granted.refreshToken {
-                try? KeychainSecretStore().write(
+                try KeychainSecretStore().write(
                     Data(refreshToken.utf8), account: Self.refreshTokenAccount)
             }
             controller.signIn(accessToken: granted.accessToken)
         } catch let error as CloudError {
+            guard !Task.isCancelled else { return }
             controller.report(error)
         } catch {
+            guard !Task.isCancelled else { return }
             controller.report(.malformedResponse)
         }
     }
@@ -140,13 +174,14 @@ struct SignInFlow {
         let auth = SupabaseAuth(url: url, anonKey: key)
         do {
             let granted = try await auth.refresh(refreshToken: refreshToken)
+            try Task.checkCancellation()
             if let rotated = granted.refreshToken {
-                try? store.write(Data(rotated.utf8), account: Self.refreshTokenAccount)
+                try store.write(Data(rotated.utf8), account: Self.refreshTokenAccount)
             }
             controller.signIn(accessToken: granted.accessToken)
         } catch {
-            // A refresh that fails is a session that is over. The controller has already moved to
-            // signed out by the time this runs.
+            guard !Task.isCancelled else { return }
+            controller.report(error as? CloudError ?? CloudError.from(transport: error))
         }
     }
 

@@ -64,7 +64,7 @@ struct ShareSheet: View {
     @ViewBuilder
     private var content: some View {
         if !workspace.account.isSignedIn {
-            SignInSection(workspace: workspace)
+            SignInSection(account: workspace.account)
         } else if workspace.account.deviceID == nil {
             DeviceSection(workspace: workspace)
         } else if let sharing = workspace.sharing[paneID] {
@@ -76,6 +76,7 @@ struct ShareSheet: View {
 
     private var footer: some View {
         HStack {
+            Button("Account…") { workspace.openAccount() }
             if workspace.account.isSignedIn {
                 Button("Sign Out") { Task { await workspace.signOut() } }
                     .buttonStyle(.link)
@@ -98,13 +99,14 @@ struct ShareSheet: View {
 /// So the unconfigured state says three things in the order a person needs them: what is wrong, what
 /// would fix it, and who can do that. The token field is behind a disclosure, labelled as the
 /// operator path, with the command that produces one.
-private struct SignInSection: View {
-    let workspace: AppCore
+struct SignInSection: View {
+    let account: AccountController
 
     @State private var email = ""
     @State private var password = ""
     @State private var token = ""
     @State private var showingTokenPath = false
+    @State private var anonymousAvailable = false
 
     /// The project the backend verifies tokens against — the same value as its `OIDC_ISSUER`. Named
     /// here so the link an operator needs is one click rather than a hunt through a dashboard.
@@ -112,19 +114,34 @@ private struct SignInSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-            if workspace.account.configuration.canSignInWithPassword {
+            if account.configuration.canSignInWithPassword {
                 passwordPath
+                if anonymousAvailable {
+                    Button("Continue Anonymously") {
+                        account.signInAnonymously()
+                    }
+                    .disabled(account.isAuthenticating)
+                    Text("This account stays on this Mac. Without a recovery email, signing out loses access.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             } else {
                 notConfigured
             }
 
-            if let error = workspace.account.lastError {
+            if let error = account.lastError {
                 Text(error.messageForUser)
                     .font(.caption)
                     .foregroundStyle(Theme.Colors.ramp(dark: 0.75, light: 0.65))
             }
-            if workspace.account.isWorking { ProgressView().controlSize(.small) }
+            if account.isAuthenticating { ProgressView().controlSize(.small) }
         }
+        .task {
+            guard let url = account.configuration.supabaseURL,
+                let key = account.configuration.supabaseAnonKey else { return }
+            anonymousAvailable = await SupabaseAuth(url: url, anonKey: key).anonymousAvailable()
+        }
+        .onDisappear { if !account.isSignedIn { account.cancelSignIn() } }
     }
 
     private var passwordPath: some View {
@@ -135,7 +152,7 @@ private struct SignInSection: View {
                 .textContentType(.password)
                 .onSubmit { submit() }
             Button("Sign In") { submit() }
-                .disabled(email.isEmpty || password.isEmpty || workspace.account.isWorking)
+                .disabled(email.isEmpty || password.isEmpty || account.isAuthenticating)
         }
     }
 
@@ -194,7 +211,7 @@ private struct SignInSection: View {
             // Only in a build that asked for it. A shipped build shows the explanation and nothing
             // else, which is the honest answer when there is no way in — and it means the escape
             // hatch cannot reach a user by default rather than by somebody remembering to remove it.
-            if workspace.account.configuration.allowsTokenSignIn {
+            if account.configuration.allowsTokenSignIn {
                 DisclosureGroup("I already have an access token", isExpanded: $showingTokenPath) {
                     tokenPath
                 }
@@ -227,7 +244,7 @@ private struct SignInSection: View {
             SecureField("Access token", text: $token)
                 .onSubmit { submitToken() }
             Button("Sign In") { submitToken() }
-                .disabled(token.isEmpty || workspace.account.isWorking)
+                .disabled(token.isEmpty || account.isAuthenticating)
         }
         .padding(.top, Theme.Spacing.md)
     }
@@ -240,12 +257,11 @@ private struct SignInSection: View {
         """
 
     private func submit() {
-        let flow = SignInFlow(configuration: workspace.account.configuration, controller: workspace.account)
-        Task { await flow.signIn(email: email, password: password) }
+        account.signIn(email: email, password: password)
     }
 
     private func submitToken() {
-        let flow = SignInFlow(configuration: workspace.account.configuration, controller: workspace.account)
+        let flow = SignInFlow(configuration: account.configuration, controller: account)
         flow.signIn(accessToken: token)
     }
 }
@@ -263,7 +279,7 @@ private struct DeviceSection: View {
             Button("Register This Machine") {
                 Task { await workspace.account.registerThisDevice() }
             }
-            .disabled(workspace.account.isWorking)
+            .disabled(workspace.account.isAuthenticating)
 
             if let error = workspace.account.lastError {
                 Text(error.messageForUser)

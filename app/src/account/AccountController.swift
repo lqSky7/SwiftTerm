@@ -118,13 +118,14 @@ final class AccountController {
     /// Kept so the sign-in flow can reach Supabase without a second copy of the configuration.
     @ObservationIgnored let configuration: CloudConfiguration
     @ObservationIgnored private var signInTask: Task<Void, Never>?
-    @ObservationIgnored private var refreshTask: Task<Void, Never>?
+    @ObservationIgnored private var authenticationTask: Task<Void, Never>?
 
     init(
         configuration: CloudConfiguration = .fromBundle(),
-        identity: DeviceIdentity = DeviceIdentity()
+        identity: DeviceIdentity = DeviceIdentity(),
+        api: CloudAPI? = nil
     ) {
-        self.api = CloudAPI(baseURL: configuration.baseURL, origin: configuration.origin)
+        self.api = api ?? CloudAPI(baseURL: configuration.baseURL, origin: configuration.origin)
         self.identity = identity
         self.configuration = configuration
     }
@@ -137,6 +138,51 @@ final class AccountController {
     var account: CloudAccountSummary? {
         if case .signedIn(let account) = state { return account }
         return nil
+    }
+
+    var isAuthenticating: Bool {
+        if case .signingIn = state { return true }
+        return isWorking
+    }
+
+    func signIn(email: String, password: String) {
+        cancelSignIn()
+        state = .signingIn
+        lastError = nil
+        authenticationTask = Task {
+            await SignInFlow(configuration: configuration, controller: self)
+                .signIn(email: email, password: password)
+        }
+    }
+
+    func restoreSignIn() {
+        guard !isSignedIn, !isAuthenticating, configuration.canSignInWithPassword,
+            (try? KeychainSecretStore().read(account: "supabase-refresh-token")) != nil else { return }
+        state = .signingIn
+        lastError = nil
+        authenticationTask = Task {
+            await SignInFlow(configuration: configuration, controller: self).renewIfPossible()
+        }
+    }
+
+    func signInAnonymously() {
+        guard let url = configuration.supabaseURL, let key = configuration.supabaseAnonKey else { return }
+        cancelSignIn()
+        state = .signingIn
+        lastError = nil
+        authenticationTask = Task {
+            do {
+                let granted = try await SupabaseAuth(url: url, anonKey: key).signInAnonymously()
+                try Task.checkCancellation()
+                if let refresh = granted.refreshToken {
+                    try KeychainSecretStore().write(Data(refresh.utf8), account: "supabase-refresh-token")
+                }
+                signIn(accessToken: granted.accessToken)
+            } catch {
+                guard !Task.isCancelled else { return }
+                report(error as? CloudError ?? CloudError.from(transport: error))
+            }
+        }
     }
 
     // MARK: - Signing in
@@ -152,6 +198,7 @@ final class AccountController {
         lastError = nil
 
         signInTask = Task { [api] in
+            guard !Task.isCancelled else { return }
             do {
                 _ = try await api.send(CloudRoutes.authenticate(accessToken: accessToken))
                 let account = try await api.send(CloudRoutes.me(), as: CloudAccountSummary.self)
@@ -160,8 +207,8 @@ final class AccountController {
                 // Registering is a separate step from signing in, and its failure is not a failed
                 // sign-in: the session is real either way, and a device that could not be
                 // registered can be registered later.
-                await registerThisDevice()
                 await refreshDevices()
+                await registerThisDevice()
             } catch let error as CloudError {
                 guard !Task.isCancelled else { return }
                 if error == .cancelled { return }
@@ -193,6 +240,8 @@ final class AccountController {
 
     /// Stop an in-flight sign-in. The sheet's Cancel button, and the app's own teardown.
     func cancelSignIn() {
+        authenticationTask?.cancel()
+        authenticationTask = nil
         signInTask?.cancel()
         signInTask = nil
         if case .signingIn = state { state = .signedOut }
@@ -207,13 +256,19 @@ final class AccountController {
     /// second one. `revokeDevice` is the call that ends the credential's authority, and it is a
     /// separate, explicit act.
     func signOut() async {
-        signInTask?.cancel()
-        refreshTask?.cancel()
+        cancelSignIn()
+        SignInFlow(configuration: configuration, controller: self).forgetRefreshToken()
+        state = .signedOut
+        devices = []
+        deviceID = nil
+        isWorking = true
+        defer { isWorking = false }
         // Best effort: a sign-out that fails because the network is gone must still sign out
         // locally, or a person on a train cannot leave.
         _ = try? await api.send(CloudRoutes.logout())
         await api.clearCookies()
         devices = []
+        deviceID = nil
         state = .signedOut
         lastError = nil
     }
@@ -221,17 +276,20 @@ final class AccountController {
     // MARK: - Devices
 
     func refreshDevices() async {
-        guard isSignedIn else { return }
+        guard let ownerID = account?.id else { return }
         do {
             let list = try await api.send(CloudRoutes.devices(), as: DeviceList.self)
+            guard !Task.isCancelled, account?.id == ownerID else { return }
             devices = list.devices
         } catch let error as CloudError {
+            guard !Task.isCancelled, account?.id == ownerID else { return }
             if error.endsTheSession {
                 await api.clearCookies()
                 state = .signedOut
             }
             lastError = error
         } catch {
+            guard !Task.isCancelled, account?.id == ownerID else { return }
             lastError = .malformedResponse
         }
     }
@@ -242,26 +300,39 @@ final class AccountController {
     /// it, so a retry after a dropped response returns the device the first attempt created rather
     /// than making a second one.
     func registerThisDevice() async {
-        guard isSignedIn, deviceID == nil else { return }
+        guard let account, deviceID == nil else { return }
+        let identity = identity.forAccount(account.id)
         do {
-            let credential = try identity.credential()
             let existing = try identity.registeredDeviceID()
+            if let existing {
+                let list = try await api.send(CloudRoutes.devices(), as: DeviceList.self)
+                guard !Task.isCancelled, self.account?.id == account.id else { return }
+                if let device = list.devices.first(where: { $0.id == existing && $0.revokedAt == nil }) {
+                    deviceID = device.id
+                    return
+                }
+                try identity.destroyCredential()
+            }
+            let credential = try identity.credential()
             isWorking = true
             defer { isWorking = false }
 
             let response = try await api.send(
                 CloudRoutes.registerDevice(
                     label: Self.installationLabel(),
-                    clientRequestID: existing ?? UUID().uuidString.lowercased(),
+                    clientRequestID: try identity.registrationRequestID(),
                     deviceToken: credential.base64,
                 ),
                 as: DeviceRegistration.self,
             )
+            guard !Task.isCancelled, self.account?.id == account.id else { return }
             deviceID = response.deviceId
             try identity.remember(deviceID: response.deviceId)
         } catch let error as CloudError {
+            guard !Task.isCancelled, self.account?.id == account.id else { return }
             lastError = error
         } catch {
+            guard !Task.isCancelled, self.account?.id == account.id else { return }
             lastError = .malformedResponse
         }
     }
@@ -273,7 +344,7 @@ final class AccountController {
             _ = try await api.send(CloudRoutes.revokeDevice(id: id))
             if id == deviceID {
                 deviceID = nil
-                try? identity.forgetRegistration()
+                if let account { try identity.forAccount(account.id).destroyCredential() }
             }
             await refreshDevices()
         } catch let error as CloudError {

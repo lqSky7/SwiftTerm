@@ -121,3 +121,5 @@ Git review resize checks cover cumulative drag updates, narrow windows and reser
 
 C0 audit regressions cover counter exhaustion, snapshot rollback/fullscreen/aggregate size, transfer
 watermarks, native-value bounds, UTF-8 admission, strict calendar dates and sealed emoji-safe exports.
+
+sign-in-test.swift checks project-driven anonymous availability, anonymous grants and initial offline state with a URLProtocol stub. cloud-objects-test also checks account isolation and registration retry/rotation.

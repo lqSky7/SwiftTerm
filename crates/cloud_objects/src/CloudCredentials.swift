@@ -113,9 +113,29 @@ struct DeviceIdentity: Sendable {
     static let registeredDeviceAccount = "registered-device-id"
 
     let store: SecretStore
+    private let ownerID: String?
 
-    init(store: SecretStore = KeychainSecretStore()) {
+    init(store: SecretStore = KeychainSecretStore(), ownerID: String? = nil) {
         self.store = store
+        self.ownerID = ownerID
+    }
+
+    func forAccount(_ ownerID: String) -> DeviceIdentity {
+        DeviceIdentity(store: store, ownerID: ownerID)
+    }
+
+    private func key(_ name: String) -> String {
+        ownerID.map { "\(name):\($0)" } ?? name
+    }
+
+    func registrationRequestID() throws -> String {
+        let account = key("device-registration-request")
+        if let data = try store.read(account: account), let id = String(data: data, encoding: .utf8) {
+            return id
+        }
+        let id = UUID().uuidString.lowercased()
+        try store.write(Data(id.utf8), account: account)
+        return id
     }
 
     /// The credential for this installation, creating it on first use.
@@ -123,31 +143,31 @@ struct DeviceIdentity: Sendable {
     /// Idempotent: a second call returns the credential the first one stored, so a retry after a
     /// failure cannot leave two credentials where one device belongs.
     func credential() throws -> DeviceCredential {
-        if let existing = try store.read(account: Self.tokenAccount) {
+        if let existing = try store.read(account: key(Self.tokenAccount)) {
             // A stored value of the wrong length is not usable and cannot be repaired by guessing,
             // so it is replaced. This is the only path that overwrites a credential, and it happens
             // before any registration has been attempted with it.
             if existing.count == DeviceCredential.byteCount {
                 return DeviceCredential(token: existing)
             }
-            try store.delete(account: Self.tokenAccount)
+            try store.delete(account: key(Self.tokenAccount))
         }
         guard let fresh = DeviceCredential.generate() else {
             throw CloudError.offline
         }
-        try store.write(fresh.token, account: Self.tokenAccount)
+        try store.write(fresh.token, account: key(Self.tokenAccount))
         return fresh
     }
 
     /// The device id the server assigned, if this credential has been registered.
     func registeredDeviceID() throws -> String? {
-        guard let data = try store.read(account: Self.registeredDeviceAccount) else { return nil }
+        guard let data = try store.read(account: key(Self.registeredDeviceAccount)) else { return nil }
         return String(data: data, encoding: .utf8)
     }
 
     func remember(deviceID: String) throws {
         guard let data = deviceID.data(using: .utf8) else { throw CloudError.malformedResponse }
-        try store.write(data, account: Self.registeredDeviceAccount)
+        try store.write(data, account: key(Self.registeredDeviceAccount))
     }
 
     /// Forget the registration but keep the credential.
@@ -156,12 +176,13 @@ struct DeviceIdentity: Sendable {
     /// installation's secret, and generating a new one on every revoke would make the Keychain item
     /// churn for no reason. Deleting the credential is a separate, deliberate act.
     func forgetRegistration() throws {
-        try store.delete(account: Self.registeredDeviceAccount)
+        try store.delete(account: key(Self.registeredDeviceAccount))
     }
 
     /// Delete the credential itself. Sign-out does **not** do this — see `forgetRegistration`.
     func destroyCredential() throws {
-        try store.delete(account: Self.tokenAccount)
-        try store.delete(account: Self.registeredDeviceAccount)
+        try store.delete(account: key(Self.tokenAccount))
+        try store.delete(account: key(Self.registeredDeviceAccount))
+        try store.delete(account: key("device-registration-request"))
     }
 }

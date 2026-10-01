@@ -2,8 +2,8 @@
 
 C0 (immutable shared contracts), B1A (identity and database foundation) and B2A (the relay and its
 control plane) are implemented and verified against a live PostgreSQL 17 on Supabase. The backend is
-deployed and reachable; the website is live on Cloudflare. B1B (native sign-in), B2B (the native
-publisher), B2C (the browser viewer) and B3A (browser control) are not started. Terminal chat means
+deployed and reachable; the website is live on Cloudflare. B1B native identity, B2B publishing,
+B2C viewing and B3A control are implemented. Terminal chat means
 live terminal output to browser + browser input back to the host PTY. No AI.
 
 | File | Read for |
@@ -22,24 +22,23 @@ live terminal output to browser + browser input back to the host PTY. No AI.
 | `../../contracts/index.md` | the two contract implementations, the fixtures, and how to run both halves of the C0 gate |
 | `../../backend/index.md` | the deployed service — **note: the backend is no longer in this repository.** It is versioned at `gitlab.com:lqSky7/swiftterm-backend`, and this path is a local working copy that nothing here tracks |
 
-B2A, B2B, B2C, B3A and B4 have implementations, and B5B does; B1B has its client, sign-in flow and
-share sheet but no account page, and B5A — the native export — has none at all. The next things to do
-are the ones that need a machine this environment does not have: compile the app, run it against the
-deployed relay, and check the control path end to end. Remaining packages wait for their named
-predecessors. Do not provision infrastructure, expand protocols or implement deferred features
-silently. Each package stops after validation/signed commit for user acceptance. Node 24 LTS +
-TypeScript backend; TypeScript DOM/canvas website, managed PostgreSQL, OIDC and outbound WSS. No
-PTY/shell execution on backend and no durable live input/output queue.
+Current source: C0, B1A, B2A/B2B/B2C, B3A, B4 and B5B are implemented. B1B now includes
+native anonymous sign-in and account/device management. B5A native static export is next, after
+human acceptance of this phase. See `phase-b1b-completion-todo.md` for current evidence.
 
-The database is real now, so the old caveat about `pglast` no longer applies: `000`–`004` are applied
-and the role, transaction and control-plane tests run against it as the actual service role — 177
-backend tests, including the nine relay control cases, the twenty-one invitation and grant cases and
-the eighteen share cases.
+The website proxies HTTP and WebSockets under `/api` to zrok. Browser session/CSRF cookies now
+belong to the website origin; Supabase Auth still issues identities directly. The native app uses
+its existing direct API configuration and private cookie jar.
 
-**What is still unproven, stated plainly.** The Swift compiles for the first time on someone else's
-machine: the environment here cannot run `@Observable`'s macro plugin, so three harnesses cannot build
-and nothing in `app/` has been typechecked. The website's control half is built and tested but **not
-deployed**, so the affordance is not reachable. B2B publishes only whole snapshots — deltas are the
-item left undone, and every capture re-encodes the visible window until they exist. And B5 has no
-producer: the API accepts a share document and nothing yet builds one, so the share feature has no
-route in from the app.
+The backend migrations 000–004 and its 177-test baseline are from the previous session; this phase
+changed no backend code. B2B still publishes whole snapshots. Delta encoding and live output/input
+parity remain human-test/optimization work; B5A still has no native producer.
+
+The current Mac has Xcode-beta selected and builds Observation macros successfully. Release build
+132 is installed at `/Applications/swiftTerm.app` without launching. The former collapse/undo
+harness compile failures required missing shared-session sources, not an Observation workaround.
+
+Anonymous sign-in regression: URLSession’s own ephemeral store must be retained. A bare
+HTTPCookieStorage() loses the session cookies on this Mac. Website upstream requests must set
+skip_zrok_interstitial or browser user-agents get HTML and the client reports invalid_frame.
+Both paths passed real session exchange, account read and CSRF logout after repair.

@@ -25,7 +25,7 @@ import { chordFrom, inputOperationFor } from "./keys.ts";
 import { drawGrid, gridText, measureCells, rowText, type CellMetrics } from "./render.ts";
 import { initialState, type LiveState, type ViewerState } from "./state.ts";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8081";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "/api";
 const FONT_SIZE = 13;
 
 export function LiveViewer({ sessionId }: { readonly sessionId: string | null }) {
@@ -50,7 +50,7 @@ export function LiveViewer({ sessionId }: { readonly sessionId: string | null })
   useEffect(() => {
     if (sessionId === null) return;
     const connection = new ViewerConnection({
-      apiBaseUrl: API_BASE_URL,
+      apiBaseUrl: new URL(API_BASE_URL, window.location.origin).toString(),
       sessionId,
       requestTicket,
       onState: setState,

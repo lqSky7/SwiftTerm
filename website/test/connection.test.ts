@@ -172,12 +172,10 @@ describe("the socket URL", () => {
     assert.equal(socketUrlFor("http://127.0.0.1:8081", "abc"), "ws://127.0.0.1:8081/live/abc");
   });
 
-  it("drops any path or query the API base carried", () => {
-    // The relay lives at the root of the same origin; keeping a path from the base would produce a
-    // URL that upgrades nowhere.
+  it("preserves the proxy path and drops the query", () => {
     assert.equal(
-      socketUrlFor("https://api.example.com/v1?x=1", "abc"),
-      "wss://api.example.com/live/abc",
+      socketUrlFor("https://api.example.com/api/?x=1", "abc"),
+      "wss://api.example.com/api/live/abc",
     );
   });
 

@@ -46,3 +46,7 @@ relay and the browser use — so a change there is felt here immediately rather 
 
 The visual half of the gate: screenshot equivalence for the canvas, a slow-consumer case, and a
 reconnect-under-load case. Those need a browser, which this environment does not have.
+
+proxy.test.ts verifies fixed-upstream routing, CSRF/cookie/Origin forwarding, Set-Cookie retention, manual redirects and WebSocket headers. Socket URL tests retain `/api`.
+
+The proxy regression also checks that the zrok interstitial header is present on HTTP and socket forwarding.

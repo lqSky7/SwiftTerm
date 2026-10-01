@@ -31,3 +31,5 @@ Block collapse scroll anchoring/clamping is pure geometry in the existing termin
 Unused Apple text assistance is disabled centrally in warpui_core; app recommendations stay local.
 
 `git/` holds shared Foundation-only diff/summary models and cancellable local Git operations.
+
+Cloud device credentials and registration retries are scoped per cloud account.

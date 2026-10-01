@@ -79,3 +79,5 @@ installed unopened; details in `docs/backend/c0-audit.md`. Backend and website r
 Diff gutter follow-up: number columns fit actual digits and unused sides disappear for new/deleted
 files. Build 117 installed unopened; Debug/release and lint pass. Backend files are excluded from
 the native app's SwiftPM target.
+
+B1B completion: same-origin website API/socket proxy deployed; native anonymous sign-in and Account window added. Phase checklist: `docs/backend/phase-b1b-completion-todo.md`. B5A remains the next phase after human testing.

@@ -27,3 +27,5 @@ Backend/web terminal work is planning-only in `../../docs/backend/`.
 Every application window applies the shared text-input policy to native/SwiftUI field editors.
 
 `code_review/` owns the native right sidebar; AppCore wires pinned diff chips, prompt refresh and shared panel geometry.
+
+Account opens from Settings or Share through AppCore; current-device revocation stops sharing before revoking its credential.

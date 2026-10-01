@@ -163,6 +163,15 @@ enum CloudObjectsTest {
             harness.equal(
                 try identity.credential(), first, "and keeps the credential")
 
+            let owner = identity.forAccount("owner")
+            let other = identity.forAccount("other")
+            harness.expect(try owner.credential() != other.credential(), "accounts have distinct credentials")
+            try owner.remember(deviceID: "owned")
+            harness.equal(try other.registeredDeviceID(), nil, "registration never crosses accounts")
+            let requestID = try owner.registrationRequestID()
+            harness.equal(try owner.registrationRequestID(), requestID, "retry keeps the request id")
+            try owner.destroyCredential()
+            harness.expect(try owner.registrationRequestID() != requestID, "revocation rotates request id")
             try identity.destroyCredential()
             harness.equal(try identity.registeredDeviceID(), nil, "destroy clears the registration")
         } catch {

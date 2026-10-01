@@ -55,3 +55,7 @@ does have to satisfy the rule, so it declares the website's origin. Recorded in
 `CloudAPI.swift` for the routes and the client, `CloudCredentials.swift` for the credential,
 `CloudError.swift` for what a failure means. The account model that uses all three is
 `app/src/account/`.
+
+CloudCredentials.swift stores per-account device credentials and persistent registration request IDs for lost-response retries.
+
+CloudAPI retains URLSessionConfiguration.ephemeral’s built-in cookie store; constructing HTTPCookieStorage directly discarded authentication cookies on this Mac.

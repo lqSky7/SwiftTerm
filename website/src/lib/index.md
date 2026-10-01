@@ -19,3 +19,5 @@ to keep the token; presenting it without the header is not sufficient and is mea
 `ApiError` carries the allowlisted protocol code and derives a person-readable message from it. The
 backend never sends a diagnostic, so there is nothing else to show — and inventing one here would
 mean inventing a reason the server deliberately withheld.
+
+API base defaults to `/api`; explicit NEXT_PUBLIC_API_BASE_URL supports local development.

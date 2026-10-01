@@ -15,3 +15,5 @@ in a header on every write. Device tokens belong to the native app and stay in i
 
 That is why `lib/api.ts` always sends `credentials: "include"` and always echoes the CSRF header,
 and why `auth/client.ts` contains no secret of its own.
+
+Production API calls and live sockets use `/api` on the website origin through worker.ts.

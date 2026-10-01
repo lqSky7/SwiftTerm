@@ -92,3 +92,5 @@ the `.ts` modules here names its file.
 
 `state.ts` for what a frame means, `connection.ts` for the state machine, `palette.ts` for the one
 thing the contract leaves open.
+
+Socket URLs preserve the API proxy prefix. The viewer resolves `/api` against its own browser origin.

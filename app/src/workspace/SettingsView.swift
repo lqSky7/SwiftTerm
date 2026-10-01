@@ -242,6 +242,7 @@ struct SettingsView: View {
             SettingsPage(title: "Settings", showsBackButton: false) {
                 searchField
 
+                Button("Account…") { workspace.openAccount() }
                 SettingsGroup {
                     ForEach(Array(matching.enumerated()), id: \.element.id) { index, category in
                         if index > 0 { SettingsRowDivider() }

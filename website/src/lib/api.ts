@@ -10,7 +10,7 @@
  *     the cookie alone is never accepted, which is why the header is not optional here.
  */
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8081";
+const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "/api";
 
 export const CSRF_COOKIE_NAME = "swiftterm_csrf";
 export const CSRF_HEADER_NAME = "x-swiftterm-csrf";

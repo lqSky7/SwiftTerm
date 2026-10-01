@@ -232,10 +232,7 @@ actor CloudAPI {
             self.session = session
         } else {
             let configuration = URLSessionConfiguration.ephemeral
-            // The session cookie must survive a relaunch, but it must not be written to a shared
-            // store: it belongs to this app's own jar, which is what `httpCookieStorage` on an
-            // ephemeral configuration gives.
-            configuration.httpCookieStorage = HTTPCookieStorage()
+            // Ephemeral sessions already own a working private in-memory cookie store.
             configuration.httpCookieAcceptPolicy = .always
             configuration.waitsForConnectivity = false
             configuration.timeoutIntervalForRequest = 20
