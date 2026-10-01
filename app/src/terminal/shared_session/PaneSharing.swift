@@ -79,6 +79,7 @@ final class PaneSharing {
         socketBaseURL: URL,
         origin: String,
         title: String,
+        publicReadSecret: String? = nil,
         mechanisms: Mechanisms
     ) {
         guard !isSharing, let deviceID = account.deviceID else { return }
@@ -90,7 +91,8 @@ final class PaneSharing {
             identity: identity,
             deviceID: deviceID,
             socketBaseURL: socketBaseURL,
-            origin: origin)
+            origin: origin,
+            publicReadSecret: publicReadSecret)
         publisher.delegate = self
         self.publisher = publisher
         isSharing = true

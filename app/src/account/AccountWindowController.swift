@@ -63,6 +63,22 @@ private struct AccountView: View {
                         Button("Register This Mac") { Task { await account.registerThisDevice() } }
                     }
                 }
+                Section("Public Static Snapshots") {
+                    ForEach(account.publicShares, id: \.shareId) { share in
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text("\(share.blockCount) commands")
+                                Text(share.createdAt).font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Button("Revoke Link", role: .destructive) {
+                                Task { await account.revokeStaticShare(share.shareId) }
+                            }
+                        }
+                    }
+                    if account.publicShares.isEmpty { Text("No active snapshots.") }
+                    Button("Refresh") { Task { await account.refreshShares() } }
+                }
                 if let error = account.lastError { Text(error.messageForUser).foregroundStyle(.secondary) }
             } else {
                 Section("Sign In") { SignInSection(account: account) }
@@ -70,7 +86,10 @@ private struct AccountView: View {
         }
         .formStyle(.grouped)
         .task(id: account.isSignedIn) {
-            if account.isSignedIn { await account.refreshDevices() }
+            if account.isSignedIn {
+                await account.refreshDevices()
+                await account.refreshShares()
+            }
         }
         .sheet(isPresented: Binding(
             get: { pendingRevoke != nil }, set: { if !$0 { pendingRevoke = nil } })) {

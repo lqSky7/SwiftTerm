@@ -82,3 +82,5 @@ WorkspaceScreen narrows the terminal once for native review, animates only the r
 Both sidebar resize edges have 16-point hit areas. Global-coordinate drags use a fixed starting width.
 
 Settings exposes Account via the composition root; the account feature owns its own native window.
+
+Settings → Sharing persists Enable terminal sharing. Turning it off stops all streams/setup/export work, closes account/export UI and releases the cloud client. Sidebar sharing is hidden while disabled. Existing static links remain available until revoked.

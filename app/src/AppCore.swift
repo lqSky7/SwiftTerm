@@ -21,7 +21,57 @@ final class AppCore {
     /// a property of the structure rather than of a flag somebody has to remember to check. Nothing
     /// here can reach a pane: cloud state and terminal state are separate by construction, so
     /// signing out cannot lose a shell.
-    let account = AccountController()
+    @ObservationIgnored private var cloudAccount: AccountController?
+    var account: AccountController {
+        if let cloudAccount { return cloudAccount }
+        let created = AccountController()
+        cloudAccount = created
+        return created
+    }
+    private(set) var isPreparingShare = false
+    @ObservationIgnored private var shareSetupTask: Task<Void, Never>?
+
+    func setSharingEnabled(_ enabled: Bool) {
+        if let delegate = NSApplication.shared.delegate as? AppDelegate {
+            delegate.setSharingEnabled(enabled, source: self)
+        } else { applySharingEnabled(enabled) }
+    }
+
+    func applySharingEnabled(_ enabled: Bool, persist: Bool = true) {
+        chrome.sharingEnabled = enabled
+        if persist { schedulePersist() }
+        guard !enabled else { return }
+        shareSetupTask?.cancel()
+        shareSetupTask = nil
+        isPreparingShare = false
+        stopAllSharing()
+        closeShareSheet()
+        accountWindow?.close()
+        accountWindow = nil
+        staticShareWindow?.close()
+        staticShareWindow = nil
+        cloudAccount?.cancelSignIn()
+        cloudAccount = nil
+    }
+
+    func preparePublicShare(_ paneID: PaneID, live: Bool) {
+        guard chrome.sharingEnabled, !isPreparingShare else { return }
+        isPreparingShare = true
+        sharingFailure = nil
+        shareSetupTask = Task {
+            defer { isPreparingShare = false }
+            guard await account.prepareForSharing(), !Task.isCancelled, chrome.sharingEnabled else {
+                if !Task.isCancelled { sharingFailure = "Could not set up sharing. Try signing in below." }
+                return
+            }
+            if live {
+                guard let credential = DeviceCredential.generate() else { return }
+                let secret = credential.base64.replacingOccurrences(of: "+", with: "-")
+                    .replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
+                _ = startSharing(paneID, publicReadSecret: secret)
+            } else { openStaticShare(paneID) }
+        }
+    }
 
     /// One sharing session per pane, and only for panes the person explicitly started.
     ///
@@ -39,6 +89,7 @@ final class AppCore {
     @ObservationIgnored private var accountWindow: AccountWindowController?
 
     func openAccount() {
+        guard chrome.sharingEnabled else { return }
         account.restoreSignIn()
         if accountWindow == nil {
             accountWindow = AccountWindowController(account: account, signOut: { [weak self] in
@@ -51,6 +102,22 @@ final class AppCore {
         }
         accountWindow?.showWindow(nil)
         accountWindow?.window?.makeKeyAndOrderFront(nil)
+    }
+
+    @ObservationIgnored private var staticShareWindow: StaticShareWindowController?
+
+    func openStaticShare(_ paneID: PaneID) {
+        guard chrome.sharingEnabled, account.isSignedIn, let session = coordinators[paneID]?.session else { return }
+        if let window = staticShareWindow?.window, window.isVisible {
+            window.makeKeyAndOrderFront(nil)
+            return
+        }
+        let share = StaticShareCoordinator(blocks: session.blocks, api: account.api,
+                                          origin: account.configuration.origin)
+        staticShareWindow = StaticShareWindowController(share: share)
+        closeShareSheet()
+        staticShareWindow?.showWindow(nil)
+        staticShareWindow?.window?.makeKeyAndOrderFront(nil)
     }
 
     // MARK: - The share sheet
@@ -72,6 +139,7 @@ final class AppCore {
     /// settings tab or an empty window.
     @discardableResult
     func openShareSheet() -> Bool {
+        guard chrome.sharingEnabled else { return false }
         guard let paneID = activePane else { return false }
         sharingFailure = nil
         account.restoreSignIn()
@@ -89,8 +157,11 @@ final class AppCore {
     /// Built from the *website's* origin rather than the API's: the API is where the socket lives and
     /// the website is where a person can actually open something.
     func shareLink(for paneID: PaneID) -> String? {
-        guard let sessionID = sharing[paneID]?.publisher?.sessionID else { return nil }
-        return "\(account.configuration.origin)/live/?s=\(sessionID)"
+        guard let publisher = sharing[paneID]?.publisher, publisher.isLive,
+            let sessionID = publisher.sessionID else { return nil }
+        let base = "\(account.configuration.origin)/live/?s=\(sessionID)"
+        if let secret = sharing[paneID]?.publisher?.publicReadSecret { return base + "#public=" + secret }
+        return base
     }
 
     /// The one explicit action that starts sharing a pane. Nothing is captured before it.
@@ -103,7 +174,8 @@ final class AppCore {
     /// surface supplies none — so this returns without starting rather than starting a publisher that
     /// would answer a browser's keystroke with a cheerful "applied" and do nothing.
     @discardableResult
-    func startSharing(_ paneID: PaneID) -> Bool {
+    func startSharing(_ paneID: PaneID, publicReadSecret: String? = nil) -> Bool {
+        guard chrome.sharingEnabled else { return false }
         sharingFailure = nil
         guard sharing[paneID] == nil else { return false }
         guard let coordinator = coordinators[paneID], let session = coordinator.session else {
@@ -132,6 +204,7 @@ final class AppCore {
             socketBaseURL: account.configuration.socketBaseURL,
             origin: account.configuration.origin,
             title: "Terminal",
+            publicReadSecret: publicReadSecret,
             mechanisms: mechanisms)
         return true
     }
@@ -153,6 +226,9 @@ final class AppCore {
     /// to fail — and it is here rather than in `AccountController` because that type deliberately
     /// cannot reach terminal state, so signing out can never lose a shell.
     func signOut() async {
+        shareSetupTask?.cancel()
+        staticShareWindow?.close()
+        staticShareWindow = nil
         stopAllSharing()
         closeShareSheet()
         await account.signOut()
@@ -366,7 +442,9 @@ final class AppCore {
     /// `tabs` through `closeIfEmpty()`, and the window closing itself calls this again on its way out.
     func terminate() {
         accountWindow?.close()
-        account.cancelSignIn()
+        staticShareWindow?.close()
+        shareSetupTask?.cancel()
+        cloudAccount?.cancelSignIn()
         codeReview.stop()
         // Before the coordinators go. A stream whose publisher is torn down without ending it leaves
         // the relay holding a session and the account holding a slot until the lease expires, and

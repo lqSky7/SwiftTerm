@@ -66,3 +66,5 @@ both the proxy and assets. For local Next.js development set NEXT_PUBLIC_API_BAS
 backend; in production omit it or set `/api`. Supabase Auth remains its own issuer origin.
 
 The Worker sets skip_zrok_interstitial for upstream API/socket requests: browser user-agents otherwise receive zrok HTML instead of API JSON.
+
+Public /s/?id=<locator>#<capability> resolves immutable text without account cookies or sockets. /live/?s=<id>#public=<capability> uses read-only one-hour public tickets. Public static HTML has no-store/CSP/no-referrer/no-index headers.

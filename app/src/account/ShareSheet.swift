@@ -26,6 +26,19 @@ struct ShareSheet: View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xxl) {
             header
             Divider()
+            if workspace.sharing[paneID] == nil {
+                Button("Temporary Public Stream") { workspace.preparePublicShare(paneID, live: true) }
+                    .disabled(workspace.isPreparingShare)
+                Text("Anyone with the link can watch for one hour. Read-only; stops when you stop sharing.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Button("Public Static Snapshot…") { workspace.preparePublicShare(paneID, live: false) }
+                .disabled(workspace.isPreparingShare)
+            Text("Share completed commands with anyone. No live connection.")
+                .font(.caption).foregroundStyle(.secondary)
+            if workspace.isPreparingShare { ProgressView("Setting up sharing…") }
+            if let error = workspace.sharingFailure { Text(error).font(.caption).foregroundStyle(.secondary) }
+            Divider()
             content
             Spacer(minLength: 0)
             footer
@@ -53,7 +66,7 @@ struct ShareSheet: View {
     }
 
     private var subtitle: String {
-        if !workspace.account.isSignedIn { return "Sharing needs an account, so anyone with the link can be revoked." }
+        if !workspace.account.isSignedIn { return "Choose a public link, or sign in below for private sharing." }
         if workspace.account.deviceID == nil { return "This machine has to be registered before a pane can be published." }
         if let sharing = workspace.sharing[paneID] {
             return sharing.viewerCount == 1 ? "Live · 1 viewer" : "Live · \(sharing.viewerCount) viewers"
@@ -344,11 +357,20 @@ private struct LiveSection: View {
                 }
             }
 
-            if let sessionID = sharing.publisher?.sessionID {
+            if sharing.publisher?.publicReadSecret != nil {
+                Text("Public · read-only · expires one hour after starting")
+                    .font(.caption).foregroundStyle(.secondary)
+            } else if let sessionID = sharing.publisher?.sessionID {
                 InvitationSection(account: workspace.account, sessionID: sessionID)
             }
             if case .failed(let reason) = sharing.publisher?.state {
                 Text(reason).font(.caption).foregroundStyle(.secondary)
+                if sharing.publisher?.publicReadSecret != nil {
+                    Button("Start New Temporary Public Stream") {
+                        workspace.stopSharing(paneID)
+                        workspace.preparePublicShare(paneID, live: true)
+                    }
+                }
             }
             Button("Stop Sharing") { workspace.stopSharing(paneID) }
         }

@@ -31,6 +31,7 @@ const FONT_SIZE = 13;
 
 export function LiveViewer({ sessionId }: { readonly sessionId: string | null }) {
   const [state, setState] = useState<ViewerState>(initialState);
+  const [publicReadOnly, setPublicReadOnly] = useState(false);
   const [accessError, setAccessError] = useState<number | null>(null);
   const [notice, setNotice] = useState<string>("");
   const [focusedBlock, setFocusedBlock] = useState<string | null>(null);
@@ -42,15 +43,16 @@ export function LiveViewer({ sessionId }: { readonly sessionId: string | null })
 
   const requestTicket = useCallback(async (): Promise<string> => {
     if (sessionId === null) throw new Error("no session");
+    const publicSecret = new URLSearchParams(window.location.hash.slice(1)).get("public");
     try {
-      const response = await apiFetch<{ ticket: string }>(`/live/${sessionId}/tickets`, {
+      const response = await apiFetch<{ ticket: string }>(`/live/${sessionId}/${publicSecret ? "public-tickets" : "tickets"}`, {
         method: "POST",
-        body: { role: "viewer" },
+        body: publicSecret ? { read_secret: publicSecret } : { role: "viewer" },
       });
       return response.ticket;
     } catch (error) {
       if (error instanceof ApiError && [401, 404, 409].includes(error.status)) {
-        setAccessError(error.status);
+        setAccessError(publicSecret ? 409 : error.status);
       }
       throw error;
     }
@@ -58,6 +60,7 @@ export function LiveViewer({ sessionId }: { readonly sessionId: string | null })
 
   useEffect(() => {
     if (sessionId === null || accessError !== null) return;
+    setPublicReadOnly(new URLSearchParams(window.location.hash.slice(1)).has("public"));
     const connection = new ViewerConnection({
       apiBaseUrl: new URL(API_BASE_URL, window.location.origin).toString(),
       sessionId,
@@ -98,13 +101,13 @@ export function LiveViewer({ sessionId }: { readonly sessionId: string | null })
 
   return (
     <Frame status={statusLabel(state)} notice={notice} live={live}>
-      <ControlBar
+      {publicReadOnly ? <p className="border-b pb-3 text-sm">Public stream · read-only · temporary link</p> : <ControlBar
         control={control}
         canAsk={live !== null}
         onRequest={() => connectionRef.current?.requestControl()}
         onRelease={() => connectionRef.current?.releaseControl()}
         onPaste={(text) => connectionRef.current?.sendInput({ kind: "paste", text })}
-      />
+      />}
       {live === null ? (
         <p className="mt-4 text-sm text-muted-foreground">
           {state.status === "failed"
@@ -138,11 +141,12 @@ function StreamAccess({ status, sessionId, onRedeemed }: {
     let cancelled = false;
     setCode(new URLSearchParams(window.location.hash.slice(1)).get("invite") ?? "");
     setSignInHref(`/sign-in/?next=${encodeURIComponent(`/live/?s=${sessionId}${window.location.hash}`)}`);
+    if (status === 409) return;
     void currentAccount().then((account) => {
       if (!cancelled) setAccountId(account?.id ?? null);
     });
     return () => { cancelled = true; };
-  }, [sessionId]);
+  }, [sessionId, status]);
 
   async function redeem(event: React.FormEvent) {
     event.preventDefault();
@@ -162,7 +166,7 @@ function StreamAccess({ status, sessionId, onRedeemed }: {
     } finally { setBusy(false); }
   }
 
-  if (status === 409) return <p>This stream has ended. Ask the host for a new share link.</p>;
+  if (status === 409) return <p>This stream has ended or its temporary link has expired. Ask the host for a new share link.</p>;
   if (status === 401) return <p>Sign in to watch this stream. <a className="underline" href={signInHref}>Sign in</a></p>;
   return <div className="max-w-xl space-y-4 text-sm">
     <p>This account does not have access, or the stream is no longer available. Sign in with the Mac’s account, or ask the host for an invitation.</p>

@@ -119,6 +119,7 @@ struct ChromeSettings: Equatable {
     /// The name roams; the picture is a **path**, which does not — a file at `~/Pictures/me.png` exists on this
     /// machine and not on the next one. Both live here anyway because there is no sync to get it wrong yet, and the
     /// honest note is that the avatar wants moving to the device half the moment there is.
+    var sharingEnabled = true
     var userName: String = ChromeSettings.defaultUserName
     var avatarPath: String?
 
@@ -246,6 +247,7 @@ struct ChromeSettings: Equatable {
 
 extension ChromeSettings: Codable {
     private enum CodingKeys: String, CodingKey {
+        case sharingEnabled
         case appearanceMode
         case fontSize
         case lineHeightRatio
@@ -271,6 +273,7 @@ extension ChromeSettings: Codable {
         let fallback = ChromeSettings()
 
         self.init()
+        sharingEnabled = try container.decodeIfPresent(Bool.self, forKey: .sharingEnabled) ?? fallback.sharingEnabled
         // Both names are decoded as *strings* rather than as the enums, so a material or an appearance this
         // build has never heard of costs that one setting and nothing else. Decoding the enum directly would
         // throw, and the throw would take the whole document with it.
@@ -304,6 +307,7 @@ extension ChromeSettings: Codable {
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(sharingEnabled, forKey: .sharingEnabled)
         try container.encode(appearanceMode.rawValue, forKey: .appearanceMode)
         try container.encode(userName, forKey: .userName)
         try container.encodeIfPresent(avatarPath, forKey: .avatarPath)

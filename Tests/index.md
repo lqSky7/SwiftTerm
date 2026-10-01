@@ -3,7 +3,7 @@
 One harness per guarded decision. Each compiles the shipped sources directly with `swiftc`, so a
 harness that stops compiling means a decision leaked out of a pure layer. There is no XCTest target.
 
-41 Swift harnesses plus the TypeScript contract gate. The count is not a goal — it is what the decisions cost to hold down.
+43 Swift harnesses plus the TypeScript contract gate. The count is not a goal — it is what the decisions cost to hold down.
 
 ## The wire contract
 
@@ -125,3 +125,5 @@ watermarks, native-value bounds, UTF-8 admission, strict calendar dates and seal
 sign-in-test.swift checks project-driven anonymous availability, anonymous grants and initial offline state with a URLProtocol stub. cloud-objects-test also checks account isolation and registration retry/rotation.
 
 stream-publisher-test.swift starts an ephemeral local HTTP/WebSocket relay using the existing backend ws dependency. It delays stream creation and immediately captures a golden snapshot, then verifies auth → hello → snapshot ordering and ticket epoch substitution. No app launch or production credentials.
+
+There are now 43 Swift harnesses plus the contract gate (44 checks). static-share-test verifies sealed-only redacted plain-text public export and stable retry bodies. sharing-offline-test verifies lazy cloud initialization, disabled action guards, release and teardown without windows or network.

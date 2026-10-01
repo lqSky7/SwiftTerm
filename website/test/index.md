@@ -52,3 +52,5 @@ proxy.test.ts verifies fixed-upstream routing, CSRF/cookie/Origin forwarding, Se
 The proxy regression also checks that the zrok interstitial header is present on HTTP and socket forwarding.
 
 access.test.ts verifies invitation preservation through sign-in and rejection of external/unrelated redirect destinations.
+
+static-share.test.ts validates cookie-independent block-array decoding, literal XSS/Unicode text, control/invalid-style rejection and fragment-only capabilities.

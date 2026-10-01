@@ -23,19 +23,18 @@ live terminal output to browser + browser input back to the host PTY. No AI.
 | `../../backend/index.md` | the deployed service — **note: the backend is no longer in this repository.** It is versioned at `gitlab.com:lqSky7/swiftterm-backend`, and this path is a local working copy that nothing here tracks |
 
 Current source: C0, B1A, B2A/B2B/B2C, B3A, B4 and B5B are implemented. B1B now includes
-native anonymous sign-in and account/device management. B5A native static export is next, after
-human acceptance of this phase. See `phase-b1b-completion-todo.md` for current evidence.
+native anonymous sign-in and account/device management. B5A native public static export is implemented with local selection/redaction/preview and a public website page. See `phase-b1b-completion-todo.md` for current evidence.
 
 The website proxies HTTP and WebSockets under `/api` to zrok. Browser session/CSRF cookies now
 belong to the website origin; Supabase Auth still issues identities directly. The native app uses
 its existing direct API configuration and private cookie jar.
 
-The backend migrations 000–004 and its 177-test baseline are from the previous session; this phase
-changed no backend code. B2B still publishes whole snapshots. Delta encoding and live output/input
-parity remain human-test/optimization work; B5A still has no native producer.
+Backend migrations remain 000–004. Public sharing adds capability-only viewer routes, socket
+read-only enforcement and plain-text export validation; its 183-test suite passes. B2B still publishes whole snapshots. Delta encoding and live output/input
+parity remain human-test/optimization work. Public temporary streams are read-only capability links.
 
 The current Mac has Xcode-beta selected and builds Observation macros successfully. Release build
-132 is installed at `/Applications/swiftTerm.app` without launching. The former collapse/undo
+136 is installed at `/Applications/swiftTerm.app` without launching. The former collapse/undo
 harness compile failures required missing shared-session sources, not an Observation workaround.
 
 Anonymous sign-in regression: URLSession’s own ephemeral store must be retained. A bare
@@ -44,3 +43,8 @@ skip_zrok_interstitial or browser user-agents get HTML and the client reports in
 Both paths passed real session exchange, account read and CSRF logout after repair.
 
 Live-stream repair is tracked in phase-live-access-todo.md: native auth/hello/snapshot startup, ticket epoch and recipient-bound invitations. Build 134 replaces build 132. Production HTTP and WebSocket proxy invitation checks passed; temporary probe identities were removed.
+
+Public sharing phase: `phase-public-sharing-todo.md` tracks static snapshots, one-action temporary
+public streams and Settings shutdown/lazy cloud composition. Native/website/backend checks pass;
+production cookie-free static/live reads, retry, control denial, revoke and stop were verified with
+the shipped Swift client and raw HTTP/WebSockets. No computer use.

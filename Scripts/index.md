@@ -27,3 +27,5 @@ Git review harness adds shared Git sources + Foundation-only review coordinator.
 run-tests.sh includes the sign-in harness and remote-input contract sources required by the collapse/undo view harnesses.
 
 run-tests.sh compiles stream-publisher-test with the shipped cloud client, wire DTOs and publisher; this transport regression requires the existing backend Node dependencies.
+
+static-share-test guards export/masking/body/persistence. sharing-offline-test compiles the shipped app sources without its @main entry and checks lazy initialization, disabled entry points and teardown without opening windows or writing settings.

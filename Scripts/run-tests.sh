@@ -23,6 +23,7 @@ SOURCES=(
     crates/warp_terminal/src/local_tty/*.swift
     crates/warp_terminal/src/shell/*.swift
     crates/warp_terminal/src/bootstrap/*.swift
+    crates/secret_redaction/src/*.swift
     app/src/terminal/TerminalSession.swift
     Tests/HarnessSupport.swift
     # Named individually rather than globbed, and deliberately: `Theme.swift` sits beside it and imports
@@ -45,6 +46,15 @@ if [ "${1:-}" = "--exec" ]; then
             crates/shared_session/src/*.swift
             crates/cloud_objects/src/*.swift
         )
+    fi
+    if [ "$name" = "sharing-offline-test" ]; then
+        SOURCES=()
+        while IFS= read -r file; do SOURCES+=("$file"); done < <(
+            rg --files app/src crates -g '*.swift' | rg -v '/SwiftTermApp.swift$')
+    fi
+    if [ "$name" = "static-share-test" ]; then
+        SOURCES+=(crates/shared_session/src/*.swift crates/cloud_objects/src/*.swift
+                  app/src/cloud_object/StaticShareExport.swift)
     fi
     if [ "$name" = "stream-publisher-test" ]; then
         SOURCES=(crates/shared_session/src/*.swift crates/cloud_objects/src/*.swift

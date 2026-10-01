@@ -242,7 +242,19 @@ struct SettingsView: View {
             SettingsPage(title: "Settings", showsBackButton: false) {
                 searchField
 
-                Button("Account…") { workspace.openAccount() }
+                SettingsGroup(label: "Sharing") {
+                    SettingsRow(title: "Enable terminal sharing") {
+                        Toggle("Enable terminal sharing", isOn: Binding(
+                            get: { workspace.chrome.sharingEnabled },
+                            set: { workspace.setSharingEnabled($0) })).labelsHidden()
+                    }
+                    Text("Turn off for an offline terminal. Stops sharing and releases cloud connections. "
+                         + "Public snapshots already published remain available until revoked.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    if workspace.chrome.sharingEnabled {
+                        Button("Account…") { workspace.openAccount() }
+                    }
+                }
                 SettingsGroup {
                     ForEach(Array(matching.enumerated()), id: \.element.id) { index, category in
                         if index > 0 { SettingsRowDivider() }

@@ -18,8 +18,8 @@ work completed: search, persistence, media, remote control and Git review vary g
 | 6 | Highlighting/validation | Partial, model only | ShellTokenizer and CommandResolver tested; editor does not consume them for syntax colors or diagnostic underlines |
 | 7 | Context chips | Partial | cwd/branch/environment and clickable local diff totals; runtime versions, ahead/behind and complete chip actions remain |
 | 8 | Block menu | Partial | copy/find/collapse/navigation; full copy formats, filter/bookmark/share menu scope incomplete |
-| 9 | Block sharing | Planned, no runtime | Backend SQL/protocol/website plan only; no publish service or native export UI |
-| 14 | Secret masking | Deferred / export planned | No live masking or export scanner implementation |
+| 9 | Block sharing | Partial, runtime | Native public static selection/redaction/preview/publish/revoke and website viewer; private live invitations and temporary public read-only streams; per-block menu refinements remain |
+| 14 | Secret masking | Live deferred; export implemented | Common secret masking runs only on local static export preview; terminal/live content remains unchanged |
 | 15 | Omnibar/palette | Not implemented | Fuzzy matcher exists separately; no unified palette UI/action search |
 | 16 | Sidebar/tab manager | Partial | tabs/rename/reorder/pin/splits/resizing; foreground-process metadata, tab search and complete rich status/navigation absent |
 | 18 | Restoration/recovery | Partial | SessionSnapshot JSON saves layout/directories at shutdown; no continuously persisted blocks or full crash recovery |
@@ -52,8 +52,9 @@ work completed: search, persistence, media, remote control and Git review vary g
 3. Palette (#15) and file/history/scrollback search (#42).
 4. Launch configs, remaining SSH/Git parity, media, notebooks and headless frontend (Phase 7).
 
-Backend work remains planning only: B1 identity/schema/API; B2 web viewing; B3 owner web input;
-B4 grants; B5 static sharing; B6 measured scaling. See `roadmap.md`, `protocol.md` and `todo.md`.
+Backend B1 identity, B2 relay/viewer, B3 owner-approved input, B4 grants and B5 public static sharing
+are implemented. Temporary public viewing and a global Sharing disable switch were explicitly requested.
+B6 measured scaling remains planned. See `roadmap.md`, `protocol.md` and `todo.md`.
 No assistant/inference feature is planned. Local IPC, full multiplayer and live secret masking
 remain separate deferred work unless explicitly requested.
 
@@ -72,3 +73,6 @@ validation, limits, deliberate divergences and remaining human acceptance. Headl
 Current native build: 115 installed unopened. All 35 native harnesses pass; Debug/release have
 no compiler warnings. Current working tree passes 37 checks including the separately delegated C0
 contract gates. Lint succeeds with existing/separately owned warnings. User acceptance is pending.
+
+The counts at the top are the previous full catalogue audit. The public-sharing phase adds runtime
+evidence for #9 and export-only masking for #14; see phase-public-sharing-todo.md for current gates.

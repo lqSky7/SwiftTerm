@@ -112,6 +112,26 @@ enum CloudRoutes {
         )
     }
 
+    static func makePublicStream(sessionID: String, secret: String) -> CloudRequest {
+        CloudRequest(method: "POST", path: "/live/\(sessionID)/public",
+                     body: body(["read_secret": secret]), requiresCSRF: true)
+    }
+
+    static func publishShare(snapshot: WireShareSnapshot, requestID: String, secret: String) throws -> CloudRequest {
+        let document = try JSONSerialization.jsonObject(with: WireCanonicalJSON.encode(snapshot)) as! [String: Any]
+        return CloudRequest(method: "POST", path: "/shares",
+            body: body(["client_request_id": requestID, "read_secret": secret,
+                        "access_mode": "link", "blocks": document["blocks"]!]), requiresCSRF: true)
+    }
+
+    static func shares() -> CloudRequest {
+        CloudRequest(method: "GET", path: "/shares", requiresCSRF: false)
+    }
+
+    static func revokeShare(id: String) -> CloudRequest {
+        CloudRequest(method: "DELETE", path: "/shares/\(id)", requiresCSRF: true)
+    }
+
     static func invite(sessionID: String, recipientID: String, permission: String) -> CloudRequest {
         CloudRequest(method: "POST", path: "/live/\(sessionID)/invitations",
                      body: body(["recipient_user_id": recipientID, "permission": permission]),
@@ -169,6 +189,22 @@ enum CloudTicketRole: String, Sendable {
 }
 
 // MARK: - Responses
+
+struct CloudShareSummary: Decodable, Sendable {
+    let shareId: String
+    let createdAt: String
+    let revokedAt: String?
+    let blockCount: Int
+}
+
+struct CloudShareList: Decodable, Sendable {
+    let shares: [CloudShareSummary]
+}
+
+struct CloudPublishedShare: Decodable, Sendable {
+    let shareId: String
+    let publicLocator: String
+}
 
 struct CloudInvitation: Decodable, Sendable {
     let code: String
@@ -257,6 +293,8 @@ actor CloudAPI {
     ///
     /// A 2xx with an empty body returns empty data rather than throwing: `204` is a real answer, and
     /// treating it as a malformed response would make every successful end/revoke look like a fault.
+    deinit { session.invalidateAndCancel() }
+
     func send(_ request: CloudRequest) async throws -> Data {
         var urlRequest = URLRequest(url: baseURL.appendingPathComponent(request.path))
         urlRequest.httpMethod = request.method

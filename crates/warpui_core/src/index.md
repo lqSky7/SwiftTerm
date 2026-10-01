@@ -38,3 +38,5 @@ setter re-enters the lookup. Regression fields are attached to a window; user au
 for crash diagnosis and installed-build verification.
 
 Theme sidebar resize targets are 16 points wide; terminal outlines remain one physical pixel.
+
+ChromeSettings.sharingEnabled is persisted with a tolerant missing-key default. AppCore/Delegate enforce the setting and lazily compose cloud clients.

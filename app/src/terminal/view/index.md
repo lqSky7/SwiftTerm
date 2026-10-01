@@ -71,3 +71,5 @@ setter re-enters the lookup. Regression fields are attached to a window; user au
 for crash diagnosis and installed-build verification.
 
 Diff-chip hits reuse renderer geometry and open review via a composition-root callback. Remote file/Git links never resolve against local files, including sealed blocks. Window activation refreshes review.
+
+The Share menu action is disabled when ChromeSettings.sharingEnabled is false; AppCore independently guards the action.

@@ -96,3 +96,5 @@ thing the contract leaves open.
 Socket URLs preserve the API proxy prefix. The viewer resolves `/api` against its own browser origin.
 
 Viewer ticket failures distinguish signed-out (401), access unavailable (404), and ended (409). Access UI exposes the browser account ID and redeems recipient-bound invitations. Invitation fragments survive sign-in through access.ts, which restricts return destinations to the local live page.
+
+#public=<capability> selects temporary public viewer tickets and removes all control UI. Public failures show ended/expired instead of asking viewers for invitations or accounts.

@@ -34,3 +34,5 @@ setter re-enters the lookup. Regression fields are attached to a window; user au
 for crash diagnosis and installed-build verification.
 
 Account now has a native grouped window, anonymous sign-in, cancellable authentication and explicit refresh-token restore.
+
+Sharing is composed lazily by AppCore. cloud_object/ hosts static preview/publish; temporary public streaming stays under terminal/shared_session. Settings can disable the entire feature across windows.

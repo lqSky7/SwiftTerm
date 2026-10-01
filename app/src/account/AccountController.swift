@@ -165,6 +165,23 @@ final class AccountController {
         }
     }
 
+    func prepareForSharing() async -> Bool {
+        if !isSignedIn {
+            restoreSignIn()
+            await authenticationTask?.value
+            await signInTask?.value
+        }
+        guard !Task.isCancelled else { return false }
+        if !isSignedIn {
+            signInAnonymously()
+            await authenticationTask?.value
+            await signInTask?.value
+        }
+        guard !Task.isCancelled, isSignedIn else { return false }
+        if deviceID == nil { await registerThisDevice() }
+        return deviceID != nil && !Task.isCancelled
+    }
+
     func signInAnonymously() {
         guard let url = configuration.supabaseURL, let key = configuration.supabaseAnonKey else { return }
         cancelSignIn()
@@ -279,6 +296,25 @@ final class AccountController {
         return try await api.send(
             CloudRoutes.invite(sessionID: sessionID, recipientID: recipientID.lowercased(), permission: permission),
             as: CloudInvitation.self)
+    }
+
+    private(set) var publicShares: [CloudShareSummary] = []
+
+    func refreshShares() async {
+        guard let id = account?.id else { return }
+        do {
+            let result = try await api.send(CloudRoutes.shares(), as: CloudShareList.self)
+            guard !Task.isCancelled, account?.id == id else { return }
+            publicShares = result.shares.filter { $0.revokedAt == nil }
+        } catch { lastError = error as? CloudError ?? .malformedResponse }
+    }
+
+    func revokeStaticShare(_ id: String) async {
+        guard isSignedIn else { return }
+        do {
+            _ = try await api.send(CloudRoutes.revokeShare(id: id))
+            await refreshShares()
+        } catch { lastError = error as? CloudError ?? .malformedResponse }
     }
 
     // MARK: - Devices

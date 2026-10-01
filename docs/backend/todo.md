@@ -283,20 +283,18 @@ B5A remains unimplemented and starts only after this phase is tested.
 
 ## B5 — static block shares
 
-- [ ] Select sealed blocks and build immutable normalized DTO. **Not started** — B5A is native and
-      `crates/secret_redaction` and `app/src/cloud_object` do not exist. Nothing yet produces a share
-      document for the API to accept.
-- [ ] Preview and redact before first content upload; server checks again. **Not started**, same
-      reason.
+- [x] Select sealed blocks and build immutable normalized DTO. Native public static preview uses
+      up to 20 recent completed commands and canonical plain text without cwd/draft metadata.
+- [x] Preview and redact before first content upload; server checks again. Export-only masking,
+      editable local preview and sealed/plain-text validation are implemented.
 - [x] Publish snapshot/link/grants atomically with request hash idempotency. *(Migration `004`:
       `create_share` writes the snapshot, the link and the grants in one call, and a retry with the
       same `client_request_id` returns the same link rather than minting a second secret.)*
 - [x] Client retains generated read secret through lost-response retries. *(The server only ever
       stores `sha256`, so the secret is the client's by construction — and the retry path returns the
       existing locator, so the URL the client already built still works.)*
-- [ ] Website escapes content and enforces bounded style spans/CSP/no-store. **Partly.** The API sets
-      `no-store` on every response and a `default-src 'none'` policy on resolve, and the database
-      stores hostile strings unaltered. The `/s/<locator>` page that would render them does not exist.
+- [x] Website escapes content and enforces bounded DTO/CSP/no-store. Public /s/?id=<locator>#<secret>
+      renders canonical plain text without credentials, sockets or escape parsing.
 - [x] Implement restricted/unlisted resolve, expiry, revoke/delete and GC. *(Constant-time digest
       comparison, one outcome for every refusal, restricted needing both the capability and an
       approved account, and a bounded `SKIP LOCKED` purge that two workers can run at once.)*
@@ -343,3 +341,6 @@ B5A remains unimplemented and starts only after this phase is tested.
 - [x] Preserve snapshot ordering, fullscreen invariants and aggregate byte bounds during damage.
 - [x] Make TypeScript snapshot completion async with required hash verification.
 - [x] Complete audit validation/install (build 116); see c0-audit.md.
+
+User-authorized public sharing extension: one-hour read-only public streams with no viewer account,
+automatic host identity setup and a persisted Sharing switch. See phase-public-sharing-todo.md.

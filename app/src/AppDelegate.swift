@@ -8,6 +8,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// one that restores last launch's tabs.
     private var cores: [AppCore] = []
 
+    func setSharingEnabled(_ enabled: Bool, source: AppCore) {
+        for core in cores { core.applySharingEnabled(enabled, persist: core === source) }
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppMenus.install()
         openWindow(persistsSession: true)
@@ -48,6 +52,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// One more window, holding one shell — what every caller above means by "new window".
     private func openWindow(persistsSession: Bool) {
         let core = AppCore(persistsSession: persistsSession)
+        if let enabled = cores.first?.chrome.sharingEnabled {
+            core.applySharingEnabled(enabled, persist: false)
+        }
         core.onWindowClosed = { [weak self, weak core] in
             guard let self, let core else { return }
             cores.removeAll { $0 === core }

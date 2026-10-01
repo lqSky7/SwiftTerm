@@ -37,6 +37,7 @@ final class StreamPublisher {
     private(set) var sessionID: String?
     /// The publisher generation. A ticket carries it, and a renewal must match it.
     private(set) var epoch: String?
+    let publicReadSecret: String?
 
     @ObservationIgnored private let api: CloudAPI
     @ObservationIgnored private let identity: PaneExportIdentity
@@ -46,6 +47,7 @@ final class StreamPublisher {
 
     @ObservationIgnored private var socket: URLSessionWebSocketTask?
     @ObservationIgnored private var leaseToken: String?
+    @ObservationIgnored private var publicDeadline: Date?
     @ObservationIgnored private var renewTask: Task<Void, Never>?
     @ObservationIgnored private var sendTask: Task<Void, Never>?
     /// Frames waiting to go out, drained by one task so two captures cannot interleave mid-frame.
@@ -62,13 +64,15 @@ final class StreamPublisher {
         identity: PaneExportIdentity,
         deviceID: String,
         socketBaseURL: URL,
-        origin: String
+        origin: String,
+        publicReadSecret: String? = nil
     ) {
         self.api = api
         self.identity = identity
         self.deviceID = deviceID
         self.socketBaseURL = socketBaseURL
         self.origin = origin
+        self.publicReadSecret = publicReadSecret
     }
 
     var isLive: Bool {
@@ -105,6 +109,11 @@ final class StreamPublisher {
                 let ticket = try await api.send(
                     CloudRoutes.mintTicket(sessionID: created.sessionId, role: .publisher),
                     as: CloudTicket.self)
+                if let publicReadSecret {
+                    _ = try await api.send(CloudRoutes.makePublicStream(
+                        sessionID: created.sessionId, secret: publicReadSecret))
+                    publicDeadline = Date().addingTimeInterval(60 * 60)
+                }
                 guard !Task.isCancelled else { return }
                 epoch = ticket.epoch
                 leaseToken = ticket.leaseToken
@@ -133,6 +142,7 @@ final class StreamPublisher {
         outbox.removeAll()
         hasSentHello = false
         leaseToken = nil
+        publicDeadline = nil
         seq = 0
         state = .idle
         // The stream is ended server-side rather than merely abandoned: an abandoned stream keeps a
@@ -387,7 +397,13 @@ final class StreamPublisher {
                 // Ten seconds against a thirty-second lease: three chances to be late before the
                 // server fences this publisher out.
                 try? await Task.sleep(for: .seconds(10))
-                guard !Task.isCancelled, let sessionID, let epoch, let leaseToken else { return }
+                guard !Task.isCancelled else { return }
+                if let publicDeadline, Date() >= publicDeadline {
+                    stop()
+                    state = .failed("The temporary public stream expired.")
+                    return
+                }
+                guard let sessionID, let epoch, let leaseToken else { return }
                 do {
                     _ = try await api.send(
                         CloudRoutes.renewLease(sessionID: sessionID, epoch: epoch, leaseToken: leaseToken))

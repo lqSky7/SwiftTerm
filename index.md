@@ -81,3 +81,5 @@ files. Build 117 installed unopened; Debug/release and lint pass. Backend files 
 the native app's SwiftPM target.
 
 B1B completion: same-origin website API/socket proxy deployed; native anonymous sign-in and Account window added. Phase checklist: `docs/backend/phase-b1b-completion-todo.md`. B5A remains the next phase after human testing.
+
+Public sharing phase adds native public static export/preview/revoke, temporary read-only live links and Settings shutdown across windows. Release 136 is installed; 44 native checks, 70 website tests and 183 backend tests pass. See docs/backend/phase-public-sharing-todo.md.

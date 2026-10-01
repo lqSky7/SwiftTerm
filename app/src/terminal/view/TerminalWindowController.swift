@@ -162,6 +162,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             menuItem.title = hidden ? "Show Sidebar" : "Hide Sidebar"
         }
         if menuItem.action == #selector(showShareSheet(_:)) {
+            guard workspace?.chrome.sharingEnabled == true else { return false }
             // Disabled rather than silently doing nothing when there is no pane — a settings tab, or
             // an empty window. A command that appears available and is not is the one people conclude
             // is broken.

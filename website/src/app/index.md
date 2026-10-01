@@ -30,3 +30,5 @@ negotiable:
   dependency-free and browser-safe, and `SnapshotAssembler.finish` takes an **injected** digest
   because the only browser SHA-256 is `crypto.subtle` and it is asynchronous.
 - The browser never resizes the host PTY. It fits and scrolls the geometry the publisher sent.
+
+s/ is the public static share route (/s/?id=<locator>#<capability>). It is exported once and resolves content without credentials, with no-referrer/no-index metadata. live/ also supports #public=<capability> for cookie-free temporary read-only tickets.

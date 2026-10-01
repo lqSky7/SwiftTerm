@@ -18,3 +18,5 @@ registration rotates its secret and request ID; failed device lookup preserves t
 `Tests/sign-in-test.swift` covers issuer responses without network or real Keychain mutations.
 
 Share → Invite a Browser creates an existing backend B4 invitation bound to the viewer account ID, with viewer/controller permission. The resulting link carries its redemption code in the URL fragment.
+
+Share offers one-action temporary public streaming and public static export above private account/invitation controls. prepareForSharing restores or creates an anonymous identity automatically. Account lists static snapshots and can revoke them after their preview closes.

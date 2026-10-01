@@ -116,3 +116,5 @@ a socket that is still open.
   (`Tests/remote-key-test.swift`, 35 checks).
 
 Publisher startup retains the latest pre-connect snapshot and sends auth, hello and snapshot in order. The opening snapshot uses the ticket epoch; one drain owns socket sends. Startup is cancelled on stop and a failed startup socket is visible in Share.
+
+Public publisher startup installs a one-hour read capability before opening its socket. The link is exposed only after relay admission; the host stops renewing/ends the stream on expiry. Public view uses no control invitation.

@@ -61,3 +61,5 @@ CloudCredentials.swift stores per-account device credentials and persistent regi
 CloudAPI retains URLSessionConfiguration.ephemeral’s built-in cookie store; constructing HTTPCookieStorage directly discarded authentication cookies on this Mac.
 
 CloudRoutes.invite and CloudInvitation carry recipient-bound live-stream invitations; the account layer validates recipient UUID and permission before sending.
+
+Public static routes publish canonical sealed plain-text blocks in the existing backend array format, list owner snapshots and revoke links. Temporary public stream setup is an owner-authenticated call; capability generation uses existing cryptographic credential bytes. CloudAPI invalidates its private URLSession on release.

@@ -18,3 +18,5 @@ and 2 MiB caps are enforced here and again by the TypeScript validators.
 Audit: only sealed blocks are accepted; style spans cannot split UTF-16 surrogate pairs.
 
 DeviceIdentity scopes registration secrets and request IDs by owner; destroying a credential rotates retry identity.
+
+src/ also carries public static publish/list/revoke requests and canonical share DTOs; native previews retain the pending body and read capability for response-loss retries.

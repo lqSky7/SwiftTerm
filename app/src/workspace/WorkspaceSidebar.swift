@@ -36,7 +36,7 @@ struct WorkspaceSidebar: View {
             Spacer(minLength: Theme.Size.trafficLightInset)
             Spacer(minLength: 0)
             NewTabButton(workspace: workspace)
-            ShareButton(workspace: workspace)
+            if workspace.chrome.sharingEnabled { ShareButton(workspace: workspace) }
             SettingsButton(workspace: workspace)
         }
         .padding(.horizontal, Theme.Spacing.md)

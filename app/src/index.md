@@ -29,3 +29,5 @@ Every application window applies the shared text-input policy to native/SwiftUI 
 `code_review/` owns the native right sidebar; AppCore wires pinned diff chips, prompt refresh and shared panel geometry.
 
 Account opens from Settings or Share through AppCore; current-device revocation stops sharing before revoking its credential.
+
+cloud_object/ owns native static export selection/preview/upload and its window. AppCore initializes cloud accounts only on sharing/account actions; AppDelegate applies the Sharing switch across all windows.

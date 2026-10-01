@@ -17,3 +17,5 @@ That is why `lib/api.ts` always sends `credentials: "include"` and always echoes
 and why `auth/client.ts` contains no secret of its own.
 
 Production API calls and live sockets use `/api` on the website origin through worker.ts.
+
+sharing/ provides the static snapshot decoder and public text viewer; it contains no WebSocket/client account dependency.

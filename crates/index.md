@@ -33,3 +33,5 @@ Unused Apple text assistance is disabled centrally in warpui_core; app recommend
 `git/` holds shared Foundation-only diff/summary models and cancellable local Git operations.
 
 Cloud device credentials and registration retries are scoped per cloud account.
+
+secret_redaction/ is a pure Foundation export-only masking helper. It never changes local or live terminal content.

@@ -9,3 +9,5 @@ one feature needs stays with that feature.
 | `src/VisualEffectView.swift` | `NSVisualEffectView` in SwiftUI — the one thing SwiftUI's materials cannot do |
 
 `src/TextIntelligence.swift` owns the shared disabled text-assistance policy and TextInputWindow.
+
+ChromeSettings includes the persisted Sharing enable switch, enforced by AppCore/Delegate without initializing cloud state while off.
