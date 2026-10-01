@@ -155,25 +155,37 @@ private struct SignInSection: View {
             }
 
             VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-                Text("The URL is already set. The missing half is the anon key:")
+                Text("The URL is already set. The missing half is the client key:")
                     .font(.caption)
                     .foregroundStyle(Theme.Colors.ramp(dark: 0.6, light: 0.55))
                 Text("app/Info.plist → SwiftTermSupabaseAnonKey")
                     .font(.system(.caption, design: .monospaced))
                     .textSelection(.enabled)
                 // A real link, because "go to the dashboard" is the instruction that made the old
-                // version useless. This lands on the page the key is on.
+                // version useless. **`settings/api-keys`, not `settings/api`** — Supabase's own docs
+                // are explicit that there is no separate "Settings → API" page any more, and a link
+                // that lands on a page which does not exist is worse than no link: it looks like the
+                // reader did something wrong.
                 Link(
-                    "Open Project Settings → API",
+                    "Open Settings → API Keys",
                     destination: URL(
                         string:
-                            "https://supabase.com/dashboard/project/\(Self.projectRef)/settings/api"
+                            "https://supabase.com/dashboard/project/\(Self.projectRef)/settings/api-keys/"
+                    )!)
+                    .font(.caption)
+                // And the one-click version, which shows the URL and the key together.
+                Link(
+                    "Open the Connect dialog",
+                    destination: URL(
+                        string:
+                            "https://supabase.com/dashboard/project/\(Self.projectRef)?showConnect=true"
                     )!)
                     .font(.caption)
                 Text(
-                    "It is the anon public key. It is publishable and safe to embed — every row is "
-                        + "still scoped by row-level security. The service_role key must never go "
-                        + "in this file.")
+                    "It is the anon public key — or its newer name, publishable. It is publishable "
+                        + "and safe to embed: it authorises the client, and every row is still "
+                        + "scoped by row-level security. The secret key (formerly service_role) "
+                        + "must never go in this file.")
                     .font(.caption)
                     .foregroundStyle(Theme.Colors.ramp(dark: 0.6, light: 0.55))
                     .fixedSize(horizontal: false, vertical: true)

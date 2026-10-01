@@ -12,7 +12,17 @@ import {
 
 /** The Supabase project this deployment is built against, for the link an operator needs. */
 const PROJECT_REF = "upmarjiewuwvaljnnboq";
-const PROJECT_API_KEYS_URL = `https://supabase.com/dashboard/project/${PROJECT_REF}/settings/api`;
+/**
+ * Where the client key lives.
+ *
+ * **`settings/api-keys`, and the earlier `settings/api` was wrong.** Supabase's own documentation is
+ * explicit that there is no separate "Settings → API" page any more — every key, legacy or current,
+ * is on this one. A link that lands on a page which does not exist is worse than no link, because it
+ * looks like the reader did something wrong.
+ */
+const PROJECT_API_KEYS_URL = `https://supabase.com/dashboard/project/${PROJECT_REF}/settings/api-keys/`;
+/** The Connect dialog, which shows the URL and the client key together, ready to copy. */
+const PROJECT_CONNECT_URL = `https://supabase.com/dashboard/project/${PROJECT_REF}?showConnect=true`;
 
 /**
  * Sign in.
@@ -153,18 +163,31 @@ function NotConfigured({
         </p>
         <p className="mt-2 text-muted-foreground">
           An operator sets <Code>NEXT_PUBLIC_SUPABASE_URL</Code> and{" "}
-          <Code>NEXT_PUBLIC_SUPABASE_ANON_KEY</Code>. The second is the <Code>anon</Code>{" "}
-          <Code>public</Code> key under{" "}
+          <Code>NEXT_PUBLIC_SUPABASE_ANON_KEY</Code>. The second is the client key —{" "}
+          <Code>anon</Code> <Code>public</Code>, or its newer name <Code>publishable</Code> — under{" "}
           <a
             href={PROJECT_API_KEYS_URL}
             target="_blank"
             rel="noreferrer noopener"
             className="underline underline-offset-2 hover:text-foreground"
           >
-            Project Settings → API
+            Settings → API Keys
           </a>{" "}
-          in the Supabase dashboard. The anon key is publishable and safe to embed; the{" "}
-          <Code>service_role</Code> key must never be.
+          in the Supabase dashboard. It is publishable and safe to embed: it authorises the client,
+          and every row is still scoped by row-level security. The <Code>secret</Code> key (formerly{" "}
+          <Code>service_role</Code>) must never be.
+        </p>
+        <p className="mt-2 text-muted-foreground">
+          The{" "}
+          <a
+            href={PROJECT_CONNECT_URL}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="underline underline-offset-2 hover:text-foreground"
+          >
+            Connect dialog
+          </a>{" "}
+          shows the URL and the key together, ready to copy.
         </p>
       </div>
 

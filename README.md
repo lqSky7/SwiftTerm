@@ -30,11 +30,15 @@ sees a password, and the app never holds a database credential.
 | `website/.env.local` | `NEXT_PUBLIC_SUPABASE_URL` | the same URL |
 | `website/.env.local` | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | the same key |
 
-The key is the **`anon` `public`** key, from
-[Project Settings → API](https://supabase.com/dashboard/project/upmarjiewuwvaljnnboq/settings/api).
+The key is the client key — **`anon` `public`**, or its replacement **`publishable`** — from
+[Settings → API Keys](https://supabase.com/dashboard/project/upmarjiewuwvaljnnboq/settings/api-keys/).
 It is publishable and safe to embed: it authorises the *client*, and every row is still scoped by
-row-level security and by the backend's own signature check. The `service_role` key must never go in
-either file.
+row-level security and by the backend's own signature check. The **`secret`** key (formerly
+`service_role`) must never go in either file.
+
+The quickest way to get both values at once is the project's **Connect** dialog:
+[project home → Connect](https://supabase.com/dashboard/project/upmarjiewuwvaljnnboq?showConnect=true)
+shows the URL and the client key ready to copy.
 
 **An account has to exist before anyone can sign in**, and neither the app nor the website creates
 one. The dashboard's
