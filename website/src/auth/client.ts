@@ -108,6 +108,46 @@ export function isSupabaseConfigured(): boolean {
 }
 
 /**
+ * Create an account, then tell the caller to go and confirm it.
+ *
+ * **This is the half that was missing, and it is why "how does a user get in" had no good answer.**
+ * The backend provisions its own account automatically from the verified token — but a Supabase Auth
+ * account has to exist first, and nothing in this repository created one. So the only way in was an
+ * operator adding a row in the dashboard, which is not a product.
+ *
+ * It does **not** sign the person in, and that is not an oversight: this project has
+ * `mailer_autoconfirm: false`, so a fresh account cannot authenticate until the address is
+ * confirmed. Calling `startSession` here would fail with "Invalid login credentials" and look like
+ * a broken sign-up. The caller shows the confirmation message instead.
+ *
+ * A weak password is reported as the service describes it, because that is the one failure a person
+ * can act on. Everything else is one sentence — "already registered" and "that address is invalid"
+ * are the same shape of answer to somebody who cannot see the user table.
+ */
+export async function signUpWithPassword(email: string, password: string): Promise<void> {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (supabaseUrl === undefined || anonKey === undefined) {
+    throw new Error("Supabase is not configured for this deployment");
+  }
+
+  const response = await fetch(`${supabaseUrl}/auth/v1/signup`, {
+    method: "POST",
+    headers: { "content-type": "application/json", apikey: anonKey },
+    body: JSON.stringify({ email, password }),
+  });
+
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => ({}))) as { msg?: string; error_code?: string };
+    // The password policy is the one refusal worth repeating verbatim — it says what to change.
+    if (payload.error_code === "weak_password" && typeof payload.msg === "string") {
+      throw new Error(payload.msg);
+    }
+    throw new Error("That address could not be registered. It may already have an account.");
+  }
+}
+
+/**
  * Whether this deployment may offer the paste-a-token path.
  *
  * **Off unless a deployment turns it on, and it exists because it was on for everybody.** The path

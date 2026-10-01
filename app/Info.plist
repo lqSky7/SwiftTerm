@@ -52,7 +52,7 @@
 	<key>SwiftTermAllowTokenSignIn</key>
 	<false/>
 	<key>SwiftTermSupabaseAnonKey</key>
-	<string></string>
+	<string>sb_publishable_5IF1MIcnLSanPwmNOGsttA_SztOm6yn</string>
 	<key>SwiftTermSupabaseURL</key>
 	<string>https://upmarjiewuwvaljnnboq.supabase.co</string>
 </dict>

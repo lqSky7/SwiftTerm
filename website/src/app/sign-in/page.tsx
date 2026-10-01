@@ -7,8 +7,11 @@ import {
   allowsTokenSignIn,
   isSupabaseConfigured,
   signInWithPassword,
+  signUpWithPassword,
   startSession,
 } from "@/auth/client";
+
+type Mode = "signIn" | "signUp";
 
 /** The Supabase project this deployment is built against, for the link an operator needs. */
 const PROJECT_REF = "upmarjiewuwvaljnnboq";
@@ -47,6 +50,8 @@ const PROJECT_CONNECT_URL = `https://supabase.com/dashboard/project/${PROJECT_RE
  */
 export default function SignInPage() {
   const router = useRouter();
+  const [mode, setMode] = useState<Mode>("signIn");
+  const [awaitingConfirmation, setAwaitingConfirmation] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [token, setToken] = useState("");
@@ -62,12 +67,21 @@ export default function SignInPage() {
     setError(null);
     setBusy(true);
     try {
-      if (!usingToken) {
-        await signInWithPassword(email, password);
-      } else {
+      if (usingToken) {
         if (token.trim() === "") throw new Error("Paste an access token to continue");
         await startSession(token.trim());
+        router.push("/account");
+        return;
       }
+      if (mode === "signUp") {
+        // Deliberately not followed by a sign-in. This project requires email confirmation, so a
+        // fresh account cannot authenticate yet — calling `startSession` here would fail with
+        // "invalid credentials" and read as a broken sign-up.
+        await signUpWithPassword(email, password);
+        setAwaitingConfirmation(true);
+        return;
+      }
+      await signInWithPassword(email, password);
       router.push("/account");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Sign-in failed");
@@ -76,11 +90,49 @@ export default function SignInPage() {
     }
   }
 
+  if (awaitingConfirmation) {
+    return (
+      <section className="mx-auto w-full max-w-md px-4 py-20 sm:px-6">
+        <h1 className="text-2xl font-medium tracking-tight">Check your email</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          We sent a confirmation link to <span className="font-medium">{email}</span>. Open it, then
+          come back and sign in.
+        </p>
+        <p className="mt-4 text-sm text-muted-foreground">
+          Nothing within a few minutes? The project may have no mail service configured, in which
+          case an operator can confirm the account from the{" "}
+          <a
+            href={`https://supabase.com/dashboard/project/${PROJECT_REF}/auth/users`}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="underline underline-offset-2 hover:text-foreground"
+          >
+            Users page
+          </a>
+          .
+        </p>
+        <button
+          type="button"
+          onClick={() => {
+            setAwaitingConfirmation(false);
+            setMode("signIn");
+          }}
+          className="mt-8 rounded-lg border border-input px-4 py-2 text-sm"
+        >
+          Back to sign in
+        </button>
+      </section>
+    );
+  }
+
   return (
     <section className="mx-auto w-full max-w-md px-4 py-20 sm:px-6">
-      <h1 className="text-2xl font-medium tracking-tight">Sign in</h1>
+      <h1 className="text-2xl font-medium tracking-tight">
+        {supabaseReady && mode === "signUp" ? "Create an account" : "Sign in"}
+      </h1>
       <p className="mt-2 text-sm text-muted-foreground">
-        SwiftTerm identifies you by a verified account, never by your local user name.
+        SwiftTerm identifies you by a verified account, never by your local user name. The terminal
+        needs no account at all — this is only for sharing a pane.
       </p>
 
       <form onSubmit={submit} className="mt-8 flex flex-col gap-4">
@@ -102,9 +154,12 @@ export default function SignInPage() {
                 type="password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
-                autoComplete="current-password"
+                autoComplete={mode === "signUp" ? "new-password" : "current-password"}
                 className="rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
               />
+              {mode === "signUp" && (
+                <span className="text-xs text-muted-foreground">At least 6 characters.</span>
+              )}
             </label>
           </>
         ) : (
@@ -129,7 +184,28 @@ export default function SignInPage() {
             disabled={busy || (usingToken && token.trim() === "")}
             className="rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
           >
-            {busy ? "Signing in…" : usingToken ? "Exchange token for a session" : "Sign in"}
+            {busy
+              ? mode === "signUp"
+                ? "Creating…"
+                : "Signing in…"
+              : usingToken
+                ? "Exchange token for a session"
+                : mode === "signUp"
+                  ? "Create account"
+                  : "Sign in"}
+          </button>
+        )}
+
+        {supabaseReady && (
+          <button
+            type="button"
+            onClick={() => {
+              setMode(mode === "signIn" ? "signUp" : "signIn");
+              setError(null);
+            }}
+            className="text-sm text-muted-foreground underline underline-offset-2 hover:text-foreground"
+          >
+            {mode === "signIn" ? "No account? Create one" : "Already have an account? Sign in"}
           </button>
         )}
       </form>
