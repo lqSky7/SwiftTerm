@@ -9,3 +9,16 @@ dist/
 # Historical design notes stay local; the backend contract is versioned.
 /docs/*
 !/docs/backend/
+
+# The backend lives in its own repository — gitlab.com:lqSky7/swiftterm-backend — and is versioned
+# there. It is a separate deliverable with its own deploy and its own release cadence, and carrying a
+# second copy here meant two histories for one service: the copy in this repository drifted from the
+# deployed one and nothing noticed, because a `GRANT` that is missing does not fail.
+#
+# The contract it shares with this app is *not* ignored: `contracts/` is the frozen wire format and
+# `docs/backend/` is the specification, and both are versioned here because both are halves of an
+# agreement this repository's code has to keep.
+#
+# One consequence worth knowing: `git subtree push --prefix=backend` no longer works, because there is
+# no longer a subtree. Work on the backend in its own checkout.
+/backend/
