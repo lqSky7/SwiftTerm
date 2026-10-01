@@ -106,3 +106,16 @@ export function isSupabaseConfigured(): boolean {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY !== undefined
   );
 }
+
+/**
+ * Whether this deployment may offer the paste-a-token path.
+ *
+ * **Off unless a deployment turns it on, and it exists because it was on for everybody.** The path
+ * is how the token exchange gets tested before an email template or a provider exists, and its only
+ * audience is whoever is building the thing — but a deployed site was showing a credential-paste
+ * field to whoever opened the page, which is not a thing a product does. Absent means off, so the
+ * default is the honest one and nobody has to remember to remove it before shipping.
+ */
+export function allowsTokenSignIn(): boolean {
+  return process.env.NEXT_PUBLIC_ALLOW_TOKEN_SIGN_IN === "1";
+}

@@ -21,11 +21,22 @@ struct CloudConfiguration: Sendable {
     /// signature.
     let supabaseAnonKey: String?
 
+    /// Whether a release build may offer the paste-a-token path.
+    ///
+    /// **Off unless a build turns it on, and it exists because it was on for everybody.** The path
+    /// is how the token exchange gets tested before an email template or a provider exists, and its
+    /// only audience is whoever is building the thing — but a shipped build was showing a
+    /// credential-paste field to whoever opened the window, which is not a thing a product does. It
+    /// is behind an Info.plist flag now: absent means off, so the default is the honest one and
+    /// nobody has to remember to remove it before shipping.
+    let allowsTokenSignIn: Bool
+
     static let deployed = CloudConfiguration(
         baseURL: URL(string: "https://swiftterm.shares.zrok.io")!,
         origin: "https://swiftterm.catinice.workers.dev",
         supabaseURL: nil,
         supabaseAnonKey: nil,
+        allowsTokenSignIn: false,
     )
 
     static func fromBundle(_ bundle: Bundle = .main) -> CloudConfiguration {
@@ -33,6 +44,9 @@ struct CloudConfiguration: Sendable {
         let origin = bundle.object(forInfoDictionaryKey: "SwiftTermAPIOrigin") as? String
         let supabase = bundle.object(forInfoDictionaryKey: "SwiftTermSupabaseURL") as? String
         let anonKey = bundle.object(forInfoDictionaryKey: "SwiftTermSupabaseAnonKey") as? String
+        // Absent is false. A flag that had to be set to *disable* the escape hatch would be a flag
+        // somebody ships without setting.
+        let allowToken = bundle.object(forInfoDictionaryKey: "SwiftTermAllowTokenSignIn") as? Bool
 
         guard
             let base, let url = URL(string: base), url.scheme != nil,
@@ -40,14 +54,15 @@ struct CloudConfiguration: Sendable {
         else {
             return .deployed
         }
-        // Supabase is optional rather than required: a build without it still signs in against a
-        // pasted token, which is how the website behaves too.
+        // Supabase is optional rather than required: a build without it has no sign-in at all, which
+        // is what the sheet says rather than showing a field nobody can fill in.
         let supabaseURL = supabase.flatMap { URL(string: $0) }.flatMap { $0.scheme == nil ? nil : $0 }
         return CloudConfiguration(
             baseURL: url,
             origin: origin,
             supabaseURL: supabaseURL,
-            supabaseAnonKey: anonKey?.isEmpty == true ? nil : anonKey)
+            supabaseAnonKey: anonKey?.isEmpty == true ? nil : anonKey,
+            allowsTokenSignIn: allowToken ?? false)
     }
 
     var canSignInWithPassword: Bool {

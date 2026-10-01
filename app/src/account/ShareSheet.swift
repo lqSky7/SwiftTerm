@@ -179,36 +179,45 @@ private struct SignInSection: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            DisclosureGroup("I already have an access token", isExpanded: $showingTokenPath) {
-                VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-                    Text(
-                        "An access token is a short-lived signed pass that Supabase Auth issues when "
-                            + "somebody signs in. It is not a password and not a shared secret: the "
-                            + "backend verifies its signature against the project's published keys, "
-                            + "so a token it did not issue is refused. It is valid for about an hour.")
-                        .font(.caption)
-                        .foregroundStyle(Theme.Colors.ramp(dark: 0.6, light: 0.55))
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text("This produces one, given the same anon key and an account that already exists:")
-                        .font(.caption)
-                        .foregroundStyle(Theme.Colors.ramp(dark: 0.6, light: 0.55))
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text(Self.curlCommand)
-                        .font(.system(size: 10, design: .monospaced))
-                        .textSelection(.enabled)
-                        .padding(Theme.Spacing.md)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Theme.Colors.ramp(dark: 0.08, light: 0.05))
-                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.control))
-                    SecureField("Access token", text: $token)
-                        .onSubmit { submitToken() }
-                    Button("Sign In") { submitToken() }
-                        .disabled(token.isEmpty || workspace.account.isWorking)
+            // Only in a build that asked for it. A shipped build shows the explanation and nothing
+            // else, which is the honest answer when there is no way in — and it means the escape
+            // hatch cannot reach a user by default rather than by somebody remembering to remove it.
+            if workspace.account.configuration.allowsTokenSignIn {
+                DisclosureGroup("I already have an access token", isExpanded: $showingTokenPath) {
+                    tokenPath
                 }
-                .padding(.top, Theme.Spacing.md)
+                .font(.callout)
             }
-            .font(.callout)
         }
+    }
+
+    private var tokenPath: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            Text(
+                "An access token is a short-lived signed pass that Supabase Auth issues when "
+                    + "somebody signs in. It is not a password and not a shared secret: the "
+                    + "backend verifies its signature against the project's published keys, so a "
+                    + "token it did not issue is refused. It is valid for about an hour.")
+                .font(.caption)
+                .foregroundStyle(Theme.Colors.ramp(dark: 0.6, light: 0.55))
+                .fixedSize(horizontal: false, vertical: true)
+            Text("This produces one, given the same anon key and an account that already exists:")
+                .font(.caption)
+                .foregroundStyle(Theme.Colors.ramp(dark: 0.6, light: 0.55))
+                .fixedSize(horizontal: false, vertical: true)
+            Text(Self.curlCommand)
+                .font(.system(size: 10, design: .monospaced))
+                .textSelection(.enabled)
+                .padding(Theme.Spacing.md)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Theme.Colors.ramp(dark: 0.08, light: 0.05))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.control))
+            SecureField("Access token", text: $token)
+                .onSubmit { submitToken() }
+            Button("Sign In") { submitToken() }
+                .disabled(token.isEmpty || workspace.account.isWorking)
+        }
+        .padding(.top, Theme.Spacing.md)
     }
 
     private static let curlCommand = """

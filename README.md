@@ -43,10 +43,18 @@ adds one; confirm the email if the project asks for it.
 
 ### Until the key is set
 
-Both sign-in screens say so and link to the page above, rather than showing a bare token field. There
-is a second path for testing, which is a **pasted access token**: the backend verifies it exactly as
-it verifies one from the password grant, so it is not a bypass. This produces one, given the anon key
-and an account that already exists:
+Both sign-in screens say sign-in is not set up and link to the page above, rather than showing a bare
+token field. There is a second path, which is a **pasted access token** — the backend verifies it
+exactly as it verifies one from the password grant, so it is not a bypass. It is **off unless a build
+turns it on**, because its only audience is whoever is building the thing and a shipped build should
+not show a credential-paste field to whoever opens it:
+
+| | |
+| --- | --- |
+| Mac app | `SwiftTermAllowTokenSignIn` → `<true/>` in `app/Info.plist` (absent means off) |
+| Website | `NEXT_PUBLIC_ALLOW_TOKEN_SIGN_IN=1` in `.env.local` |
+
+This produces a token, given the anon key and an account that already exists:
 
 ```bash
 curl -s -X POST \
@@ -57,4 +65,14 @@ curl -s -X POST \
 
 It lasts about an hour, and there is nothing to refresh it with — which is why the password path is
 the real one and this is the escape hatch.
+
+### What the token is, and what it is not
+
+It is **not** a database credential, and it cannot read the database. `…supabase.co/auth/v1` is
+Supabase **Auth** — a separate service that happens to share a project with the Postgres instance.
+Postgres never issues it. It is a signed pass that Auth issues when somebody logs in, and the backend
+verifies its signature against the project's published keys before trusting a single claim in it. The
+only thing holding a database credential is the backend service itself; the app and the browser never
+get one.
+
 

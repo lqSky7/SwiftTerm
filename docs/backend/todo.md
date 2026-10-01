@@ -176,12 +176,25 @@ the direct `db.<ref>.supabase.co` host is IPv6-only and unreachable from this ne
 
 - [ ] Select hosting/domain/OIDC provider and pin runtime/dependencies.
 - [ ] Implement system-browser PKCE sign-in and Keychain storage.
-- [ ] Map verified issuer/subject to accounts; bind native device credentials.
+- [ ] Map verified issuer/subject to accounts; bind native device credentials. *(The mapping is done:
+      `POST /auth/session` provisions from the **verified** issuer and subject. What is missing is
+      where the token comes from.)*
 - [x] Turn SQL draft into numbered migration and exact production role grants.
 - [ ] Test RLS as non-owner roles, cross-tenant FKs and pooled context isolation.
 - [ ] Implement input byte limits, auth/CSRF/Origin checks and idempotency.
 - [ ] Build website sign-in/download pages using same API/session.
 - [ ] Restore database backup and exercise migration recovery.
+- [ ] **There is no sign-up, and that is the real gap behind "how does a user get in".** The backend
+      creates an `app_users` row on first verified sign-in, so the *application* account is automatic
+      — but the **Supabase Auth** account has to exist first, and nothing in this repository creates
+      one. Today that means an operator adds a user in the dashboard. Anything that expects a
+      stranger to be able to sign up needs a sign-up flow, and a decision about whether the project
+      requires email confirmation. Neither exists.
+- [ ] **Two configuration values are missing, and until they are set nobody can sign in.** The
+      Supabase URL is set; the publishable `anon` key is not, in either the app or the website. This
+      is not a code defect — the key is deliberately not in the repository — but it means a fresh
+      checkout cannot sign in, and both sign-in screens say so rather than offering a token field.
+      `README.md` has the table and the dashboard link.
 
 ## B2A — backend relay and control plane (implemented)
 

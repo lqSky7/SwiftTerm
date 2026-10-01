@@ -3,7 +3,12 @@
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
-import { isSupabaseConfigured, signInWithPassword, startSession } from "@/auth/client";
+import {
+  allowsTokenSignIn,
+  isSupabaseConfigured,
+  signInWithPassword,
+  startSession,
+} from "@/auth/client";
 
 /** The Supabase project this deployment is built against, for the link an operator needs. */
 const PROJECT_REF = "upmarjiewuwvaljnnboq";
@@ -38,7 +43,9 @@ export default function SignInPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const supabaseReady = isSupabaseConfigured();
-  const usingToken = !supabaseReady;
+  // Only in a deployment that asked for it. See `allowsTokenSignIn`.
+  const tokenSignInAvailable = !supabaseReady && allowsTokenSignIn();
+  const usingToken = tokenSignInAvailable;
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -91,7 +98,11 @@ export default function SignInPage() {
             </label>
           </>
         ) : (
-          <NotConfigured token={token} onToken={setToken} />
+          <NotConfigured
+            token={token}
+            onToken={setToken}
+            tokenSignInAvailable={tokenSignInAvailable}
+          />
         )}
 
         {error !== null && (
@@ -100,13 +111,17 @@ export default function SignInPage() {
           </p>
         )}
 
-        <button
-          type="submit"
-          disabled={busy || (usingToken && token.trim() === "")}
-          className="rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
-        >
-          {busy ? "Signing in…" : usingToken ? "Exchange token for a session" : "Sign in"}
-        </button>
+        {/* No button at all when there is nothing to submit: a page with a disabled button and no
+            way to enable it is the same complaint as a field nobody can fill in. */}
+        {!supabaseReady && !tokenSignInAvailable ? null : (
+          <button
+            type="submit"
+            disabled={busy || (usingToken && token.trim() === "")}
+            className="rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
+          >
+            {busy ? "Signing in…" : usingToken ? "Exchange token for a session" : "Sign in"}
+          </button>
+        )}
       </form>
     </section>
   );
@@ -121,9 +136,11 @@ export default function SignInPage() {
 function NotConfigured({
   token,
   onToken,
+  tokenSignInAvailable,
 }: {
   readonly token: string;
   readonly onToken: (value: string) => void;
+  readonly tokenSignInAvailable: boolean;
 }) {
   return (
     <div className="flex flex-col gap-3">
@@ -152,10 +169,11 @@ function NotConfigured({
       </div>
 
       {/*
-        The escape hatch, closed and labelled. It exists because the exchange is worth being able to
-        test before an email template or a provider exists — not because a visitor should be expected
-        to arrive with a token.
+        The escape hatch, closed and labelled, and absent unless this deployment asked for it. It
+        exists because the exchange is worth being able to test before an email template or a
+        provider exists — not because a visitor should be expected to arrive with a token.
       */}
+      {!tokenSignInAvailable ? null : (
       <details className="rounded-lg border p-4 text-sm">
         <summary className="cursor-pointer font-medium">
           I already have an access token
@@ -191,6 +209,7 @@ function NotConfigured({
           </label>
         </div>
       </details>
+      )}
     </div>
   );
 }
