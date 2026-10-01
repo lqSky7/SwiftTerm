@@ -87,38 +87,35 @@ struct ShareSheet: View {
     }
 }
 
-/// The password grant, or a token when the build has no Supabase pair configured.
+/// The password grant, or — when this build has no Supabase pair — an explanation of why it cannot
+/// sign anyone in, and the operator path underneath.
 ///
-/// Both paths exist because both are real: the deployed build signs in with a password against
-/// Supabase, and a development build without those keys still needs a way in — which is the same
-/// escape hatch the website offers.
+/// **It used to be a bare "Access token" field with a line of jargon.** That is accurate and
+/// useless: somebody who has never seen a Supabase token has no idea what one is, where it comes
+/// from, or who could give them one, and a sheet that cannot sign anybody in should say so rather
+/// than invite them to paste a credential they do not have.
+///
+/// So the unconfigured state says three things in the order a person needs them: what is wrong, what
+/// would fix it, and who can do that. The token field is behind a disclosure, labelled as the
+/// operator path, with the command that produces one.
 private struct SignInSection: View {
     let workspace: AppCore
 
     @State private var email = ""
     @State private var password = ""
     @State private var token = ""
+    @State private var showingTokenPath = false
+
+    /// The project the backend verifies tokens against — the same value as its `OIDC_ISSUER`. Named
+    /// here so the link an operator needs is one click rather than a hunt through a dashboard.
+    private static let projectRef = "upmarjiewuwvaljnnboq"
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
             if workspace.account.configuration.canSignInWithPassword {
-                TextField("Email", text: $email)
-                    .textContentType(.username)
-                SecureField("Password", text: $password)
-                    .textContentType(.password)
-                    .onSubmit { submit() }
-                Button("Sign In") { submit() }
-                    .disabled(email.isEmpty || password.isEmpty || workspace.account.isWorking)
+                passwordPath
             } else {
-                // Said rather than hidden. A build with no Supabase pair cannot do a password grant,
-                // and a field that silently fails is worse than one that explains itself.
-                Text("This build has no Supabase configuration, so sign in with an access token.")
-                    .font(.caption)
-                    .foregroundStyle(Theme.Colors.ramp(dark: 0.6, light: 0.55))
-                SecureField("Access token", text: $token)
-                    .onSubmit { submitToken() }
-                Button("Sign In") { submitToken() }
-                    .disabled(token.isEmpty || workspace.account.isWorking)
+                notConfigured
             }
 
             if let error = workspace.account.lastError {
@@ -129,6 +126,97 @@ private struct SignInSection: View {
             if workspace.account.isWorking { ProgressView().controlSize(.small) }
         }
     }
+
+    private var passwordPath: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+            TextField("Email", text: $email)
+                .textContentType(.username)
+            SecureField("Password", text: $password)
+                .textContentType(.password)
+                .onSubmit { submit() }
+            Button("Sign In") { submit() }
+                .disabled(email.isEmpty || password.isEmpty || workspace.account.isWorking)
+        }
+    }
+
+    private var notConfigured: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                Text("Sign-in is not set up in this build.")
+                    .font(.callout)
+                    .foregroundStyle(Theme.Colors.titlebarInk)
+                Text(
+                    "Sharing needs an account, and this build has no Supabase configuration, so "
+                        + "there is nothing here to sign in with yet. It is a build setting rather "
+                        + "than something you can fix from this window.")
+                    .font(.caption)
+                    .foregroundStyle(Theme.Colors.ramp(dark: 0.6, light: 0.55))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                Text("The URL is already set. The missing half is the anon key:")
+                    .font(.caption)
+                    .foregroundStyle(Theme.Colors.ramp(dark: 0.6, light: 0.55))
+                Text("app/Info.plist → SwiftTermSupabaseAnonKey")
+                    .font(.system(.caption, design: .monospaced))
+                    .textSelection(.enabled)
+                // A real link, because "go to the dashboard" is the instruction that made the old
+                // version useless. This lands on the page the key is on.
+                Link(
+                    "Open Project Settings → API",
+                    destination: URL(
+                        string:
+                            "https://supabase.com/dashboard/project/\(Self.projectRef)/settings/api"
+                    )!)
+                    .font(.caption)
+                Text(
+                    "It is the anon public key. It is publishable and safe to embed — every row is "
+                        + "still scoped by row-level security. The service_role key must never go "
+                        + "in this file.")
+                    .font(.caption)
+                    .foregroundStyle(Theme.Colors.ramp(dark: 0.6, light: 0.55))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            DisclosureGroup("I already have an access token", isExpanded: $showingTokenPath) {
+                VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                    Text(
+                        "An access token is a short-lived signed pass that Supabase Auth issues when "
+                            + "somebody signs in. It is not a password and not a shared secret: the "
+                            + "backend verifies its signature against the project's published keys, "
+                            + "so a token it did not issue is refused. It is valid for about an hour.")
+                        .font(.caption)
+                        .foregroundStyle(Theme.Colors.ramp(dark: 0.6, light: 0.55))
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("This produces one, given the same anon key and an account that already exists:")
+                        .font(.caption)
+                        .foregroundStyle(Theme.Colors.ramp(dark: 0.6, light: 0.55))
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(Self.curlCommand)
+                        .font(.system(size: 10, design: .monospaced))
+                        .textSelection(.enabled)
+                        .padding(Theme.Spacing.md)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Theme.Colors.ramp(dark: 0.08, light: 0.05))
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.control))
+                    SecureField("Access token", text: $token)
+                        .onSubmit { submitToken() }
+                    Button("Sign In") { submitToken() }
+                        .disabled(token.isEmpty || workspace.account.isWorking)
+                }
+                .padding(.top, Theme.Spacing.md)
+            }
+            .font(.callout)
+        }
+    }
+
+    private static let curlCommand = """
+        curl -s -X POST \\
+          'https://upmarjiewuwvaljnnboq.supabase.co/auth/v1/token?grant_type=password' \\
+          -H 'apikey: <ANON_KEY>' -H 'content-type: application/json' \\
+          -d '{"email":"you@example.com","password":"..."}' | jq -r .access_token
+        """
 
     private func submit() {
         let flow = SignInFlow(configuration: workspace.account.configuration, controller: workspace.account)
