@@ -40,7 +40,7 @@ This phase ends with build/install and human testing. B5A static export is the n
 - [x] Pass complete native harness suite after final edits (40 Swift harnesses + contract gate).
 - [x] Run lint and build/install final release without launching (build 132, zero compiler warnings).
 - [x] Update affected directory indexes and record proxy architecture divergence.
-- [ ] Commit all phase work with git -s -S.
+- [x] Commit all phase work with git -s -S (implementation: 1bd3dbf).
 - [ ] Human tests password/anonymous sign-in, relaunch recovery, account devices and live sharing.
 
 The proxy is a recorded deployment change from browser-to-zrok traffic: browser cookies and CSRF
