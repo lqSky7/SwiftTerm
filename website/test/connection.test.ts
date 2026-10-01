@@ -27,9 +27,11 @@ import {
 import {
   MAX_RECONNECT_MS,
   ViewerConnection,
+  initialControlState,
   reconnectDelay,
   socketUrlFor,
   webCryptoSha256,
+  type ControlState,
 } from "../src/shared_session/connection.ts";
 import { initialState, type ViewerState } from "../src/shared_session/state.ts";
 
@@ -417,5 +419,232 @@ describe("the connection", () => {
     socket.open();
     connection.stop();
     assert.equal(socket.readyState, 3);
+  });
+});
+
+describe("browser control", () => {
+  /** A connection watching a live stream, with the control state recorded as it changes. */
+  async function watching() {
+    let control: ControlState = initialControlState();
+    let notice = "";
+    // Captured as the factory builds them, rather than read back off `FakeSocket.latest`. Assigning
+    // the static to null in this function would make the checker narrow it to `null` and then to
+    // `never`, which is a fact about this file and not about the code under test.
+    const sockets: FakeSocket[] = [];
+    const connection = new ViewerConnection({
+      apiBaseUrl: "https://api.example.com",
+      sessionId: "11111111-1111-4111-8111-111111111111",
+      requestTicket: () => Promise.resolve("ticket-value"),
+      onState: () => {},
+      onNotice: (message) => {
+        notice = message;
+      },
+      onControl: (next) => {
+        control = next;
+      },
+      socketFactory: (url) => {
+        const socket = new FakeSocket(url);
+        sockets.push(socket);
+        return socket as unknown as WebSocket;
+      },
+    });
+    connection.start();
+    await settle();
+
+    const socket = sockets[0];
+    if (socket === undefined) throw new Error("no socket");
+    socket.open();
+    socket.deliver({
+      type: "hello",
+      version: 1,
+      session_id: "11111111-1111-4111-8111-111111111111",
+      epoch: "1",
+      mode: "blocks",
+      columns: 40,
+      rows: 12,
+    });
+
+    const frames = snapshotFrames(goldenBytes(), 2);
+    socket.deliver(frames.begin);
+    for (const chunk of frames.chunks) socket.deliver(chunk);
+    socket.deliver(frames.end);
+    await settle(50);
+
+    return {
+      connection,
+      socket,
+      get control() {
+        return control;
+      },
+      get notice() {
+        return notice;
+      },
+      /** The host approves. */
+      grant(lease = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee") {
+        socket.deliver({
+          type: "control.granted",
+          epoch: "1",
+          lease,
+          expires_at: "2026-10-01T00:00:00.000Z",
+        });
+      },
+      sent(type: string) {
+        return socket.frames.filter((frame) => frame.type === type);
+      },
+    };
+  }
+
+  it("asks for control with the epoch it is watching", async () => {
+    const session = await watching();
+    assert.equal(session.control.status, "none");
+    assert.equal(session.connection.requestControl(), true);
+
+    const requests = session.sent("control.request");
+    assert.equal(requests.length, 1);
+    // The frame names the generation and nothing else. The contract is explicit that a requester
+    // cannot name another client, so there is no field in which to try.
+    assert.deepEqual(requests[0], { type: "control.request", epoch: "1" });
+    assert.equal(session.control.status, "requesting");
+    session.connection.stop();
+  });
+
+  it("does not ask twice while a request is outstanding", async () => {
+    const session = await watching();
+    session.connection.requestControl();
+    // Asking again would be a second prompt a person cannot tell apart, and the relay refuses the
+    // duplicate anyway.
+    assert.equal(session.connection.requestControl(), false);
+    assert.equal(session.sent("control.request").length, 1);
+    session.connection.stop();
+  });
+
+  it("numbers inputs from one, per lease, and never reuses a number", async () => {
+    const session = await watching();
+    session.connection.requestControl();
+    session.grant();
+
+    assert.equal(session.connection.sendInput({ kind: "text", text: "l" }), true);
+    assert.equal(session.connection.sendInput({ kind: "text", text: "s" }), true);
+
+    const inputs = session.sent("input");
+    assert.equal(inputs.length, 2);
+    assert.equal(inputs[0]?.input_seq, "1");
+    assert.equal(inputs[1]?.input_seq, "2");
+    // The sequence is per lease, not the output sequence — the contract says so, and the host
+    // refuses a gap against it.
+    assert.equal(inputs[0]?.control_lease, "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee");
+    session.connection.stop();
+  });
+
+  it("will not send input without a lease", async () => {
+    const session = await watching();
+    assert.equal(session.connection.sendInput({ kind: "text", text: "rm -rf /" }), false);
+    assert.equal(session.sent("input").length, 0);
+    session.connection.stop();
+  });
+
+  it("refuses to send an operation the contract would reject", async () => {
+    const session = await watching();
+    session.connection.requestControl();
+    session.grant();
+    // A NUL is refused by the contract outright. Finding it here means a stack trace instead of a
+    // frame the host answers with a code nobody can act on.
+    assert.equal(session.connection.sendInput({ kind: "text", text: "a\u0000b" }), false);
+    assert.equal(session.sent("input").length, 0);
+    session.connection.stop();
+  });
+
+  it("gives up the lease when the host revokes it, and shows why", async () => {
+    const session = await watching();
+    session.connection.requestControl();
+    session.grant();
+    assert.equal(session.control.status, "granted");
+
+    session.socket.deliver({
+      type: "control.revoked",
+      epoch: "1",
+      lease: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+      reason: "local_input",
+    });
+    assert.equal(session.control.status, "none");
+    // The reason is carried into the sentence. `local_input` means the person took the keyboard
+    // back, which is a different thing from the stream ending.
+    assert.match(session.notice, /local_input/);
+    assert.equal(session.connection.sendInput({ kind: "text", text: "x" }), false);
+    session.connection.stop();
+  });
+
+  it("ends the lease on a lost input and tells the person to ask again", async () => {
+    const session = await watching();
+    session.connection.requestControl();
+    session.grant();
+    session.connection.sendInput({ kind: "text", text: "x" });
+
+    session.socket.deliver({
+      type: "input.ack",
+      epoch: "1",
+      control_lease: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+      input_seq: "1",
+      status: "rejected",
+      code: "input_gap",
+    });
+    // A gap means the two ends disagree about what was typed, and no amount of retrying closes it.
+    assert.equal(session.control.status, "none");
+    assert.match(session.notice, /ask again/);
+    session.connection.stop();
+  });
+
+  it("keeps the lease when the host refuses one input", async () => {
+    const session = await watching();
+    session.connection.requestControl();
+    session.grant();
+    session.connection.sendInput({ kind: "key", key: "f5", modifiers: [] });
+
+    session.socket.deliver({
+      type: "input.ack",
+      epoch: "1",
+      control_lease: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+      input_seq: "1",
+      status: "rejected",
+      code: "unsupported_input",
+    });
+    // One refused input is not a lost lease: the host declined that operation, not the browser.
+    assert.equal(session.control.status, "granted");
+    assert.match(session.notice, /unsupported_input/);
+    session.connection.stop();
+  });
+
+  it("releases control when the host's generation changes", async () => {
+    const session = await watching();
+    session.connection.requestControl();
+    session.grant();
+    assert.equal(session.control.status, "granted");
+
+    // A reconnect begins a new epoch, and the contract says a lease does not survive into it.
+    session.socket.deliver({
+      type: "hello",
+      version: 1,
+      session_id: "11111111-1111-4111-8111-111111111111",
+      epoch: "2",
+      mode: "blocks",
+      columns: 40,
+      rows: 12,
+    });
+    assert.equal(session.control.status, "none");
+    assert.equal(session.connection.sendInput({ kind: "text", text: "x" }), false);
+    session.connection.stop();
+  });
+
+  it("releases control when the connection goes away", async () => {
+    const session = await watching();
+    session.connection.requestControl();
+    session.grant();
+
+    // The relay binds the lease to the socket and forgets it when the socket closes, so a browser
+    // that kept showing control would be showing something it no longer has.
+    session.socket.close();
+    assert.equal(session.control.status, "none");
+    assert.match(session.notice, /control ended with the connection/);
+    session.connection.stop();
   });
 });

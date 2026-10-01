@@ -84,6 +84,14 @@ if [ "${1:-}" = "--exec" ]; then
         # makes it testable at all.
         SOURCES+=(crates/shared_session/src/*.swift)
     fi
+    if [ "$name" = "remote-key-test" ]; then
+        # `RemoteKeyBytes` bridges the contract's logical keys and the terminal's escape grammar, so
+        # it needs both. It lives in the app layer rather than under `crates/warp_terminal/src/model`
+        # on purpose: that directory is in every harness's default source list, and a file there that
+        # referenced the contract would stop all forty of them compiling — which is exactly what
+        # happened before this was moved.
+        SOURCES+=(crates/shared_session/src/*.swift app/src/terminal/shared_session/RemoteKey.swift)
+    fi
     : > "$BIN/$name.running"
     trap 'rm -f "$BIN/$name.running"' EXIT
     fail() {

@@ -16,11 +16,12 @@
  *     viewer that cannot type is still a viewer that can read, select and copy.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { WireBlock, WireGrid, WireStyle } from "../../../contracts/ts/wire.ts";
+import type { WireBlock, WireGrid, WireInputOperation, WireStyle } from "../../../contracts/ts/wire.ts";
 import { apiFetch } from "@/lib/api";
-import { ViewerConnection } from "./connection.ts";
+import { initialControlState, ViewerConnection, type ControlState } from "./connection.ts";
+import { chordFrom, inputOperationFor } from "./keys.ts";
 import { drawGrid, gridText, measureCells, rowText, type CellMetrics } from "./render.ts";
 import { initialState, type LiveState, type ViewerState } from "./state.ts";
 
@@ -31,6 +32,11 @@ export function LiveViewer({ sessionId }: { readonly sessionId: string | null })
   const [state, setState] = useState<ViewerState>(initialState);
   const [notice, setNotice] = useState<string>("");
   const [focusedBlock, setFocusedBlock] = useState<string | null>(null);
+  const [control, setControl] = useState<ControlState>(initialControlState);
+  // The connection owns the socket and the lease; the page only reads its state and asks it to act.
+  // A ref rather than state, because nothing about it is renderable — a re-render on assign would
+  // tear the socket down and build another.
+  const connectionRef = useRef<ViewerConnection | null>(null);
 
   const requestTicket = useCallback(async (): Promise<string> => {
     if (sessionId === null) throw new Error("no session");
@@ -49,9 +55,14 @@ export function LiveViewer({ sessionId }: { readonly sessionId: string | null })
       requestTicket,
       onState: setState,
       onNotice: setNotice,
+      onControl: setControl,
     });
+    connectionRef.current = connection;
     connection.start();
-    return () => connection.stop();
+    return () => {
+      connection.stop();
+      connectionRef.current = null;
+    };
   }, [sessionId, requestTicket]);
 
   if (sessionId === null) {
@@ -69,16 +80,90 @@ export function LiveViewer({ sessionId }: { readonly sessionId: string | null })
 
   return (
     <Frame status={statusLabel(state)} notice={notice} live={live}>
+      <ControlBar
+        control={control}
+        canAsk={live !== null}
+        onRequest={() => connectionRef.current?.requestControl()}
+        onRelease={() => connectionRef.current?.releaseControl()}
+        onPaste={(text) => connectionRef.current?.sendInput({ kind: "paste", text })}
+      />
       {live === null ? (
-        <p className="text-sm text-muted-foreground">
+        <p className="mt-4 text-sm text-muted-foreground">
           {state.status === "failed"
             ? "This stream could not be reached. It may have ended, or your session may have expired."
             : "Waiting for the host to send the first snapshot…"}
         </p>
       ) : (
-        <Terminal live={live} focused={focusedBlock} onFocusBlock={setFocusedBlock} />
+        <Terminal
+          live={live}
+          focused={focusedBlock}
+          onFocusBlock={setFocusedBlock}
+          control={control}
+          onKey={(operation) => connectionRef.current?.sendInput(operation) ?? false}
+        />
       )}
     </Frame>
+  );
+}
+
+/**
+ * The control affordance, and the truth about it.
+ *
+ * A browser may always *ask*. Nothing is granted by asking: the person in front of the machine
+ * approves, and until they do this says so. The state is announced politely rather than assertively,
+ * because it changes without the person doing anything.
+ */
+function ControlBar({
+  control,
+  canAsk,
+  onRequest,
+  onRelease,
+  onPaste,
+}: {
+  readonly control: ControlState;
+  readonly canAsk: boolean;
+  readonly onRequest: () => void;
+  readonly onRelease: () => void;
+  readonly onPaste: (text: string) => void;
+}) {
+  const paste = useCallback(async () => {
+    try {
+      // Read only on a user gesture, and only when it is about to be sent. A viewer that read the
+      // clipboard on connect would be doing something the person never asked for.
+      onPaste(await navigator.clipboard.readText());
+    } catch {
+      // A refused clipboard permission is the browser's business, and there is nothing to show.
+    }
+  }, [onPaste]);
+
+  return (
+    <div className="flex flex-wrap items-center gap-3 border-b pb-3" role="status" aria-live="polite">
+      {control.status === "granted" ? (
+        <>
+          <span className="text-sm font-medium">You have control</span>
+          <button type="button" onClick={() => void paste()} className="rounded border px-2 py-1 text-xs">
+            Paste
+          </button>
+          <button type="button" onClick={onRelease} className="rounded border px-2 py-1 text-xs">
+            Release
+          </button>
+        </>
+      ) : (
+        <>
+          <button
+            type="button"
+            onClick={onRequest}
+            disabled={!canAsk || control.status === "requesting"}
+            className="rounded border px-2 py-1 text-xs disabled:opacity-40"
+          >
+            {control.status === "requesting" ? "Waiting for the host…" : "Request control"}
+          </button>
+          {control.status === "denied" ? (
+            <span className="text-xs text-muted-foreground">The host declined. You can ask again.</span>
+          ) : null}
+        </>
+      )}
+    </div>
   );
 }
 
@@ -148,13 +233,18 @@ function Terminal({
   live,
   focused,
   onFocusBlock,
+  control,
+  onKey,
 }: {
   readonly live: LiveState;
   readonly focused: string | null;
   readonly onFocusBlock: (id: string | null) => void;
+  readonly control: ControlState;
+  readonly onKey: (operation: WireInputOperation) => boolean;
 }) {
   const blocks = live.blocks;
   const focusedBlock = blocks.find((block) => block.id === focused);
+  const held = control.status === "granted";
 
   return (
     <div>
@@ -165,6 +255,11 @@ function Terminal({
         onKeyDown={(event) => {
           // Arrow keys move between blocks so a keyboard user can read a long stream without a
           // pointer. Focus is the viewer's, not the host's: nothing here reaches the PTY.
+          //
+          // While control is held the arrows belong to the terminal instead — a person driving a
+          // shell with the arrow keys is moving a cursor, not reading a page, and stealing the keys
+          // back would make the prompt unusable.
+          if (held) return;
           if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
           const index = blocks.findIndex((block) => block.id === focused);
           const next = event.key === "ArrowDown" ? index + 1 : index - 1;
@@ -192,7 +287,86 @@ function Terminal({
           ? ""
           : `block ${focusedBlock.id}, command ${focusedBlock.command}\n${gridText(focusedBlock.output)}`}
       </pre>
+
+      <InputFunnel held={held} onKey={onKey} />
     </div>
+  );
+}
+
+/**
+ * Where a browser's keystrokes become the contract's input union.
+ *
+ * A real text area rather than a focus trap on the blocks, because the two things a terminal needs
+ * and a `keydown` handler cannot provide both come from the input system: composed text — an IME
+ * candidate, a dead key, an accented character — arrives as an `input` event, and the contract's
+ * `text` operation is defined as exactly that, "an IME committed insertion, never a keyboard-layout
+ * guess". Named keys and chords arrive as `keydown` and never produce an `input` event, so the two
+ * paths cannot double-send.
+ *
+ * The value is cleared on every event and never read back: this is a funnel, not a buffer, and a
+ * buffer would show the person their own keystrokes twice.
+ */
+function InputFunnel({
+  held,
+  onKey,
+}: {
+  readonly held: boolean;
+  readonly onKey: (operation: WireInputOperation) => boolean;
+}) {
+  const ref = useRef<HTMLTextAreaElement | null>(null);
+
+  // Focus follows the lease. Holding control and then having to click into a box before typing is
+  // the kind of small friction that makes a feature feel broken.
+  useEffect(() => {
+    if (held) ref.current?.focus();
+  }, [held]);
+
+  const handleKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (!held) return;
+      const operation = inputOperationFor(chordFrom(event.nativeEvent));
+      if (operation === null) return;
+      // Prevented for everything the funnel handles, which is also what stops the text area from
+      // producing an `input` event for the same keystroke.
+      event.preventDefault();
+      onKey(operation);
+    },
+    [held, onKey],
+  );
+
+  const handleChange = useCallback(
+    (event: React.ChangeEvent<HTMLTextAreaElement>) => {
+      const text = event.target.value;
+      event.target.value = "";
+      if (!held || text === "") return;
+      onKey({ kind: "text", text });
+    },
+    [held, onKey],
+  );
+
+  if (!held) {
+    return (
+      <p className="mt-3 rounded-lg border border-dashed px-4 py-3 text-xs text-muted-foreground">
+        You are watching. Ask for control to type.
+      </p>
+    );
+  }
+
+  return (
+    <textarea
+      ref={ref}
+      defaultValue=""
+      onChange={handleChange}
+      onKeyDown={handleKeyDown}
+      rows={1}
+      spellCheck={false}
+      autoComplete="off"
+      autoCorrect="off"
+      autoCapitalize="off"
+      aria-label="Terminal input. Your keystrokes are sent to the host while you hold control."
+      placeholder="Type here — your keystrokes go to the host's terminal."
+      className="mt-3 w-full resize-none rounded-lg border bg-transparent px-4 py-3 font-mono text-sm outline-none focus-visible:border-foreground/40"
+    />
   );
 }
 

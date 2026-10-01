@@ -30,23 +30,35 @@ final class AppCore {
     /// not encoding and not holding a socket.
     private(set) var sharing: [PaneID: PaneSharing] = [:]
 
+    /// The pane the keyboard belongs to, if there is one. A tab with no shell in it — the settings
+    /// page — has none, and the commands that need a pane have to say so rather than guess.
+    var activePane: PaneID? {
+        tabs.activeTab?.focusedPane
+    }
+
     /// The one explicit action that starts sharing a pane. Nothing is captured before it.
     ///
     /// Refuses without an account, without a registered device, and without a running shell. A
     /// publisher ticket is minted *for a device*, so sharing before the device exists would fail at
     /// the relay rather than here — and a failure here can say why.
     ///
-    /// The mechanisms come from the caller rather than from the coordinator, because they are the
-    /// pane's editor and raw-input paths and the command that offers Share is the layer that already
-    /// has them. A default would be a silent no-op, which is worse than a missing one.
-    func startSharing(_ paneID: PaneID, mechanisms: PaneSharing.Mechanisms) {
-        guard sharing[paneID] == nil else { return }
+    /// The mechanisms are asked of the coordinator, which owns the surface, and a coordinator with no
+    /// surface supplies none — so this returns without starting rather than starting a publisher that
+    /// would answer a browser's keystroke with a cheerful "applied" and do nothing.
+    @discardableResult
+    func startSharing(_ paneID: PaneID) -> Bool {
+        guard sharing[paneID] == nil else { return false }
         guard let coordinator = coordinators[paneID], let session = coordinator.session,
+            let mechanisms = coordinator.sharingMechanisms(),
             let deviceID = account.deviceID, !deviceID.isEmpty
-        else { return }
+        else { return false }
 
         let pane = PaneSharing()
         sharing[paneID] = pane
+        // The lease is revoked *before* a local keystroke is applied, which is the whole of the
+        // "local input wins" rule. Wired here because this is the only place that holds both ends:
+        // the pane's surface, which sees the keystroke, and the pane's sharing, which owns the lease.
+        coordinator.onLocalInput = { [weak self] in self?.revokeRemoteControl(paneID) }
         pane.start(
             session: session,
             account: account,
@@ -55,12 +67,27 @@ final class AppCore {
             origin: account.configuration.origin,
             title: "Terminal",
             mechanisms: mechanisms)
+        return true
     }
 
     /// Stop sharing a pane. Called from the same explicit action, and from the pane closing.
     func stopSharing(_ paneID: PaneID) {
+        // The hook is cleared first: a pane that is no longer sharing has no lease to revoke, and a
+        // stale closure would keep the coordinator holding this pane's identity alive.
+        coordinators[paneID]?.onLocalInput = nil
         sharing[paneID]?.stop()
         sharing[paneID] = nil
+    }
+
+    /// The `File` menu's one item, on the focused pane.
+    @discardableResult
+    func toggleSharingOnActivePane() -> Bool {
+        guard let paneID = activePane else { return false }
+        if sharing[paneID] != nil {
+            stopSharing(paneID)
+            return true
+        }
+        return startSharing(paneID)
     }
 
     /// Stop every stream. Sign-out and app teardown both call this.
@@ -68,7 +95,10 @@ final class AppCore {
     /// Deliberately *only* the streams: signing out must not touch a pane, a block or a shell. A
     /// person leaving an account keeps the terminal they were reading.
     func stopAllSharing() {
-        for pane in sharing.values { pane.stop() }
+        for (paneID, pane) in sharing {
+            coordinators[paneID]?.onLocalInput = nil
+            pane.stop()
+        }
         sharing.removeAll()
     }
 

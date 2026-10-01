@@ -32,8 +32,11 @@ final class PaneSharing {
 
     private(set) var publisher: StreamPublisher?
     private(set) var lease = ControlLease()
-    /// Set while a browser is asking and no person has answered. The pane shows this.
-    private(set) var pendingRequest: String?
+    /// True while a browser is asking and no person has answered. The pane shows this.
+    ///
+    /// A flag rather than the requester's identity, because there is no identity to hold: the
+    /// contract's `control.request` carries none. See `holderID`.
+    private(set) var hasPendingRequest = false
     /// True when the host is sharing this pane at all.
     private(set) var isSharing = false
 
@@ -52,6 +55,19 @@ final class PaneSharing {
     }
 
     var canControl: Bool { lease.isHeld }
+
+    /// The identity the host attributes an input to.
+    ///
+    /// The contract's `control.request` carries no requester identity, and that is deliberate: it
+    /// says the requester cannot name another client, so there is no field in which to try. The host
+    /// therefore has no browser id to key a lease on, and the relay supplies the missing half — it
+    /// permits one outstanding request and forwards `input` only from the connection it granted,
+    /// which is what makes "one holder" true rather than merely intended.
+    ///
+    /// What the host *can* check is the generation, so that is what the lease is keyed on. It is the
+    /// only identity the frames carry, and it is the one that matters: a lease must not survive into
+    /// a generation that did not issue it.
+    private var holderID: String { lease.browserID ?? "" }
 
     // MARK: - Start and stop
 
@@ -90,16 +106,22 @@ final class PaneSharing {
     /// Stop sharing. Safe from a pane close, a shell exit, a sign-out and app teardown.
     func stop() {
         guard isSharing else { return }
-        publisher?.stop()
-        publisher?.delegate = nil
-        publisher = nil
-        // The lease goes with the stream. A browser that kept control of a pane nobody is sharing
-        // would be holding a capability to write to a terminal that has no publisher.
+
+        // **The revocation happens before the publisher is dropped.** The obvious order — stop, then
+        // clear, then revoke — reads a `nil` publisher and silently sends nothing, which leaves a
+        // browser holding control of a pane nobody is publishing. The lease has to be given back on
+        // the socket that is still open, because after `stop()` there is no socket to give it back on.
         if let epoch = lease.epoch, let token = lease.lease {
             publisher?.revokeControl(epoch: epoch, lease: token, reason: .ended)
         }
+        // The lease goes with the stream. A browser that kept control of a pane nobody is sharing
+        // would be holding a capability to write to a terminal that has no publisher.
         lease.revoke(reason: "sharing stopped")
-        pendingRequest = nil
+        hasPendingRequest = false
+
+        publisher?.stop()
+        publisher?.delegate = nil
+        publisher = nil
         isSharing = false
         session = nil
     }
@@ -134,7 +156,7 @@ final class PaneSharing {
     func approveControl() {
         guard let publisher, let epoch = publisher.epoch else { return }
         let decision = lease.approve(generation: epoch, now: Date())
-        pendingRequest = nil
+        hasPendingRequest = false
         guard case .granted(let token, let expires) = decision else { return }
         publisher.grantControl(epoch: epoch, lease: token, expiresAt: expires)
     }
@@ -142,7 +164,7 @@ final class PaneSharing {
     func denyControl() {
         guard let publisher, let epoch = publisher.epoch else { return }
         _ = lease.deny(reason: "denied")
-        pendingRequest = nil
+        hasPendingRequest = false
         publisher.denyControl(epoch: epoch)
     }
 
@@ -168,7 +190,7 @@ final class PaneSharing {
         let seq = Int(input.inputSeq) ?? 0
 
         switch lease.verdict(
-            browserID: lease.browserID ?? "",
+            browserID: holderID,
             epoch: input.epoch,
             lease: input.controlLease,
             inputSeq: seq,
@@ -198,10 +220,13 @@ final class PaneSharing {
 
     /// Which path an operation takes.
     ///
-    /// Prompt actions go to the editor and raw actions go to the shell, and the split is by
-    /// operation rather than by mode: `text`, `paste` and undo/redo are editing, and a logical key is
-    /// input the terminal translates. Sending a paste to the raw path would push a whole line into a
-    /// program that is not reading one.
+    /// The split is by **operation**, not by mode: text, paste and undo/redo are edits, and a logical
+    /// key is input the terminal translates. Sending a paste down the raw path would push a whole line
+    /// into a program that is not reading one.
+    ///
+    /// Where an edit *lands* is the mechanism's decision rather than this one's, and deliberately:
+    /// whether a prompt is showing is a fact about the view, and the surface already answers it for a
+    /// local keystroke. Answering it twice would be two places for the answer to drift.
     private func route(_ operation: WireInputOperation) -> Bool {
         switch operation {
         case .text(let text), .paste(let text):
@@ -231,13 +256,14 @@ final class PaneSharing {
 }
 
 extension PaneSharing: StreamControlDelegate {
-    func publisher(
-        _ publisher: StreamPublisher, didReceiveControlRequestFrom epoch: String, asked: String
-    ) {
+    func publisher(_ publisher: StreamPublisher, didReceiveControlRequestFor generation: String) {
         // Recorded and shown, not granted. Approving a browser because it asked is the same as having
         // no approval at all.
-        lease.request(browserID: asked)
-        pendingRequest = asked
+        //
+        // The generation is the only identity the frame carries, and it is what the lease is keyed
+        // on. See `holderID` for why there is nothing else to key it on.
+        lease.request(browserID: generation)
+        hasPendingRequest = true
     }
 
     func publisher(_ publisher: StreamPublisher, didReceive input: WireInputFrame) {

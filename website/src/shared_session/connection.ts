@@ -22,9 +22,11 @@ import {
   ContractError,
   SnapshotAssembler,
   validateFrame,
+  validateInputFrame,
   validateSnapshot,
   type WireDamage,
   type WireFrame,
+  type WireInputOperation,
   type WireSnapshot,
 } from "../../../contracts/ts/wire.ts";
 import { applyDamage, applySnapshot, initialState, withRefusal, withStatus, type ViewerState } from "./state.ts";
@@ -36,6 +38,35 @@ export const SUBPROTOCOL = "swiftterm.live.v1";
 export const MAX_RECONNECT_MS = 30_000;
 const BASE_RECONNECT_MS = 500;
 
+/**
+ * What this browser may do to the terminal, as opposed to what it may see.
+ *
+ * Deliberately not part of `ViewerState`: that reducer mirrors `WireStreamState.swift` operation for
+ * operation and its parity is a property worth keeping. Control is a separate question with a
+ * separate lifetime, and mixing the two would make the reducer stop being a mirror.
+ */
+export interface ControlState {
+  readonly status: "none" | "requesting" | "granted" | "denied";
+  /** The lease the host issued. Present only while one is held. */
+  readonly lease: string | null;
+  /** The generation the lease belongs to. A reconnect makes a new one and ends this lease. */
+  readonly epoch: string | null;
+  /**
+   * The instant the host declared the lease good until, as a browser-clock millisecond value.
+   *
+   * Advisory, and only advisory: it is the *host's* clock, and the two are not the same clock. It is
+   * shown so a person can see that control is time-limited; whether an input is accepted is decided
+   * by the host and reported in the ack, never by this number.
+   */
+  readonly expiresAt: number | null;
+  /** The next input sequence. Per lease, not per output sequence — the contract is explicit. */
+  readonly nextInputSeq: number;
+}
+
+export function initialControlState(): ControlState {
+  return { status: "none", lease: null, epoch: null, expiresAt: null, nextInputSeq: 1 };
+}
+
 export interface ViewerConnectionOptions {
   /** The API base, `http(s)://…`. The socket URL is derived from it. */
   readonly apiBaseUrl: string;
@@ -45,6 +76,8 @@ export interface ViewerConnectionOptions {
   readonly onState: (state: ViewerState) => void;
   /** A short status line. Never terminal content — this is shown in the chrome. */
   readonly onNotice?: (notice: string) => void;
+  /** Control changed: asked for, granted, denied, revoked or expired. */
+  readonly onControl?: (control: ControlState) => void;
   /** Injected for tests. */
   readonly socketFactory?: (url: string) => WebSocket;
   /** Injected for tests; defaults to Web Crypto. */
@@ -85,6 +118,7 @@ export class ViewerConnection {
   readonly #digest: (bytes: Uint8Array) => Promise<string>;
 
   #state: ViewerState = initialState();
+  #control: ControlState = initialControlState();
   #socket: WebSocket | null = null;
   #retryTimer: ReturnType<typeof setTimeout> | null = null;
   #attempt = 0;
@@ -101,6 +135,65 @@ export class ViewerConnection {
 
   get state(): ViewerState {
     return this.#state;
+  }
+
+  get control(): ControlState {
+    return this.#control;
+  }
+
+  /**
+   * Ask the host for control. Grants nothing: the person in front of the machine decides.
+   *
+   * Refused while a request is outstanding, because asking twice would be two prompts a person
+   * cannot tell apart — and the relay answers the second with `rate_limited` anyway.
+   */
+  requestControl(): boolean {
+    if (this.#control.status === "requesting" || this.#control.status === "granted") return false;
+    const epoch = this.#state.live?.epoch;
+    if (epoch === undefined) return false;
+    this.#send({ type: "control.request", epoch });
+    this.#setControl({ ...this.#control, status: "requesting" });
+    return true;
+  }
+
+  /** Give up control locally. The host is told, so its lease does not linger on a browser that left. */
+  releaseControl(): void {
+    if (this.#control.status === "none") return;
+    this.#setControl(initialControlState());
+  }
+
+  /**
+   * Send one input.
+   *
+   * The sequence is advanced **before** the frame goes out and is never reused: the contract says a
+   * sequence is next-only, and that a transport loss leaves every unacked input uncertain and not to
+   * be retried. Re-sending would be answered as a duplicate at best and as a gap at worst, and a gap
+   * means the two ends disagree about what was typed.
+   */
+  sendInput(operation: WireInputOperation): boolean {
+    const control = this.#control;
+    if (control.status !== "granted" || control.lease === null || control.epoch === null) return false;
+
+    const frame = {
+      type: "input",
+      epoch: control.epoch,
+      control_lease: control.lease,
+      input_seq: String(control.nextInputSeq),
+      operation,
+    };
+    // Validated before it is sent. A frame this build would refuse is a bug here rather than a
+    // refusal from the host, and finding it locally is the difference between a stack trace and a
+    // sentence about the wrong thing.
+    try {
+      validateInputFrame(frame);
+    } catch (error) {
+      this.#notice(error instanceof ContractError ? `refused to send: ${error.path}` : "refused to send");
+      return false;
+    }
+
+    this.#send(frame);
+    this.#setControl({ ...control, nextInputSeq: control.nextInputSeq + 1 });
+    return true;
   }
 
   start(): void {
@@ -158,7 +251,17 @@ export class ViewerConnection {
       this.#socket = null;
       if (this.#stopped) return;
       this.#assembler.reset();
-      this.#notice("disconnected, reconnecting");
+      // Control follows the connection — the relay binds the lease to the socket that asked, and
+      // forgets it when that socket closes. Keeping the lease here would show a person a control
+      // they no longer have, and every keystroke would come back as a stale lease.
+      if (this.#control.status !== "none") {
+        this.#setControl(initialControlState());
+        // One sentence rather than two. Two notices on one line means the person reads whichever
+        // happened to be written last, and the reason control ended is the more actionable half.
+        this.#notice("control ended with the connection, reconnecting");
+      } else {
+        this.#notice("disconnected, reconnecting");
+      }
       this.#scheduleReconnect();
     };
 
@@ -199,6 +302,13 @@ export class ViewerConnection {
         this.#helloColumns = value.columns;
         this.#attempt = 0;
         if (this.#state.live === null) this.#set(withStatus(this.#state, "waiting"));
+        // A new generation means the host reconnected, and a lease belongs to one generation. The
+        // contract is explicit: a host reconnect begins a new epoch and revokes control. Keeping the
+        // old lease would leave the browser typing under a generation that has ended.
+        if (this.#control.epoch !== null && this.#control.epoch !== value.epoch) {
+          this.#setControl(initialControlState());
+          this.#notice("the host reconnected, so control was released");
+        }
         this.#resume(value.epoch);
         return;
       }
@@ -257,9 +367,61 @@ export class ViewerConnection {
         return;
       }
 
+      case "control.granted": {
+        const value = frame.value as { epoch: string; lease: string; expires_at: string };
+        const expires = Date.parse(value.expires_at);
+        this.#setControl({
+          status: "granted",
+          lease: value.lease,
+          epoch: value.epoch,
+          // A timestamp this build cannot read is not a reason to refuse the lease; it is a reason
+          // not to display a countdown. The host is still the authority on whether an input lands.
+          expiresAt: Number.isNaN(expires) ? null : expires,
+          nextInputSeq: 1,
+        });
+        this.#notice("you have control of this terminal");
+        return;
+      }
+
+      case "control.denied": {
+        this.#setControl({ ...initialControlState(), status: "denied" });
+        this.#notice("the host declined control");
+        return;
+      }
+
+      case "control.revoked": {
+        const value = frame.value as { reason: string };
+        this.#setControl(initialControlState());
+        // The reason is shown rather than swallowed. A browser told `local_input` knows the person
+        // took the keyboard back, which is a different thing from the host ending the stream, and
+        // the difference is the whole reason the contract carries the field.
+        this.#notice(`control ended: ${value.reason}`);
+        return;
+      }
+
+      case "input.ack": {
+        const value = frame.value as { status: string; code?: string };
+        if (value.status === "applied") return;
+        // Rejected. Two of the codes mean the lease is finished and no amount of retrying helps:
+        // a gap means the two ends disagree about what was typed, and a stale lease means the host
+        // has already fenced this browser out. Both are answered by asking again.
+        if (value.code === "input_gap" || value.code === "stale_lease") {
+          this.#setControl(initialControlState());
+          this.#notice(
+            value.code === "input_gap"
+              ? "input was lost, so control ended — ask again"
+              : "the host ended control",
+          );
+          return;
+        }
+        this.#notice(`the host refused that input: ${value.code ?? "unknown"}`);
+        return;
+      }
+
       default: {
-        // `control.granted`, `control.denied`, `control.revoked` and `input.ack` are B3A's. A viewer
-        // without control rights still renders, so these are noted and ignored rather than fatal.
+        // `viewer.count` is relay-to-host only, and `output.ack` is the viewer's own. Anything else
+        // reaching here is a frame this build does not handle, which is worth saying rather than
+        // guessing at.
         this.#notice(`${frame.type} is not handled by this build`);
         return;
       }
@@ -328,6 +490,11 @@ export class ViewerConnection {
   #set(state: ViewerState): void {
     this.#state = state;
     this.#options.onState(state);
+  }
+
+  #setControl(control: ControlState): void {
+    this.#control = control;
+    this.#options.onControl?.(control);
   }
 
   #notice(message: string): void {

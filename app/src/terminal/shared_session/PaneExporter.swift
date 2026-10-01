@@ -138,19 +138,22 @@ struct PaneExporter {
         cursorStyle: TerminalCursorStyle,
         styles: inout StyleTable
     ) -> WireGrid {
+        // A row is a type rather than an array alias, so the row rules live beside the cell rules.
+        // The mapping is where a bare `[[WireCell]]` becomes the contract's `[WireRow]`.
         let rows = lines.map { line in
-            line.cells.map { cell in
-                // A continuation cell owns no text and no column of its own: its left neighbour is
-                // double-width and already covers this position. Sending it as anything else would
-                // shift every glyph after it.
-                if cell.isContinuation {
-                    return WireCell(text: "", width: 0, style: styles.index(for: cell.attributes))
-                }
-                return WireCell(
-                    text: cell.text.isEmpty ? " " : cell.text,
-                    width: max(1, min(2, cell.width)),
-                    style: styles.index(for: cell.attributes))
-            }
+            WireRow(
+                cells: line.cells.map { cell in
+                    // A continuation cell owns no text and no column of its own: its left neighbour is
+                    // double-width and already covers this position. Sending it as anything else would
+                    // shift every glyph after it.
+                    if cell.isContinuation {
+                        return WireCell(text: "", width: 0, style: styles.index(for: cell.attributes))
+                    }
+                    return WireCell(
+                        text: cell.text.isEmpty ? " " : cell.text,
+                        width: max(1, min(2, cell.width)),
+                        style: styles.index(for: cell.attributes))
+                })
         }
         // A cursor past the last line would be refused by the browser's own validator, so it is
         // clamped rather than sent: an out-of-bounds cursor is a state the host cannot mean.
@@ -184,7 +187,11 @@ struct EditorCapture: Sendable {
 
     static let hidden = EditorCapture(visible: false, text: "", selectionStart: 0, selectionLength: 0)
 
-    func wire(using styles: inout StyleTable) -> WireEditor {
+    /// `fileprivate` because `StyleTable` is: the style table is an implementation detail of the
+    /// exporter, and widening it to internal to satisfy a method signature would expose the dedup
+    /// machinery to the rest of the app for no reason. This is called from `PaneExporter`, one type
+    /// up in the same file.
+    fileprivate func wire(using styles: inout StyleTable) -> WireEditor {
         WireEditor(
             visible: visible,
             text: text,

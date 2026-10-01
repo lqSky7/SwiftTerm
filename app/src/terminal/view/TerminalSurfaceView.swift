@@ -31,6 +31,12 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
     /// "nothing is selected" and "there is a selection" are one thing rather than two.
     private var selection: TextSelection?
     private var markedText: NSMutableAttributedString?
+    /// True while an approved remote input is being applied on a browser's behalf.
+    ///
+    /// The revocation hook below must not fire for the very input it is applying: a remote keystroke
+    /// routed through the same funnel a local one takes would revoke its own lease and the second
+    /// character would be refused. This is the flag that tells the two apart.
+    private var applyingRemoteInput = false
     /// How tall a line is, as a multiple of `pointSize`.
     private var lineHeightRatio: CGFloat = Theme.Typography.lineHeightRatio
     /// The `PATH` the cached command names and the editor's resolver were built from.
@@ -133,6 +139,9 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
         findBar.onClose = { [weak self] in self?.closeFindBar() }
         editor.onBufferChanged = { [weak self] in
             guard let self else { return }
+            // The editor is a view of its own and takes its own keystrokes, so this is where local
+            // typing is noticed when the surface's `keyDown` is not on the path.
+            noteLocalInput()
             // Typing belongs at the bottom; a buffer change that arrived while the reader is
             // scrolled back would be invisible until they scrolled to it.
             if scrollPosition > 0 { scrollToBottom() }
@@ -1402,6 +1411,9 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
 
     private func send(_ bytes: [UInt8]) {
         guard !bytes.isEmpty else { return }
+        // Every byte that reaches the PTY passes here, so this is the one place the "local input
+        // wins" rule has to be stated for the raw path.
+        noteLocalInput()
         cursorBlinkOn = true
         session.write(bytes)
         scrollToBottom()
@@ -1830,6 +1842,9 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
 
     // Shell continuation escaping belongs only to a prompt, never to an interactive program.
     func insertPastedText(_ text: String) {
+        // A local paste is the person editing, and it goes through `session.write` rather than
+        // `send`, so the rule has to be stated here as well as in `send`.
+        noteLocalInput()
         let bracketed = session.activeGrid.modes.bracketedPaste
         if bracketed || session.isAlternateScreen || session.isRunningCommand {
             session.write(TerminalInput.paste(text, bracketed: bracketed))
@@ -1837,6 +1852,70 @@ final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClient {
             session.write(CommandSubmission.escaped(text))
         }
         scrollToBottom()
+    }
+
+    // MARK: - Approved remote input
+
+    /// Apply text an approved browser typed.
+    ///
+    /// It takes the same two routes a local keystroke takes — the editor while a prompt is up, and
+    /// the shell otherwise — because a browser that could put text somewhere the person at the
+    /// machine could not is a browser with a capability nobody granted it. Text that lands in the
+    /// editor is visible before it is submitted, which is the whole reason the editor is the
+    /// destination while one is showing.
+    @discardableResult
+    func insertRemoteText(_ text: String) -> Bool {
+        guard !text.isEmpty else { return false }
+        applyingRemoteInput = true
+        defer { applyingRemoteInput = false }
+        if editorIsVisible {
+            editor.insertText(text, replacementRange: NSRange(location: NSNotFound, length: 0))
+            return true
+        }
+        insertPastedText(text)
+        return true
+    }
+
+    /// Undo or redo in the prompt editor, on a browser's behalf.
+    ///
+    /// Refused when there is no editor. Undo on a terminal's *output* is meaningless — a grid is the
+    /// shell's, not a buffer anything can revert — so an operation with nowhere to go reports that
+    /// rather than appearing to succeed.
+    @discardableResult
+    func performRemoteEdit(undo: Bool) -> Bool {
+        guard editorIsVisible else { return false }
+        applyingRemoteInput = true
+        defer { applyingRemoteInput = false }
+        if undo { editor.undo(nil) } else { editor.redo(nil) }
+        return true
+    }
+
+    /// Write a logical key an approved browser sent.
+    ///
+    /// A key goes to the shell rather than to the editor, and that split is by *kind* rather than by
+    /// mode: a browser sends a logical key when it means input the terminal translates, and text when
+    /// it means an insertion. Enter and the arrows reach the shell either way; a character does not.
+    @discardableResult
+    func sendRemoteKey(_ key: WireInputKey, modifiers: [WireModifier]) -> Bool {
+        guard
+            let bytes = RemoteKeyBytes.bytes(
+                for: key, modifiers: modifiers,
+                applicationCursorKeys: session.activeGrid.modes.applicationCursorKeys)
+        else { return false }
+        applyingRemoteInput = true
+        defer { applyingRemoteInput = false }
+        send(bytes)
+        return true
+    }
+
+    /// Note that a keystroke came from the person at the machine.
+    ///
+    /// Every path a *local* input can take calls this; no path a remote one takes does. That is the
+    /// "local input wins" rule — the lease is revoked *before* the keystroke is applied, so nobody
+    /// ever has to fight a browser for their own prompt.
+    private func noteLocalInput() {
+        guard !applyingRemoteInput else { return }
+        coordinator?.localInputOccurred()
     }
 
     // MARK: - NSTextInputClient

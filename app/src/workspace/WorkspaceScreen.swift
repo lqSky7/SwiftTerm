@@ -261,7 +261,7 @@ struct WorkspaceScreen: View {
         return ZStack(alignment: .topLeading) {
             ForEach(layout.entries, id: \.pane) { entry in
                 if let coordinator = workspace.coordinator(for: entry.pane) {
-                    TerminalPane(coordinator: coordinator)
+                    TerminalPane(workspace: workspace, paneID: entry.pane, coordinator: coordinator)
                         .frame(width: entry.frame.width, height: entry.frame.height)
                         .position(x: entry.frame.midX, y: entry.frame.midY)
                         // Identity is the pane, so a split adds a surface rather than repainting the one

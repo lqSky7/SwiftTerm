@@ -93,6 +93,32 @@ final class TerminalCoordinator {
         surface.insertPastedText(text)
     }
 
+    // MARK: - Sharing
+
+    /// Called when a keystroke reaches this pane from the person at the machine.
+    ///
+    /// The surface calls it from every path a *local* input can take and from none a remote one
+    /// takes. `AppCore` wires it to the pane's sharing, which revokes a browser's lease before the
+    /// keystroke is applied — so nobody ever has to fight a browser for their own prompt.
+    @ObservationIgnored var onLocalInput: (() -> Void)?
+
+    func localInputOccurred() {
+        onLocalInput?()
+    }
+
+    /// The pane's editor and shell paths, as `PaneSharing` needs them.
+    ///
+    /// Supplied here because this is the layer that owns the surface, and `nil` rather than a set of
+    /// no-ops when there is no surface: a control path that accepts an input and then quietly does
+    /// nothing is worse than one that is missing, because the browser is told it was applied.
+    func sharingMechanisms() -> PaneSharing.Mechanisms? {
+        guard let surface else { return nil }
+        return PaneSharing.Mechanisms(
+            insertText: { surface.insertRemoteText($0) },
+            sendKey: { surface.sendRemoteKey($0, modifiers: $1) },
+            editHistory: { surface.performRemoteEdit(undo: $0) })
+    }
+
     func copyBlock(_ field: BlockField, id: BlockID?) {
         guard let session, let id, let block = session.blocks.first(where: { $0.id == id }) else { return }
         let text: String?

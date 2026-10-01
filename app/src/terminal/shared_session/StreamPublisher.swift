@@ -3,10 +3,14 @@ import Foundation
 /// Publishes one pane's already-captured state to the relay.
 ///
 /// The split here is the handoff's, and it is the reason typing never waits: **capture happens on the
-/// main actor, everything else happens off it.** This type never reads a grid. It takes a
-/// `WireSnapshot` or a `WireDamage` — both value types, both `Sendable` — and owns the encoding, the
-/// socket and the lease from there. A publisher that reached back into the model from its own task
-/// would be racing the shell, and a slow relay would show up as a stuttering prompt.
+/// main actor, and the encoding, the hashing and the send happen off it.** This type never reads a
+/// grid. It takes a `WireSnapshot` or a `WireDamage` — both value types, both `Sendable` — and owns
+/// the socket and the lease from there.
+///
+/// The class is `@MainActor` because `state` is observed by the UI, and that is exactly the trap: a
+/// plain `Task { }` written in here inherits the actor, so the expensive half would run on the actor
+/// the prompt is drawn from. `enqueue` detaches for that reason, and `frames(for:)` is `nonisolated`
+/// so it can be called from there. Without both, "off-main" would be a comment rather than a fact.
 ///
 /// Three things it will not do:
 ///
@@ -37,7 +41,7 @@ final class StreamPublisher {
     @ObservationIgnored private let api: CloudAPI
     @ObservationIgnored private let identity: PaneExportIdentity
     @ObservationIgnored private let deviceID: String
-    @ObservationIgnored private let socketURL: URL
+    @ObservationIgnored private let socketBaseURL: URL
     @ObservationIgnored private let origin: String
 
     @ObservationIgnored private var socket: URLSessionWebSocketTask?
@@ -141,7 +145,7 @@ final class StreamPublisher {
     func publish(_ damage: WireDamage) {
         guard hasSentHello else { return }
         seq = max(seq, Int(damage.seq) ?? 0)
-        enqueue { [try WireCanonicalJSON.encode(WireFrame.damage(damage))] }
+        enqueue { [Self.text(try WireCanonicalJSON.encode(WireFrame.damage(damage)))] }
     }
 
     /// The next sequence number. The host assigns it, not the relay — the relay orders by what it is
@@ -150,12 +154,20 @@ final class StreamPublisher {
         seq + 1
     }
 
-    private func enqueue(_ build: @escaping () throws -> [String]) {
-        // Encoding is the expensive part and it happens on the send task, never on the caller's.
-        // The caller is the main actor, and the main actor is where typing is.
+    /// Encode a frame off the main actor, then send it from here.
+    ///
+    /// **The `Task.detached` is load-bearing, not decoration.** This class is `@MainActor`, and a
+    /// plain `Task { }` written inside it *inherits that actor* — so the encoding, the hashing and the
+    /// JSON serialisation of a four-megabyte snapshot would all run on the actor the prompt is drawn
+    /// from, which is precisely the stutter the capture/transport split exists to prevent. Detaching
+    /// puts the work on the cooperative pool; only the enqueue and the socket send stay here.
+    ///
+    /// The closure is `@Sendable` and captures only value types, which is what makes the hop legal.
+    private func enqueue(_ build: @escaping @Sendable () throws -> [String]) {
         sendTask = Task { [previous = sendTask] in
             await previous?.value
-            guard let frames = try? build() else { return }
+            let frames = await Task.detached(priority: .utility) { try? build() }.value
+            guard let frames else { return }
             outbox.append(contentsOf: frames)
             await drain()
         }
@@ -190,7 +202,7 @@ final class StreamPublisher {
 
         let auth = WireAuth(ticket: ticket, clientID: identity.clientRequestID)
         if let frame = try? WireCanonicalJSON.encode(WireFrame.auth(auth)) {
-            outbox.append(frame)
+            outbox.append(Self.text(frame))
         }
         Task { await drain() }
 
@@ -217,8 +229,11 @@ final class StreamPublisher {
     }
 
     private func handle(_ message: URLSessionWebSocketTask.Message) {
-        guard case .string(let text) = message, let data = text.data(using: .utf8) else { return }
-        guard let frame = try? WireFrame.decode(data) else { return }
+        guard case .string(let text) = message else { return }
+        // The direction is stated rather than inferred: the same frame type is legal in more than one
+        // direction, and a publisher that accepted a viewer's frame shape would be a publisher that
+        // could be made to act on one.
+        guard let frame = try? WireFrame.decode(from: text, direction: .relayToHost) else { return }
 
         switch frame {
         case .viewerCount(let count):
@@ -233,8 +248,11 @@ final class StreamPublisher {
             needsSnapshot = true
         case .controlRequest(let request):
             // A browser is asking to type. Nothing is granted here: the decision belongs to the
-            // person in front of the machine, and this only tells them someone is asking.
-            delegate?.publisher(self, didReceiveControlRequestFrom: epoch ?? "0", asked: request.epoch)
+            // person in front of the machine, and this only tells them someone is asking. The
+            // generation is passed on because it is the only identity the frame carries — the
+            // contract gives a requester no way to name itself, and the relay is what binds the
+            // approval to the connection that asked.
+            delegate?.publisher(self, didReceiveControlRequestFor: request.epoch)
         case .input(let input):
             // The relay has already refused anything from a viewer that is not a controller, and the
             // lease is checked again here — the relay cannot know whether *this* host still approves.
@@ -305,7 +323,7 @@ final class StreamPublisher {
 
     private func send(_ frame: WireFrame) {
         guard let encoded = try? WireCanonicalJSON.encode(frame) else { return }
-        outbox.append(encoded)
+        outbox.append(Self.text(encoded))
         Task { await drain() }
     }
 
@@ -347,10 +365,26 @@ final class StreamPublisher {
 
     // MARK: - Frames
 
-    /// The frames that carry a snapshot: a hello if the stream has not opened, then begin, chunks and
-    /// end. The chunks are bounded by the contract, and the digest is over the raw bytes so the
-    /// browser can verify before it adopts anything.
-    static func frames(for snapshot: WireSnapshot) throws -> [String] {
+    /// Encoded JSON as the text the socket carries.
+    ///
+    /// The encoder returns `Data`, and the socket must be given a **string**: the relay refuses a
+    /// binary frame outright (`isBinary` closes the connection with `invalid_frame`), because the
+    /// frames are JSON text and a binary one is a client that has invented its own encoding. So the
+    /// bytes are decoded back to text here — the one place the conversion happens, rather than at
+    /// each call site where it could be forgotten.
+    nonisolated static func text(_ data: Data) -> String {
+        String(decoding: data, as: UTF8.self)
+    }
+
+    /// The frames that carry a snapshot: a begin, chunks and an end. The chunks are bounded by the
+    /// contract, and the digest is over the raw bytes so the browser can verify before it adopts
+    /// anything.
+    ///
+    /// `nonisolated` because it is called from a detached task: a `static` member of a `@MainActor`
+    /// type is main-actor isolated too, so without this the "off-main encoding" would hop straight
+    /// back to the actor it was moved off. Nothing here touches an instance or an actor's state — it
+    /// is a pure function from a value type to strings, which is what makes the hop legal.
+    nonisolated static func frames(for snapshot: WireSnapshot) throws -> [String] {
         let bytes = try WireCanonicalJSON.encode(snapshot)
         let snapshotID = UUID().uuidString.lowercased()
         let chunkSize = WireLimits.maxRawChunkBytes
@@ -360,29 +394,34 @@ final class StreamPublisher {
 
         var frames: [String] = []
         frames.append(
-            try WireCanonicalJSON.encode(
-                WireFrame.snapshotBegin(
-                    WireSnapshotBegin(
-                        epoch: snapshot.epoch,
-                        seq: snapshot.seq,
-                        snapshotID: snapshotID,
-                        bytes: bytes.count,
-                        chunks: chunks.count,
-                        sha256: WireSHA256.hex(of: bytes)))))
+            text(
+                try WireCanonicalJSON.encode(
+                    WireFrame.snapshotBegin(
+                        WireSnapshotBegin(
+                            epoch: snapshot.epoch,
+                            seq: snapshot.seq,
+                            snapshotID: snapshotID,
+                            bytes: bytes.count,
+                            chunks: chunks.count,
+                            // The digest is over the snapshot's own bytes, which is what the browser
+                            // hashes once it has every chunk — not over the frames that carried them.
+                            sha256: WireSHA256.hexDigest(bytes))))))
         for (index, chunk) in chunks.enumerated() {
             frames.append(
-                try WireCanonicalJSON.encode(
-                    WireFrame.snapshotChunk(
-                        WireSnapshotChunk(
-                            epoch: snapshot.epoch,
-                            snapshotID: snapshotID,
-                            index: index,
-                            data: chunk))))
+                text(
+                    try WireCanonicalJSON.encode(
+                        WireFrame.snapshotChunk(
+                            WireSnapshotChunk(
+                                epoch: snapshot.epoch,
+                                snapshotID: snapshotID,
+                                index: index,
+                                data: chunk)))))
         }
         frames.append(
-            try WireCanonicalJSON.encode(
-                WireFrame.snapshotEnd(
-                    WireSnapshotEnd(epoch: snapshot.epoch, snapshotID: snapshotID))))
+            text(
+                try WireCanonicalJSON.encode(
+                    WireFrame.snapshotEnd(
+                        WireSnapshotEnd(epoch: snapshot.epoch, snapshotID: snapshotID)))))
         return frames
     }
 }
@@ -399,7 +438,12 @@ private struct StreamCreation: Decodable, Sendable {
 @MainActor
 protocol StreamControlDelegate: AnyObject {
     /// A browser asked to type. Nothing has been granted; this is the prompt to ask a person.
-    func publisher(_ publisher: StreamPublisher, didReceiveControlRequestFrom epoch: String, asked: String)
+    ///
+    /// The generation is the publisher epoch the requester named. It is the only identity the frame
+    /// carries — the contract says a requester cannot name another client — so it is what the host
+    /// has to key its lease on. The relay is what makes that sufficient: it permits one outstanding
+    /// request and forwards `input` only from the connection it granted.
+    func publisher(_ publisher: StreamPublisher, didReceiveControlRequestFor generation: String)
     /// An input frame arrived. It has passed the relay's own check and must now pass the host's.
     func publisher(_ publisher: StreamPublisher, didReceive input: WireInputFrame)
 }

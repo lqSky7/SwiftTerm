@@ -42,6 +42,15 @@ enum AppMenus {
             item(
                 "Split Down", #selector(TerminalWindowController.splitDown(_:)), key: "d",
                 modifiers: [.command, .shift]))
+        menu.addItem(.separator())
+        // The title is set by the window controller's `validateMenuItem`, because the item is a
+        // toggle and a menu that says "Share" while the pane is already shared is a menu that lies.
+        // `⇧⌘S` rather than `⌘S`: there is no document to save, and this is the one command in the
+        // File menu that leaves the machine.
+        menu.addItem(
+            item(
+                "Share Pane", #selector(TerminalWindowController.toggleSharing(_:)), key: "s",
+                modifiers: [.command, .shift]))
         return submenuItem("File", menu)
     }
 

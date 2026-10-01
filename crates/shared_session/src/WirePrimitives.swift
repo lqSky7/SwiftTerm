@@ -1,7 +1,10 @@
 import Foundation
 
 /// A cell colour: a palette index or a true-colour triple, never both and never a CSS string.
-enum WireColor: Equatable, Sendable {
+/// `Hashable` rather than only `Equatable` so a host can deduplicate styles as it walks a grid. That
+/// is not a wire change — the conformance is Swift-side and the encoding is written out below — but
+/// it is what lets the exporter send one style per distinct appearance instead of one per cell.
+enum WireColor: Hashable, Sendable {
     case palette(index: Int)
     case rgb(r: Int, g: Int, b: Int)
 
@@ -77,7 +80,9 @@ extension WireColor: Codable {
 
 /// `{fg,bg,flags}`. Flags are eight named bits in a fixed order; a renderer reads the bit, never a
 /// font name or a CSS class.
-struct WireStyle: Equatable, Sendable, Codable {
+/// `Hashable` for the same reason as `WireColor`: a style table is a dictionary keyed on the style,
+/// and one style object per cell is an order of magnitude more bytes for no information.
+struct WireStyle: Hashable, Sendable, Codable {
     var fg: WireColor
     var bg: WireColor
     var flags: Int
