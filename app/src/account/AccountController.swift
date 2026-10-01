@@ -53,6 +53,16 @@ struct CloudConfiguration: Sendable {
     var canSignInWithPassword: Bool {
         supabaseURL != nil && supabaseAnonKey != nil
     }
+
+    /// Where the relay's sockets live. Derived rather than configured separately: the socket is on
+    /// the same origin as the API, and a second setting is a second thing that can disagree.
+    var socketBaseURL: URL {
+        var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)
+        components?.scheme = baseURL.scheme == "https" ? "wss" : "ws"
+        components?.path = ""
+        components?.query = nil
+        return components?.url ?? baseURL
+    }
 }
 
 /// The account, as the window sees it.
@@ -86,7 +96,9 @@ final class AccountController {
     /// The last failure, for the account page to show. Cleared by the next attempt.
     private(set) var lastError: CloudError?
 
-    @ObservationIgnored private let api: CloudAPI
+    /// Internal rather than private so a stream can use the same session the account signed in with.
+    /// Two clients would mean two cookie jars, and the second one would not be signed in.
+    @ObservationIgnored let api: CloudAPI
     @ObservationIgnored private let identity: DeviceIdentity
     /// Kept so the sign-in flow can reach Supabase without a second copy of the configuration.
     @ObservationIgnored let configuration: CloudConfiguration

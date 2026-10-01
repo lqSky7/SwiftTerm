@@ -229,12 +229,89 @@ final class StreamPublisher {
             if error.code == "capacity" { state = .failed("The relay refused that frame.") }
         case .resync:
             // The relay could not supply a gap, so it is asking for a fresh snapshot. The pane is
-            // told through `state`; the next capture is a snapshot rather than a delta.
+            // told through `needsSnapshot`; the next capture is a full one.
             needsSnapshot = true
+        case .controlRequest(let request):
+            // A browser is asking to type. Nothing is granted here: the decision belongs to the
+            // person in front of the machine, and this only tells them someone is asking.
+            delegate?.publisher(self, didReceiveControlRequestFrom: epoch ?? "0", asked: request.epoch)
+        case .input(let input):
+            // The relay has already refused anything from a viewer that is not a controller, and the
+            // lease is checked again here — the relay cannot know whether *this* host still approves.
+            delegate?.publisher(self, didReceive: input)
         default:
             break
         }
     }
+
+    // MARK: - Control
+
+    /// Tell the browser its request was approved.
+    ///
+    /// The lease and the epoch travel back with it, because they are what every later input frame
+    /// must present. `expires_at` is a wire timestamp, not a `Date`: the contract fixes the format.
+    func grantControl(epoch: String, lease: String, expiresAt: Date) {
+        send(
+            .controlGranted(
+                WireControlGranted(
+                    epoch: epoch, lease: lease,
+                    expiresAt: Self.wireTime(from: expiresAt))))
+    }
+
+    /// UTC ISO-8601 with milliseconds, which is the one spelling the contract accepts. Built here
+    /// rather than with a `DateFormatter` so it does not depend on the process locale: a device set
+    /// to a locale with a different calendar would otherwise emit a timestamp the browser refuses.
+    static func wireTime(from date: Date) -> String {
+        let seconds = date.timeIntervalSince1970
+        let whole = floor(seconds)
+        let milliseconds = Int(((seconds - whole) * 1000).rounded())
+        let base = Date(timeIntervalSince1970: whole)
+        var components = Calendar(identifier: .gregorian).dateComponents(
+            [.year, .month, .day, .hour, .minute, .second], from: base)
+        components.timeZone = TimeZone(secondsFromGMT: 0)
+        func pad(_ value: Int?, _ width: Int) -> String {
+            String(format: "%0\(width)d", value ?? 0)
+        }
+        return "\(pad(components.year, 4))-\(pad(components.month, 2))-\(pad(components.day, 2))"
+            + "T\(pad(components.hour, 2)):\(pad(components.minute, 2)):\(pad(components.second, 2))"
+            + ".\(pad(milliseconds, 3))Z"
+    }
+
+    func denyControl(epoch: String) {
+        send(.controlDenied(WireControlDenied(epoch: epoch)))
+    }
+
+    /// Tell the holder its lease is gone, and why.
+    ///
+    /// The reason is part of the frame rather than a detail: a browser told `local_input` knows the
+    /// person took the keyboard back, which is different from being told the host ended the stream.
+    func revokeControl(epoch: String, lease: String, reason: WireRevokeReason) {
+        send(.controlRevoked(WireControlRevoked(epoch: epoch, lease: lease, reason: reason)))
+    }
+
+    /// Acknowledge an input frame.
+    ///
+    /// This records **admission to the editor or the PTY write queue**, never that a command ran or
+    /// finished. A rejected ack must carry a code — a silent rejection is the failure the
+    /// acknowledgement exists to prevent.
+    func ackInput(
+        epoch: String, lease: String, inputSeq: String, status: WireInputStatus, code: WireErrorCode? = nil
+    ) {
+        send(
+            .inputAck(
+                WireInputAck(
+                    epoch: epoch, controlLease: lease, inputSeq: inputSeq, status: status, code: code)))
+    }
+
+    private func send(_ frame: WireFrame) {
+        guard let encoded = try? WireCanonicalJSON.encode(frame) else { return }
+        outbox.append(encoded)
+        Task { await drain() }
+    }
+
+    /// The pane's side of the control conversation. Implemented by `PaneSharing`, which owns the
+    /// lease; this type only carries the frames.
+    weak var delegate: (any StreamControlDelegate)?
 
     /// Set when the relay asks for a snapshot. The pane's next capture is a full one.
     private(set) var needsSnapshot = false
@@ -312,4 +389,17 @@ final class StreamPublisher {
 
 private struct StreamCreation: Decodable, Sendable {
     let sessionId: String
+}
+
+/// What the pane has to do when the relay sends it something that is not output.
+///
+/// The publisher deliberately does not decide any of this. Whether a browser may type is a question
+/// about the person in front of the machine, and whether an input is safe to apply is a question
+/// about the lease — both belong to `PaneSharing`, which owns the lease and can see the pane.
+@MainActor
+protocol StreamControlDelegate: AnyObject {
+    /// A browser asked to type. Nothing has been granted; this is the prompt to ask a person.
+    func publisher(_ publisher: StreamPublisher, didReceiveControlRequestFrom epoch: String, asked: String)
+    /// An input frame arrived. It has passed the relay's own check and must now pass the host's.
+    func publisher(_ publisher: StreamPublisher, didReceive input: WireInputFrame)
 }

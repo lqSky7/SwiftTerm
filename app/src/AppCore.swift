@@ -22,6 +22,64 @@ final class AppCore {
     /// here can reach a pane: cloud state and terminal state are separate by construction, so
     /// signing out cannot lose a shell.
     let account = AccountController()
+
+    /// One sharing session per pane, and only for panes the person explicitly started.
+    ///
+    /// A dictionary rather than a flag on the pane: sharing is a thing this window is *doing*, not a
+    /// property a pane has, and a pane that does not appear here is a pane that is not capturing,
+    /// not encoding and not holding a socket.
+    private(set) var sharing: [PaneID: PaneSharing] = [:]
+
+    /// The one explicit action that starts sharing a pane. Nothing is captured before it.
+    ///
+    /// Refuses without an account, without a registered device, and without a running shell. A
+    /// publisher ticket is minted *for a device*, so sharing before the device exists would fail at
+    /// the relay rather than here — and a failure here can say why.
+    ///
+    /// The mechanisms come from the caller rather than from the coordinator, because they are the
+    /// pane's editor and raw-input paths and the command that offers Share is the layer that already
+    /// has them. A default would be a silent no-op, which is worse than a missing one.
+    func startSharing(_ paneID: PaneID, mechanisms: PaneSharing.Mechanisms) {
+        guard sharing[paneID] == nil else { return }
+        guard let coordinator = coordinators[paneID], let session = coordinator.session,
+            let deviceID = account.deviceID, !deviceID.isEmpty
+        else { return }
+
+        let pane = PaneSharing()
+        sharing[paneID] = pane
+        pane.start(
+            session: session,
+            account: account,
+            api: account.api,
+            socketBaseURL: account.configuration.socketBaseURL,
+            origin: account.configuration.origin,
+            title: "Terminal",
+            mechanisms: mechanisms)
+    }
+
+    /// Stop sharing a pane. Called from the same explicit action, and from the pane closing.
+    func stopSharing(_ paneID: PaneID) {
+        sharing[paneID]?.stop()
+        sharing[paneID] = nil
+    }
+
+    /// Stop every stream. Sign-out and app teardown both call this.
+    ///
+    /// Deliberately *only* the streams: signing out must not touch a pane, a block or a shell. A
+    /// person leaving an account keeps the terminal they were reading.
+    func stopAllSharing() {
+        for pane in sharing.values { pane.stop() }
+        sharing.removeAll()
+    }
+
+    /// Every keystroke at this machine calls this **before** the keystroke is applied.
+    ///
+    /// That order is the whole rule: the person in front of the computer never has to fight a browser
+    /// for their own prompt, and a browser that loses control is told rather than left believing it
+    /// still has it.
+    func revokeRemoteControl(_ paneID: PaneID) {
+        sharing[paneID]?.revokeControl(reason: .localInput)
+    }
     @ObservationIgnored private var reviewPane: PaneID?
     @ObservationIgnored private var reviewDirectory: String?
 
