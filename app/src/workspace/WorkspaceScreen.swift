@@ -60,6 +60,19 @@ struct WorkspaceScreen: View {
         // sidebar arriving over exactly the region the panel gives up.
         .animation(
             .easeInOut(duration: Theme.Motion.chromeFade), value: workspace.layout.isSidebarCollapsed)
+        // The first sheet in the app, and it is one on purpose rather than a fourth kind of panel.
+        // Sharing is a sequence with a beginning and an end — sign in, register, share, stop — and a
+        // modal is what that shape is. The pane it is about is captured by `AppCore` rather than by
+        // this view, so the sheet survives a tab change underneath it and closes when the pane it
+        // belongs to goes away.
+        .sheet(isPresented: Binding(
+            get: { workspace.isShowingShareSheet },
+            set: { if !$0 { workspace.closeShareSheet() } }
+        )) {
+            if let paneID = workspace.shareSheetPane {
+                ShareSheet(workspace: workspace, paneID: paneID)
+            }
+        }
     }
 
     /// The leading column: the tab list, and the strip you drag to resize it.

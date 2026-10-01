@@ -36,6 +36,45 @@ final class AppCore {
         tabs.activeTab?.focusedPane
     }
 
+    // MARK: - The share sheet
+
+    /// Whether the share sheet is up, and which pane it is about.
+    ///
+    /// It exists because sharing needs an account, an account needs a sign-in, and there was no
+    /// sign-in anywhere in the app — so `startSharing` refused on a nil `deviceID` and the `File`
+    /// menu's item did nothing visible at all. A sheet is where that whole sequence can be shown in
+    /// order instead of being a button that appears broken.
+    private(set) var shareSheetPane: PaneID?
+
+    var isShowingShareSheet: Bool { shareSheetPane != nil }
+
+    /// Why sharing could not start, if it could not. Shown rather than swallowed.
+    private(set) var sharingFailure: String?
+
+    /// Open the sheet for the focused pane. Refuses when there is no pane to share, which is a
+    /// settings tab or an empty window.
+    @discardableResult
+    func openShareSheet() -> Bool {
+        guard let paneID = activePane else { return false }
+        sharingFailure = nil
+        shareSheetPane = paneID
+        return true
+    }
+
+    func closeShareSheet() {
+        shareSheetPane = nil
+        sharingFailure = nil
+    }
+
+    /// The link to send someone, or nil until the relay has answered with a session.
+    ///
+    /// Built from the *website's* origin rather than the API's: the API is where the socket lives and
+    /// the website is where a person can actually open something.
+    func shareLink(for paneID: PaneID) -> String? {
+        guard let sessionID = sharing[paneID]?.publisher?.sessionID else { return nil }
+        return "\(account.configuration.origin)/live/?s=\(sessionID)"
+    }
+
     /// The one explicit action that starts sharing a pane. Nothing is captured before it.
     ///
     /// Refuses without an account, without a registered device, and without a running shell. A
@@ -47,11 +86,20 @@ final class AppCore {
     /// would answer a browser's keystroke with a cheerful "applied" and do nothing.
     @discardableResult
     func startSharing(_ paneID: PaneID) -> Bool {
+        sharingFailure = nil
         guard sharing[paneID] == nil else { return false }
-        guard let coordinator = coordinators[paneID], let session = coordinator.session,
-            let mechanisms = coordinator.sharingMechanisms(),
-            let deviceID = account.deviceID, !deviceID.isEmpty
-        else { return false }
+        guard let coordinator = coordinators[paneID], let session = coordinator.session else {
+            sharingFailure = "This pane has no shell to share."
+            return false
+        }
+        guard let mechanisms = coordinator.sharingMechanisms() else {
+            sharingFailure = "This pane has no terminal surface to route input to."
+            return false
+        }
+        guard let deviceID = account.deviceID, !deviceID.isEmpty else {
+            sharingFailure = "This machine is not registered, so a publisher ticket cannot be minted."
+            return false
+        }
 
         let pane = PaneSharing()
         sharing[paneID] = pane
@@ -79,17 +127,6 @@ final class AppCore {
         sharing[paneID] = nil
     }
 
-    /// The pane the `File` menu's one item acts on.
-    @discardableResult
-    func toggleSharingOnActivePane() -> Bool {
-        guard let paneID = activePane else { return false }
-        if sharing[paneID] != nil {
-            stopSharing(paneID)
-            return true
-        }
-        return startSharing(paneID)
-    }
-
     /// Sign out, and end every stream first.
     ///
     /// The order is the whole content of this method. A stream that outlived the account would be a
@@ -99,6 +136,7 @@ final class AppCore {
     /// cannot reach terminal state, so signing out can never lose a shell.
     func signOut() async {
         stopAllSharing()
+        closeShareSheet()
         await account.signOut()
     }
 
@@ -1050,6 +1088,8 @@ final class AppCore {
             // publishing. Left running it would hold a slot against the account's cap and keep a
             // browser watching a terminal that is no longer on screen or even alive.
             stopSharing(pane)
+            // And the sheet closes with it, rather than being left showing a pane that has gone.
+            if shareSheetPane == pane { closeShareSheet() }
             coordinator.shutdown()
             coordinators.removeValue(forKey: pane)
         }

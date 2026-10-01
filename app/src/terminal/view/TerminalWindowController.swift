@@ -147,7 +147,12 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     @objc func splitDown(_ sender: Any?) { workspace?.splitActivePane(.down) }
     @objc func focusNextPane(_ sender: Any?) { workspace?.focusNextPane() }
     @objc func focusPreviousPane(_ sender: Any?) { workspace?.focusPreviousPane() }
-    @objc func toggleSharing(_ sender: Any?) { workspace?.toggleSharingOnActivePane() }
+    /// One action, one behaviour: it opens the sheet, and the sheet has Share and Stop in it.
+    ///
+    /// It used to be a toggle whose title changed, and the title was a guess — a pane can stop
+    /// sharing because its shell exited, and a menu reading "Stop Sharing" for a pane that had
+    /// already stopped is a menu that lies about the thing the person is looking at.
+    @objc func showShareSheet(_ sender: Any?) { workspace?.openShareSheet() }
 
     /// One menu item says two things: a command named for what it will do is the difference between a
     /// menu that reads as a list of actions and one that reads as a list of nouns.
@@ -156,18 +161,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             let hidden = workspace?.layout.isSidebarCollapsed ?? false
             menuItem.title = hidden ? "Show Sidebar" : "Hide Sidebar"
         }
-        if menuItem.action == #selector(toggleSharing(_:)) {
-            guard let workspace, let paneID = workspace.activePane else {
-                // No pane to share — a settings tab, or an empty window. Disabled rather than
-                // silently doing nothing, because a command that appears available and is not is
-                // the one people conclude is broken.
-                menuItem.title = "Share Pane"
-                return false
-            }
-            // The title has to reflect what the *pane* is doing, not what the last command did: a
-            // pane can stop sharing because its shell exited, and the menu has to catch up.
-            menuItem.title = workspace.sharing[paneID] == nil ? "Share Pane…" : "Stop Sharing"
-            return true
+        if menuItem.action == #selector(showShareSheet(_:)) {
+            // Disabled rather than silently doing nothing when there is no pane — a settings tab, or
+            // an empty window. A command that appears available and is not is the one people conclude
+            // is broken.
+            return workspace?.activePane != nil
         }
         return true
     }
