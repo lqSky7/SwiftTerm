@@ -34,7 +34,7 @@
 		</dict>
 	</array>
 	<key>CFBundleVersion</key>
-	<string>124</string>
+	<string>125</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.developer-tools</string>
 	<key>LSMinimumSystemVersion</key>
@@ -49,9 +49,20 @@
 	<string>https://swiftterm.shares.zrok.io</string>
 	<key>SwiftTermAPIOrigin</key>
 	<string>https://swiftterm.catinice.workers.dev</string>
-	<key>SwiftTermSupabaseAnonKey</key>
-	<string></string>
+	<!--
+	  The publishable client key. Safe to embed: it authorises the client, and every row is still
+	  scoped by row-level security and by the backend's own verification of the token's signature.
+	  The *service* key must never appear here.
+
+	  The URL is filled in because it is not a secret — it is the same issuer the backend verifies
+	  against (`OIDC_ISSUER`) and it is public in the project's JWKS endpoint. The key is the half
+	  that has to come from the Supabase dashboard, and until both are present
+	  `CloudConfiguration.canSignInWithPassword` is false and the app offers the paste-a-token path
+	  instead. See `docs/backend/protocol.md` and the ShareSheet.
+	-->
 	<key>SwiftTermSupabaseURL</key>
+	<string>https://upmarjiewuwvaljnnboq.supabase.co</string>
+	<key>SwiftTermSupabaseAnonKey</key>
 	<string></string>
 </dict>
 </plist>
