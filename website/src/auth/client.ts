@@ -107,6 +107,85 @@ export function isSupabaseConfigured(): boolean {
   );
 }
 
+/**
+ * Whether this project allows anonymous accounts.
+ *
+ * **Asked of the project rather than configured here.** Supabase's `/auth/v1/settings` is a public,
+ * unauthenticated call, and it reports `external.anonymous_users`. A build-time flag would be a second
+ * copy of a dashboard setting — and a second copy is what drifts: this whole session has been one
+ * thing after another disagreeing with what the dashboard actually says.
+ *
+ * `false` when the project does not say yes, and `false` on any failure. A feature that cannot be
+ * confirmed hides itself rather than offering something that will error.
+ */
+export async function anonymousSignInAvailable(): Promise<boolean> {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (supabaseUrl === undefined || anonKey === undefined) return false;
+
+  try {
+    const response = await fetch(`${supabaseUrl}/auth/v1/settings`, {
+      headers: { apikey: anonKey },
+    });
+    if (!response.ok) return false;
+    const payload = (await response.json()) as { external?: { anonymous_users?: unknown } };
+    return payload.external?.anonymous_users === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Create an anonymous account and sign in with it.
+ *
+ * **This is the right default for sharing a terminal.** The thing that needs an identity is the act of
+ * sharing — so a person can be revoked from a stream — not the person. Requiring an email address to
+ * show somebody a terminal is a tax on the one feature the account exists for.
+ *
+ * GoTrue creates the account on a `POST /auth/v1/signup` with no credentials and returns a session
+ * immediately, because this project has confirmation disabled. The response is the same shape as a
+ * password sign-up, so the token is read from both places here.
+ *
+ * It is not a bypass: the account is a real Supabase user with a real subject, the backend verifies the
+ * token's signature exactly as it would for a confirmed address, and it provisions an app account from
+ * that subject. An anonymous user can create streams and share them; they simply have no email to
+ * recover with, which is the trade they are making.
+ */
+export async function signInAnonymously(): Promise<SessionResponse> {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (supabaseUrl === undefined || anonKey === undefined) {
+    throw new Error("Supabase is not configured for this deployment");
+  }
+
+  const response = await fetch(`${supabaseUrl}/auth/v1/signup`, {
+    method: "POST",
+    headers: { "content-type": "application/json", apikey: anonKey },
+    body: JSON.stringify({}),
+  });
+
+  if (!response.ok) {
+    throw new Error("Anonymous sign-in is not available on this project");
+  }
+
+  const payload = (await response.json()) as {
+    access_token?: unknown;
+    session?: { access_token?: unknown } | null;
+  };
+  const top = typeof payload.access_token === "string" ? payload.access_token : null;
+  const nested =
+    payload.session !== null && typeof payload.session?.access_token === "string"
+      ? payload.session.access_token
+      : null;
+  const token = top ?? nested;
+  if (token === null) {
+    // Confirmation required: the account was created but cannot authenticate yet. Saying so plainly
+    // beats a generic failure, because the fix is a project setting.
+    throw new Error("The account was created but needs confirming before it can sign in");
+  }
+  return startSession(token);
+}
+
 /** Whether a fresh account can be used immediately, and the session if so. */
 export interface SignUpResult {
   /**

@@ -40,8 +40,14 @@ The quickest way to get both values at once is the project's **Connect** dialog:
 [project home → Connect](https://supabase.com/dashboard/project/upmarjiewuwvaljnnboq?showConnect=true)
 shows the URL and the client key ready to copy.
 
-**An account has to exist before anyone can sign in**, and neither the app nor the website creates
-one. The dashboard's
+**Anonymous sign-in is on, and is the default path.** The project has `external.anonymous_users`
+enabled, so the site offers *continue without an account*: no email, no confirmation, straight to
+sharing. The account is a real Supabase user with a real subject, and the backend verifies the token
+exactly as it would for a confirmed address — so this is not a bypass, just an identity nobody has to
+type. The trade is that there is no email to recover with.
+
+**Named accounts still need to exist before anyone can sign in with one**, and neither the app nor the
+website creates one. The dashboard's
 [Authentication → Users](https://supabase.com/dashboard/project/upmarjiewuwvaljnnboq/auth/users) page
 adds one; confirm the email if the project asks for it.
 

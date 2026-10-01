@@ -1,11 +1,13 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 
 import {
   allowsTokenSignIn,
+  anonymousSignInAvailable,
   isSupabaseConfigured,
+  signInAnonymously,
   signInWithPassword,
   signUpWithPassword,
   startSession,
@@ -52,6 +54,13 @@ export default function SignInPage() {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>("signIn");
   const [awaitingConfirmation, setAwaitingConfirmation] = useState(false);
+  /**
+   * Whether anonymous accounts are allowed, and whether we know yet.
+   *
+   * `null` means the project has not answered — it is asked once on mount, and a feature that cannot
+   * be confirmed hides itself rather than offering something that will error.
+   */
+  const [anonymousAvailable, setAnonymousAvailable] = useState<boolean | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [token, setToken] = useState("");
@@ -61,6 +70,16 @@ export default function SignInPage() {
   // Only in a deployment that asked for it. See `allowsTokenSignIn`.
   const tokenSignInAvailable = !supabaseReady && allowsTokenSignIn();
   const usingToken = tokenSignInAvailable;
+
+  useEffect(() => {
+    let cancelled = false;
+    void anonymousSignInAvailable().then((available) => {
+      if (!cancelled) setAnonymousAvailable(available);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -213,6 +232,35 @@ export default function SignInPage() {
             className="text-sm text-muted-foreground underline underline-offset-2 hover:text-foreground"
           >
             {mode === "signIn" ? "No account? Create one" : "Already have an account? Sign in"}
+          </button>
+        )}
+
+        {/*
+          Anonymous is offered last and smallest, but it is the one most people will want: no email,
+          no confirmation, straight to sharing. It only appears when the project itself says it is
+          allowed, so this can never offer something that will fail.
+        */}
+        {supabaseReady && anonymousAvailable === true && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={async () => {
+              setError(null);
+              setBusy(true);
+              try {
+                await signInAnonymously();
+                router.push("/account");
+              } catch (cause) {
+                setError(
+                  cause instanceof Error ? cause.message : "Could not start an anonymous session",
+                );
+              } finally {
+                setBusy(false);
+              }
+            }}
+            className="text-sm text-muted-foreground underline underline-offset-2 hover:text-foreground"
+          >
+            Or continue without an account
           </button>
         )}
       </form>
