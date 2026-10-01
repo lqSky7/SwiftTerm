@@ -117,7 +117,8 @@ private struct CodeReviewFileRow: View {
     let file: GitFileChange
     let isSelected: Bool
     let onSelect: () -> Void
-    @State private var isHovered = false
+    @StateObject private var hover = HoverState()
+    private var isHovered: Bool { hover.isHovered }
 
     var body: some View {
         Button(action: onSelect) {
@@ -148,7 +149,7 @@ private struct CodeReviewFileRow: View {
         .buttonStyle(.plain)
         .contentShape(Rectangle())
         .onHover { inside in
-            isHovered = inside
+            hover.isHovered = inside
         }
         .animation(.easeInOut(duration: 0.12), value: isHovered)
     }

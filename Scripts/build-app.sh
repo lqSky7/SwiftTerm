@@ -45,21 +45,36 @@ printf 'APPL????' > "$APP/Contents/PkgInfo"
 # falls back to whatever `.icns` is lying in Resources, which on macOS 26 it draws with its own
 # legacy-icon treatment — a hard glass rim around art that was never drawn for one. That silent fallback
 # is what this script used to ship: `--app-icon AppIcon` against a package called `swiftTerm.icon`.
-xcrun actool "app/assets/$ICON.icon" \
-    --compile "$APP/Contents/Resources" \
-    --output-format human-readable-text \
-    --output-partial-info-plist "$APP/Contents/Resources/partial.plist" \
-    --app-icon "$ICON" \
-    --include-all-app-icons \
-    --target-device mac \
-    --minimum-deployment-target 26.0 \
-    --platform macosx
+if xcrun --find actool >/dev/null 2>&1; then
+    xcrun actool "app/assets/$ICON.icon" \
+        --compile "$APP/Contents/Resources" \
+        --output-format human-readable-text \
+        --output-partial-info-plist "$APP/Contents/Resources/partial.plist" \
+        --app-icon "$ICON" \
+        --include-all-app-icons \
+        --target-device mac \
+        --minimum-deployment-target 26.0 \
+        --platform macosx
 
-if [ ! -f "$APP/Contents/Resources/$ICON.icns" ]; then
-    echo "✗ actool produced no $ICON.icns — --app-icon must match the .icon package's name" >&2
-    exit 1
+    if [ ! -f "$APP/Contents/Resources/$ICON.icns" ]; then
+        echo "✗ actool produced no $ICON.icns — --app-icon must match the .icon package's name" >&2
+        exit 1
+    fi
+    rm -f "$APP/Contents/Resources/partial.plist"
+else
+    # No Xcode (Command Line Tools only): `actool` is Xcode-only, so draw a flat icon from the package's
+    # SVG layer instead. The app is unchanged; only the icon loses its Liquid Glass layers.
+    echo "! actool not found — using a flat fallback icon" >&2
+    ICONSET="$(mktemp -d)/$ICON.iconset"
+    mkdir -p "$ICONSET"
+    swift Scripts/fallback-icon.swift "app/assets/$ICON.icon/Assets/SVG Image.svg" "$ICONSET/base.png"
+    for sz in 16 32 128 256 512; do
+        sips -z $sz $sz "$ICONSET/base.png" --out "$ICONSET/icon_${sz}x${sz}.png" >/dev/null
+        sips -z $((sz * 2)) $((sz * 2)) "$ICONSET/base.png" --out "$ICONSET/icon_${sz}x${sz}@2x.png" >/dev/null
+    done
+    rm "$ICONSET/base.png"
+    iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/$ICON.icns"
 fi
-rm -f "$APP/Contents/Resources/partial.plist"
 
 # Ad-hoc signature: enough for macOS to launch it locally and for the identity to stay stable across
 # rebuilds, without needing a Developer ID.

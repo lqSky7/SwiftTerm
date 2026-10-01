@@ -340,7 +340,8 @@ struct NewTabButton: View {
 private struct TabCloseButton: View {
     let action: () -> Void
 
-    @State private var isHovered = false
+    @StateObject private var hover = HoverState()
+    private var isHovered: Bool { hover.isHovered }
 
     var body: some View {
         Button(action: action) {
@@ -357,7 +358,7 @@ private struct TabCloseButton: View {
         }
         .buttonStyle(.plain)
         .onHover { inside in
-            isHovered = inside
+            hover.isHovered = inside
         }
         // Fast, because this is feedback for a pointer that has already arrived: a fade long enough to
         // watch is a fade that makes the button feel late.
