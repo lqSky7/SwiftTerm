@@ -1,0 +1,19 @@
+name: Build
+
+# A compile check, so a broken build is found before a release is cut rather than by whoever downloads
+# it. `Release` builds the same thing on the same image — this is the same command, run earlier.
+#
+# Not on every push to `main`: a macOS runner bills at ten times the rate of a Linux one, and a branch
+# that is about to be merged is the only place the answer is still useful.
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build the app bundle
+        run: ./Scripts/build-app.sh release --no-install

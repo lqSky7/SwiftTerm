@@ -3,9 +3,15 @@
 | Workflow | Does |
 | --- | --- |
 | `release.yml` | on `release: published`, builds the `.app` on `macos-26`, zips it with `ditto`, writes a `.sha256`, and uploads both onto that release with `gh release upload` |
+| `build.yml` | the same build, on a pull request or on demand, so a broken build is found before a release is cut |
 
-There is no CI-on-push workflow: lint and the harnesses stay local (`./Scripts/lint.sh`,
-`./Scripts/run-tests.sh`), per `AGENTS.md`.
+`build.yml` exists because the app cannot always be built locally: a toolchain whose macro plugin server
+fails takes `@Observable` down with it, and then the only honest way to know the tree compiles is to ask
+a runner. It is not on `push` to `main` — a macOS runner bills at ten times a Linux one, and the answer
+stops being useful once the branch is merged.
+
+There is no CI for lint or the harnesses: those stay local (`./Scripts/lint.sh`, `./Scripts/run-tests.sh`),
+per `AGENTS.md`.
 
 The runner has Xcode, so `actool` compiles `app/assets/swiftTerm.icon` into the Liquid Glass
 `Assets.car`; the flat fallback icon in `build-app.sh` is not the path CI takes.

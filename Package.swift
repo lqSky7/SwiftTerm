@@ -32,6 +32,7 @@ let package = Package(
                 "crates/secret_redaction/src/index.md",
                 "app/src/workspace/index.md",
                 "app/src/code_review/index.md",
+                "app/src/updates/index.md",
                 "crates/git/index.md",
                 "crates/git/src/index.md",
                 "app/src/terminal/index.md",

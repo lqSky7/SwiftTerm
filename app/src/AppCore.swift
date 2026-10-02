@@ -14,6 +14,12 @@ final class AppCore {
     private(set) var tabs = TabList()
     let codeReview = CodeReviewCoordinator()
 
+    /// Checking for and installing a newer build of this app.
+    ///
+    /// Created eagerly and **inert**, exactly as the account is: it holds no timer and makes no request until
+    /// the Updates page calls `check()`, so an app nobody asks to update does no network work at all.
+    let updates = UpdateController()
+
     /// The signed-in account, if there is one.
     ///
     /// Created eagerly and **inert**. It holds no timer, opens no socket and performs no request

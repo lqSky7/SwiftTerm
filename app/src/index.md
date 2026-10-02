@@ -7,6 +7,7 @@
 | `AppMenus.swift` | the menu bar |
 | `SwiftTermApp.swift` | `@main` |
 | `workspace/` | the window as a whole: the sidebar, the tab strip, where the panes go |
+| `updates/` | checking for and installing a newer build from this repository's own releases |
 | `terminal/` | the terminal feature: its session, its views |
 
 `workspace/` composes `terminal/` rather than the other way round: a pane is a terminal, and a
@@ -31,3 +32,6 @@ Every application window applies the shared text-input policy to native/SwiftUI 
 Account opens from Settings or Share through AppCore; current-device revocation stops sharing before revoking its credential.
 
 cloud_object/ owns native static export selection/preview/upload and its window. AppCore initializes cloud accounts only on sharing/account actions; AppDelegate applies the Sharing switch across all windows.
+
+updates/ owns the update check and the install that replaces the running bundle. AppCore holds the one
+UpdateController, inert until the Updates settings page asks it to check; the page is in workspace/.

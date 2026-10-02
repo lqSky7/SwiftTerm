@@ -321,6 +321,7 @@ struct SettingsView: View {
         case .commands: CommandsSettingsView(workspace: workspace)
         case .keymaps: KeymapSettingsView(workspace: workspace)
         case .sidebar: SidebarSettingsView(workspace: workspace)
+        case .updates: UpdatesSettingsView(workspace: workspace)
         }
     }
 }
@@ -332,6 +333,7 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
     case commands
     case keymaps
     case sidebar
+    case updates
 
     var id: String { rawValue }
 
@@ -342,6 +344,7 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
         case .commands: "Commands & History"
         case .keymaps: "Keyboard Shortcuts"
         case .sidebar: "Sidebar"
+        case .updates: "Updates"
         }
     }
 
@@ -354,6 +357,7 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
         case .commands: "terminal"
         case .keymaps: "keyboard"
         case .sidebar: "sidebar.left"
+        case .updates: "arrow.down.circle"
         }
     }
 
@@ -369,6 +373,8 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
             "Configurable keyboard shortcuts and navigation mappings."
         case .sidebar:
             "Whether the sidebar shows, and how it is sized and hidden."
+        case .updates:
+            "Check for a newer build and install it without leaving the app."
         }
     }
 }
@@ -989,5 +995,141 @@ struct CommandsSettingsView: View {
         Binding(
             get: { workspace.newCommandDraft },
             set: { workspace.setNewCommandDraft($0) })
+    }
+}
+
+// MARK: - Updates
+
+/// The one page whose subject is the app itself.
+///
+/// It exists because the alternative is a browser: somebody who wants a newer build should not have to know
+/// that the builds live on GitHub, find the right release, and drag a bundle into place. Everything the page
+/// needs is here — what this build is, whether there is a newer one, a button that installs it, and the
+/// restart that finishes the job.
+///
+/// **The check is a button and not a timer.** The app does no network work until somebody asks it to — the
+/// account is inert until sign-in for the same reason — so this page costs nothing to open and a person who
+/// never visits it is never called out to. There is also no preference to turn it off, because there is
+/// nothing scheduled to turn off.
+struct UpdatesSettingsView: View {
+    let workspace: AppCore
+
+    private var updates: UpdateController { workspace.updates }
+
+    var body: some View {
+        SettingsPage(title: "Updates", showsBackButton: true) {
+            SettingsGroup(label: "This Build") {
+                SettingsRow(title: "Version") {
+                    Text("\(updates.currentVersion) (\(updates.currentBuild))")
+                        .font(.system(size: 12))
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                }
+                SettingsRowDivider()
+                SettingsRow(title: "Check for Updates") {
+                    HStack(spacing: Theme.Spacing.md) {
+                        status
+                        Button("Check Now") { updates.check() }
+                            .controlSize(.small)
+                            .disabled(updates.isBusy)
+                    }
+                }
+            }
+
+            if case .available(let version) = updates.status {
+                SettingsGroup(label: "Available") {
+                    SettingsRow(title: "Version \(version)") {
+                        Button("Install") { updates.install() }
+                            .controlSize(.small)
+                            .disabled(!updates.canInstall)
+                    }
+                    note(
+                        "Downloaded, checked against the release's published checksum, and put in place of "
+                            + "this copy. \(updates.canInstall ? "" : selfCopyNote)")
+                }
+            }
+
+            if case .installed(let version) = updates.status {
+                SettingsGroup(label: "Restart to Finish") {
+                    note(
+                        "swiftTerm \(version) is installed. The copy running now is the old build — a running "
+                            + "app keeps the files it was started from — so quit and open it again to use the "
+                            + "new one.")
+                    SettingsRow(title: "Restart swiftTerm") {
+                        Button("Quit and Reopen") { updates.restart() }
+                            .controlSize(.small)
+                    }
+                }
+            }
+
+            if !updates.canInstall {
+                SettingsGroup {
+                    note(
+                        "This copy is not an app bundle, so it cannot replace itself. Run it from "
+                            + "/Applications, or use the build script, to update in place.")
+                }
+            }
+        }
+    }
+
+    /// What the last check did, in one line beside the button that caused it.
+    @ViewBuilder
+    private var status: some View {
+        switch updates.status {
+        case .idle:
+            Text("Not checked yet.")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+        case .checking:
+            spinner("Checking…")
+        case .upToDate:
+            Text("Up to date.")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+        case .available(let version):
+            Text("Version \(version) is available.")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+        case .downloading:
+            spinner("Downloading…")
+        case .installing:
+            spinner("Installing…")
+        case .installed(let version):
+            Text("Updated to \(version).")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+        case .failed(let message):
+            // Shown rather than swallowed: "Update failed" with no reason is a message that costs a round
+            // trip to turn into the sentence that should have been there already.
+            Text(message)
+                .font(.system(size: 12))
+                .foregroundStyle(.red)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func spinner(_ label: String) -> some View {
+        HStack(spacing: Theme.Spacing.sm) {
+            ProgressView()
+                .controlSize(.small)
+            Text(label)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func note(_ text: String) -> some View {
+        Text(text)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, Theme.Spacing.lg)
+            .padding(.vertical, Theme.Spacing.md)
+    }
+
+    /// The reason an install is unavailable, said once and reused, so the sentence above the button and the
+    /// group at the bottom cannot drift apart.
+    private var selfCopyNote: String {
+        "This copy is not an app bundle, so it cannot be installed in place."
     }
 }
