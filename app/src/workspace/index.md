@@ -11,7 +11,7 @@ The window as a whole: the sidebar, and the terminal floating on it.
 | `ProfileAvatar.swift` | the user's picture at whatever size it is needed: the one view the sidebar's row and the profile page share |
 | `ProfileView.swift` | the profile page — the picture, the name, and the account, each editable by double-clicking it |
 | `Appearance.swift` | names to AppKit for the one setting whose meaning AppKit owns: `AppearanceMode` to `NSAppearance` and to a terminal palette |
-| `SettingsView.swift` | the settings tab: a centred, searchable column of categories in a `NavigationStack`, Appearance (with "None", explicit glass options, and chip background material), Themes & Colors (presets, ANSI palette customization, import/export), Commands & History (saved commands and autocomplete data manager), Keyboard Shortcuts (granular keybinding recorder), and Sidebar pages |
+| `SettingsView.swift` | the settings tab: a centred, searchable column of categories in a `NavigationStack`, Appearance (with "None", explicit glass options, and chip background material), Themes & Colors (presets, ANSI palette customization, import/export), Commands & History (saved commands and autocomplete data manager), Keyboard Shortcuts (granular keybinding recorder), Sidebar, and Updates pages |
 | `TabRenameField.swift` | the `NSTextField` a tab is renamed in |
 
 **The sidebar is the window, and the terminal is a panel on it.** The sidebar's surface is full-bleed; the
