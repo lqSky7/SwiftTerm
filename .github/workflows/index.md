@@ -12,8 +12,14 @@ skips a `push` or `pull_request` run when the commit message carries `[skip ci]`
 `[no ci]`, `[skip actions]`, `[actions skip]`). That is the platform's behaviour, not ours; there is no
 filtering code in the workflow. `workflow_dispatch` ignores it.
 
-A macOS runner bills at ten times the rate of a Linux one, which is the whole reason `[skip ci]` is
-worth using on commits that touch only `docs/` or a comment.
+**The keyword is matched anywhere in the message, subject or body.** A commit that merely *mentions* it
+skips its own build, silently — no run is created, so nothing appears in the Actions list to explain
+why. Worth knowing before writing a commit message about this file.
+
+Standard GitHub-hosted runners are free in **public** repositories, so `macos-26` costs nothing here.
+The ten-times figure is real but only bites on private repositories: macOS bills at $0.062 per minute
+against $0.006 for a 2-core Linux runner. Larger runners are *not* free for public repositories, so
+switching this to `macos-26-xlarge` would start a bill.
 
 There is no CI for lint or the harnesses: those stay local (`./Scripts/lint.sh`, `./Scripts/run-tests.sh`),
 per `AGENTS.md`.
