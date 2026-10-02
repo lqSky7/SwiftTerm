@@ -1,11 +1,15 @@
 name: Build
 
-# A compile check, so a broken build is found before a release is cut rather than by whoever downloads
-# it. `Release` builds the same thing on the same image — this is the same command, run earlier.
+# A compile check, so a broken build is found on the push that broke it rather than by whoever
+# downloads the next release. `Release` builds the same thing on the same image — this is the same
+# command, run earlier.
 #
-# Not on every push to `main`: a macOS runner bills at ten times the rate of a Linux one, and a branch
-# that is about to be merged is the only place the answer is still useful.
+# **`[skip ci]` is not implemented here, and does not need to be.** GitHub skips a `push` or
+# `pull_request` run by itself when the commit message carries `[skip ci]` — or `[ci skip]`,
+# `[no ci]`, `[skip actions]`, `[actions skip]`. A docs-only or comment-only push can say so and
+# cost nothing. `workflow_dispatch` ignores it: asking by hand is asking.
 on:
+  push:
   pull_request:
   workflow_dispatch:
 
