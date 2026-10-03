@@ -1,54 +1,100 @@
+import Image from "next/image";
 import Link from "next/link";
 
+import { Logo } from "@/components/logo";
+
+const HERO_LINKS = [
+  { href: "/#how", label: "How it works" },
+  { href: "/account", label: "Devices" },
+];
+
 /**
- * The landing page. The hero is a terminal frame drawn in markup rather than a screenshot, so it
- * stays in the achromatic token set and never goes stale against the real renderer.
+ * The landing page.
+ *
+ * The hero is a wallpaper card with the nav drawn *inside* it — the same construction as
+ * aside-clone's: a floating pill over the artwork, a centred serif headline, one call to action,
+ * and the real app screenshot rising out of the bottom of the card.
+ *
+ * The screenshot is a genuine capture of swiftTerm rather than the markup frame this page used to
+ * draw. The frame was always a stand-in for a renderer nobody could see yet; now that the app is
+ * real, the capture is the more honest of the two.
  */
 export default function HomePage() {
   return (
     <>
-      <section className="mx-auto w-full max-w-6xl px-4 pt-20 pb-16 sm:px-6 lg:px-12">
-        <div className="mx-auto max-w-3xl text-center">
-          <h1 className="text-4xl leading-tight font-medium tracking-tight md:text-5xl">
-            Your terminal, in the browser
-          </h1>
-          <p className="mt-5 text-base text-muted-foreground md:text-lg">
-            Share a live view of one terminal pane, and hand over control only while you are
-            watching. The shell keeps running on your Mac — SwiftTerm never moves it.
-          </p>
-          <div className="mt-8 flex items-center justify-center gap-3">
+      <div className="p-2 pb-0! md:p-4">
+        <div
+          className="relative overflow-hidden rounded-2xl bg-muted bg-cover bg-center shadow-xl md:rounded-3xl"
+          style={{ backgroundImage: "url(/swiftterm/wallpaper.webp)" }}
+        >
+          {/* The nav lives in the card, so it floats on the artwork instead of sitting above it. */}
+          <nav className="relative z-30 px-3 pt-3 md:px-4 md:pt-4">
+            <div className="mx-auto flex h-12 w-full max-w-5xl items-center justify-between gap-3 rounded-full border border-white/50 bg-white/70 pr-1.5 pl-4 shadow-sm backdrop-blur-xl">
+              <Link href="/" className="flex items-center">
+                <Logo />
+              </Link>
+
+              <ul className="hidden items-center gap-1 md:flex">
+                {HERO_LINKS.map((link) => (
+                  <li key={link.href}>
+                    <Link
+                      href={link.href}
+                      className="block rounded-full px-3 py-1.5 text-sm text-foreground/70 transition-colors hover:bg-foreground/5 hover:text-foreground"
+                    >
+                      {link.label}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+
+              <div className="flex items-center gap-1.5">
+                <Link
+                  href="/sign-in"
+                  className="rounded-full px-3 py-1.5 text-sm text-foreground/70 transition-colors hover:bg-foreground/5 hover:text-foreground"
+                >
+                  Log in
+                </Link>
+                <Link
+                  href="/#how"
+                  className="rounded-full bg-primary px-3.5 py-1.5 text-sm text-primary-foreground transition-opacity hover:opacity-90"
+                >
+                  Download
+                </Link>
+              </div>
+            </div>
+          </nav>
+
+          <header className="relative z-1 px-6 pt-12 pb-9 text-center md:pt-16 md:pb-12">
+            <h1 className="font-display mx-auto max-w-2xl text-4xl leading-[1.08] font-normal! tracking-[-0.01em] text-foreground md:text-6xl">
+              Your terminal,
+              <br />
+              in the browser
+            </h1>
+            <p className="mx-auto mt-5 mb-8 max-w-md text-base text-foreground/70 md:text-lg">
+              Share a live view of one terminal pane, and hand over control only while you are
+              watching. The shell keeps running on your Mac — SwiftTerm never moves it.
+            </p>
             <Link
               href="/sign-in"
-              className="rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
+              className="inline-flex h-10 items-center rounded-full bg-primary px-5 text-base text-primary-foreground transition-opacity hover:opacity-90"
             >
-              Sign in
+              Download for macOS
             </Link>
-            <Link
-              href="/#how"
-              className="rounded-lg border border-border px-5 py-2.5 text-sm font-medium transition-colors hover:bg-accent"
-            >
-              How it works
-            </Link>
-          </div>
-        </div>
+          </header>
 
-        <div className="mx-auto mt-14 max-w-3xl overflow-hidden rounded-xl border border-border bg-card">
-          <div className="flex items-center gap-1.5 border-b border-border px-4 py-3">
-            <span className="size-2.5 rounded-full bg-muted-foreground/30" />
-            <span className="size-2.5 rounded-full bg-muted-foreground/30" />
-            <span className="size-2.5 rounded-full bg-muted-foreground/30" />
-            <span className="ml-3 text-xs text-muted-foreground">shared pane</span>
-          </div>
-          <div className="terminal-cell px-4 py-4 text-[13px] leading-6">
-            <p className="text-muted-foreground">$ deploy --env production</p>
-            <p>building…</p>
-            <p>uploading 34 files</p>
-            <p className="text-foreground">
-              ready<span className="ml-1 inline-block h-4 w-2 translate-y-0.5 bg-foreground" />
-            </p>
+          <div className="relative z-1 px-3 pb-3 md:px-6 md:pb-6">
+            <Image
+              src="/swiftterm/hero.webp"
+              alt="swiftTerm running a shell over a wallpaper, the mark drawn in the terminal"
+              width={2200}
+              height={1382}
+              priority
+              sizes="(max-width: 768px) 100vw, 1400px"
+              className="w-full rounded-xl shadow-2xl"
+            />
           </div>
         </div>
-      </section>
+      </div>
 
       <section id="how" className="border-t border-border/40">
         <div className="mx-auto grid w-full max-w-6xl gap-8 px-4 py-16 sm:px-6 md:grid-cols-3 lg:px-12">

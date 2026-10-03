@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { currentAccount, type Account } from "@/auth/client";
@@ -10,10 +11,14 @@ import { Logo } from "@/components/logo";
  * The chrome. Visually the same shape as aside-clone's navbar — a 56px bar, the mark on the left,
  * a centred link group, the account control on the right — but the mark is SwiftTerm's and the
  * whole bar is achromatic, matching the token set.
+ *
+ * The landing page is the exception: its nav sits *inside* the hero card, over the wallpaper, so
+ * this bar renders nothing there and `page.tsx` draws its own.
  */
 export function Navbar() {
   const [account, setAccount] = useState<Account | null>(null);
   const [settled, setSettled] = useState(false);
+  const pathname = usePathname();
 
   useEffect(() => {
     let cancelled = false;
@@ -26,6 +31,8 @@ export function Navbar() {
       cancelled = true;
     };
   }, []);
+
+  if (pathname === "/") return null;
 
   return (
     <nav className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur-md">

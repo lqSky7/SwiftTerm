@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist, Geist_Mono, Instrument_Serif } from "next/font/google";
 
 import { Navbar } from "@/components/navbar";
 
@@ -9,6 +9,14 @@ import "./globals.css";
 // without the stale absolute font paths the clone carried.
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
+
+// The hero headline is set in a serif. It is a *face* choice, not a colour one, so the achromatic
+// token rule in globals.css still holds — this adds no accent to the interface.
+const displaySerif = Instrument_Serif({
+  variable: "--font-serif-display",
+  subsets: ["latin"],
+  weight: "400",
+});
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -26,7 +34,10 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+    <html
+      lang="en"
+      className={`${geistSans.variable} ${geistMono.variable} ${displaySerif.variable} antialiased`}
+    >
       <body className="flex min-h-dvh flex-col">
         <Navbar />
         <main className="flex-1">{children}</main>
